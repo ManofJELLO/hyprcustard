@@ -289,6 +289,11 @@ For the selected leaf you get:
   Dragging a curve defined in your config redefines it here, for everything that uses it;
   **Copy as new curve** makes a copy under a new name for just this leaf instead.
 
+Hyprland keeps every curve it has been given until it restarts, and a reload does not undefine
+one. So whether a curve is yours is read from `hyprland.lua` itself, not asked of Hyprland: a
+curve it still has but no file defines is shown as such, and Save warns if an animation set
+here uses one, since that animation would not load after the next restart.
+
 Curves and animations go into the look block on Save, after its `hl.config` call — curves
 first, so no animation names a curve before it exists:
 

@@ -80,6 +80,9 @@ pub struct Session {
     pub look: Look,
     /// The look block as last read from or written to disk.
     saved_look: Look,
+    /// The curves the user's own config defines, read from the file. Only the
+    /// file can say this: Hyprland keeps every curve until it restarts.
+    config_curves: BTreeMap<String, Option<motion::Points>>,
     /// Shaders found in the shader directory.
     pub shaders: Vec<ShaderInfo>,
     /// Shader edits staged but not yet written, by shader path.
@@ -129,12 +132,14 @@ impl Session {
         let theme =
             themes.iter().find(|t| t.id == config.theme).cloned().unwrap_or_else(theme::system);
 
+        let config_curves = read_config_curves(&settings.resolved_config_path());
         let mut session = Session {
             settings,
             saved: config.clone(),
             config,
             saved_look: look.clone(),
             look,
+            config_curves,
             shaders: Vec::new(),
             drafts: BTreeMap::new(),
             theme,
@@ -263,10 +268,19 @@ impl Session {
         paths::write_atomic(&path, &updated)?;
         self.saved = self.config.clone();
         self.saved_look = self.look.clone();
+        self.config_curves = motion::curves_in_config(&updated);
 
         let mut msg = format!("Saved to {}", paths::contract(&path));
         if let Some(b) = backup {
             msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
+        }
+        let orphans = self.orphaned_curves();
+        if !orphans.is_empty() {
+            msg.push_str(&format!(
+                ". Note: {} — fine if another file your config loads defines it, but otherwise \
+                 that animation will not load after Hyprland restarts",
+                orphans.join("; ")
+            ));
         }
 
         if self.live.running && self.settings.reload_after_save {
@@ -306,6 +320,7 @@ impl Session {
         self.saved = config;
         self.look = look.clone();
         self.saved_look = look;
+        self.config_curves = read_config_curves(&path);
         // Unsaved look edits are on the desktop as well as in the app.
         if look_was_dirty && self.live.running {
             self.resync_look()?;
@@ -407,6 +422,7 @@ impl Session {
                 &self.saved_look.curves,
                 &self.saved_look.animations,
                 &self.live.motion,
+                &self.config_curves,
             ),
             "tagCatalog": tag_catalog(),
             "uniformCatalog": uniform_catalog(),
@@ -859,6 +875,26 @@ impl Session {
         lost
     }
 
+    /// Animations set here whose curve nothing in hyprland.lua defines.
+    ///
+    /// Hyprland keeps curves until it restarts, so one left over from an
+    /// earlier edit works now and is gone after the next login.
+    fn orphaned_curves(&self) -> Vec<String> {
+        self.look
+            .animations
+            .iter()
+            .filter(|(_, a)| {
+                a.enabled
+                    && a.bezier != "default"
+                    && !self.look.curves.contains_key(&a.bezier)
+                    && !self.config_curves.contains_key(&a.bezier)
+            })
+            .map(|(leaf, a)| {
+                format!("{leaf} uses the curve {}, which hyprland.lua does not define", a.bezier)
+            })
+            .collect()
+    }
+
     /// Set one animation leaf.
     fn set_animation(&mut self, payload: &Value) -> Result<Option<String>> {
         let name = payload.get("leaf").and_then(Value::as_str).unwrap_or_default();
@@ -867,7 +903,8 @@ impl Session {
         let setting = motion::parse_setting(leaf, payload.get("setting").unwrap_or(&Value::Null))?;
         if setting.enabled && self.live.running {
             let known = self.look.curves.contains_key(&setting.bezier)
-                || self.live.motion.curves.contains_key(&setting.bezier);
+                || self.live.motion.curves.contains_key(&setting.bezier)
+                || self.config_curves.contains_key(&setting.bezier);
             if !known {
                 return Err(Error::other(format!("there is no curve called {}", setting.bezier)));
             }
@@ -1319,6 +1356,12 @@ pub fn probe_live() -> Live {
     }
 }
 
+/// The curves the file at `path` defines outside the look block. A file that
+/// cannot be read defines none; reading the config proper reports that.
+fn read_config_curves(path: &Path) -> BTreeMap<String, Option<motion::Points>> {
+    paths::read_to_string(path).map(|text| motion::curves_in_config(&text)).unwrap_or_default()
+}
+
 fn read_look(path: &Path) -> Result<Look> {
     if !path.exists() {
         return Ok(Look::default());
@@ -1461,6 +1504,7 @@ mod tests {
             saved: Config::default(),
             look: Look::default(),
             saved_look: Look::default(),
+            config_curves: BTreeMap::new(),
             drafts: BTreeMap::new(),
             shaders: Vec::new(),
             theme: theme::gruvbox_dark(),
@@ -1772,6 +1816,31 @@ mod tests {
         s.command("motion.reset", &json!({ "leaf": "windowsIn" })).unwrap();
         s.command("curve.remove", &json!({ "name": "snappy" })).unwrap();
         assert!(s.look.is_empty());
+    }
+
+    #[test]
+    fn saving_an_animation_on_a_curve_no_file_defines_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("hyprland.lua");
+        std::fs::write(
+            &cfg_path,
+            "hl.curve(\"quick\", { type = \"bezier\", points = { {0.15, 0}, {0.1, 1} } })\n",
+        )
+        .unwrap();
+        let mut s = session();
+        s.settings.config_path = cfg_path.to_string_lossy().into_owned();
+        s.settings.backups_to_keep = 0;
+        s.config_curves = read_config_curves(&cfg_path);
+        assert!(s.config_curves.contains_key("quick"));
+
+        let set =
+            |bezier: &str| json!({ "leaf": "fade", "setting": { "speed": 2, "bezier": bezier } });
+        s.command("motion.set", &set("quick")).unwrap();
+        assert!(!s.save().unwrap().contains("does not define"));
+
+        s.command("motion.set", &set("leftover")).unwrap();
+        let msg = s.save().unwrap();
+        assert!(msg.contains("fade uses the curve leftover"), "{msg}");
     }
 
     #[test]

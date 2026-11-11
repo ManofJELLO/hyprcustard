@@ -65,7 +65,10 @@ Item {
     readonly property var setting: page.leaf ? page.leaf.setting
                                              : ({ enabled: true, speed: 1, bezier: "default", style: "" })
     readonly property var curve: page.curveByName[page.setting.bezier] || null
-    readonly property var curvePoints: page.curve ? page.curve.points : [0, 0, 1, 1]
+    // Null when the curve is known only by name: written in a way the file
+    // reader could not follow, with Hyprland not running to ask.
+    readonly property bool curveKnown: page.curve !== null && page.curve.points !== null
+    readonly property var curvePoints: page.curveKnown ? page.curve.points : [0, 0, 1, 1]
 
     // Every change sets the whole leaf: hl.animation takes all of it at once.
     function setLeaf(changes) {
@@ -438,13 +441,25 @@ Item {
                     title: "Curve — " + page.setting.bezier
                     subtitle: {
                         if (!page.curve)
-                            return "Hyprland is not running, so the curve cannot be shown."
-                        var s = page.curve.source === "here" ? "Defined here."
-                              : page.curve.source === "builtin" ? "Hyprland's built-in curve."
-                              : "Defined in your config."
-                        if (page.curve.source !== "here")
-                            s += " Dragging a point redefines it here, for every animation that uses it."
-                        return s
+                            return "Hyprland is not running, and hyprland.lua does not define "
+                                   + "this curve, so it cannot be shown."
+                        if (!page.curveKnown)
+                            return "Defined in your config in a way the app cannot read the "
+                                   + "points from. Start Hyprland to see and edit it."
+                        switch (page.curve.source) {
+                        case "here":
+                            return "Defined here."
+                        case "builtin":
+                            return "Hyprland's built-in curve. Dragging a point redefines it here, "
+                                   + "for every animation that uses it."
+                        case "config":
+                            return "Defined in your config. Dragging a point redefines it here, "
+                                   + "for every animation that uses it."
+                        }
+                        return "Not defined in hyprland.lua. Hyprland still has it: from a file "
+                               + "your config loads, or left over from an earlier edit, since "
+                               + "Hyprland keeps a curve until it restarts. If nothing defines it, "
+                               + "an animation using it will fail to load next time."
                     }
 
                     CurveEditor {
@@ -452,7 +467,7 @@ Item {
                         width: parent.width
                         height: 260
                         points: page.curvePoints
-                        editable: page.curve !== null
+                        editable: page.curveKnown
                         onCommitted: function (p) {
                             App.run("curve.set", { name: page.setting.bezier, points: p })
                         }
@@ -481,7 +496,7 @@ Item {
                                     width: 70
                                     implicitHeight: 26
                                     mono: true
-                                    enabled: page.curve !== null
+                                    enabled: page.curveKnown
                                     text: String(curveEdit.shown[coord.index])
                                     onCommit: function (v) {
                                         coordEdit.text = Qt.binding(function () {
@@ -511,7 +526,7 @@ Item {
                         }
                         PillButton {
                             text: "Copy as new curve"
-                            enabled: newName.text.trim() !== "" && page.curve !== null
+                            enabled: newName.text.trim() !== "" && page.curveKnown
                             tooltip: "Make a copy of this curve under a new name and use it for "
                                      + page.selected + ", leaving the original alone."
                             onClicked: {

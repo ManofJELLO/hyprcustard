@@ -235,6 +235,61 @@ pub fn read_live() -> Result<LiveMotion> {
     })
 }
 
+/// The curves the user's own config defines, read from its text, with their
+/// points where they are written out plainly.
+///
+/// The compositor cannot say where a curve came from, and it keeps every
+/// curve it has seen until it restarts — a reload does not undefine one. So
+/// "defined in your config" has to be decided from the file, or a curve
+/// removed here, or one tried out earlier, would claim to be the user's.
+///
+/// The look block is left out: what is defined there is the app's own. Lines
+/// commented out with `--`, and `--[[ ... ]]` blocks, do not count.
+pub fn curves_in_config(document: &str) -> BTreeMap<String, Option<Points>> {
+    use std::sync::OnceLock;
+    static BLOCK_COMMENT: OnceLock<regex::Regex> = OnceLock::new();
+    static NAME: OnceLock<regex::Regex> = OnceLock::new();
+    static POINTS: OnceLock<regex::Regex> = OnceLock::new();
+    let block_comment =
+        BLOCK_COMMENT.get_or_init(|| regex::Regex::new(r"(?s)--\[(=*)\[.*?\]\]").unwrap());
+    let name =
+        NAME.get_or_init(|| regex::Regex::new(r#"hl\.curve\(\s*["']([^"']+)["']\s*,"#).unwrap());
+    let points = POINTS.get_or_init(|| {
+        let n = r"(-?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)";
+        regex::Regex::new(&format!(
+            r"^[^}})]*?points\s*=\s*\{{\s*\{{\s*{n}\s*,\s*{n}\s*\}}\s*,\s*\{{\s*{n}\s*,\s*{n}\s*\}}"
+        ))
+        .unwrap()
+    });
+
+    let own = match crate::block::split_with(document, &crate::look::MARKERS) {
+        Ok(Some(s)) => format!("{}{}", s.before, s.after),
+        _ => document.to_string(),
+    };
+    let uncommented = block_comment.replace_all(&own, "");
+    let code: String = uncommented
+        .lines()
+        .map(|l| match l.find("--") {
+            // Good enough for a config file: a `--` inside a string on a curve
+            // line is not something anyone writes.
+            Some(i) => &l[..i],
+            None => l,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut out = BTreeMap::new();
+    for m in name.captures_iter(&code) {
+        let after = &code[m.get(0).map_or(0, |g| g.end())..];
+        let p = points.captures(after).and_then(|c| {
+            let v: Option<Vec<f64>> = (1..=4).map(|i| c[i].parse().ok()).collect();
+            v.map(|v| [v[0], v[1], v[2], v[3]])
+        });
+        out.insert(m[1].to_string(), p);
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Checking what the UI sends
 // ---------------------------------------------------------------------------
@@ -412,12 +467,17 @@ pub fn not_sticking(saved: &BTreeMap<String, AnimSetting>, live: &LiveMotion) ->
 }
 
 /// The Animation page's state.
+///
+/// `config_curves` is [`curves_in_config`] of the file: it decides which
+/// curves are the user's, and supplies their points when Hyprland is not
+/// running to ask.
 pub fn view(
     curves: &BTreeMap<String, Points>,
     animations: &BTreeMap<String, AnimSetting>,
     saved_curves: &BTreeMap<String, Points>,
     saved_animations: &BTreeMap<String, AnimSetting>,
     live: &LiveMotion,
+    config_curves: &BTreeMap<String, Option<Points>>,
 ) -> Value {
     let leaves: Vec<Value> = TREE
         .iter()
@@ -445,18 +505,36 @@ pub fn view(
         })
         .collect();
 
-    // Every curve a leaf can name: the compositor's, with the app's own laid
-    // over them.
-    let mut all: BTreeMap<&str, (&Points, &str)> = BTreeMap::new();
+    // Every curve a leaf can name, and where it comes from:
+    //
+    // * here      — defined in the app (saved or not), which wins;
+    // * builtin   — Hyprland's own `default`;
+    // * config    — defined in the user's file;
+    // * elsewhere — Hyprland has it but the file does not define it: from a
+    //   file the config loads, or left over from earlier, since Hyprland keeps
+    //   a curve until it restarts.
+    let mut all: BTreeMap<&str, (Option<Points>, &str)> = BTreeMap::new();
+    for (name, p) in config_curves {
+        all.insert(name, (*p, "config"));
+    }
     for (name, p) in &live.curves {
-        all.insert(name, (p, if name == "default" { "builtin" } else { "config" }));
+        let source = if name == "default" {
+            "builtin"
+        } else if config_curves.contains_key(name) {
+            "config"
+        } else {
+            "elsewhere"
+        };
+        // What is running beats what the file says, which may be unsaved or
+        // written in a way the reader could not follow.
+        all.insert(name, (Some(*p), source));
     }
     for (name, p) in curves {
-        all.insert(name, (p, "here"));
+        all.insert(name, (Some(*p), "here"));
     }
     let curves_view: Vec<Value> = all
         .iter()
-        .map(|(name, (p, source))| {
+        .map(|(name, (points, source))| {
             let used_by: Vec<&str> = TREE
                 .iter()
                 .filter(|l| animations.get(l.name).is_some_and(|a| a.bezier == *name))
@@ -464,7 +542,7 @@ pub fn view(
                 .collect();
             json!({
                 "name": name,
-                "points": p,
+                "points": points,
                 "source": source,
                 "changed": curves.get(*name) != saved_curves.get(*name),
                 "usedBy": used_by,
@@ -575,6 +653,60 @@ mod tests {
     }
 
     #[test]
+    fn curves_are_read_from_the_config_text() {
+        let doc = r#"
+hl.curve("easeOutQuint",   { type = "bezier", points = { {0.23, 1},    {0.32, 1}    } })
+hl.curve('warmup', { type = "bezier", points = { {0.47, -0.31},{0.39, 1.24} } })
+-- hl.curve("commented", { type = "bezier", points = { {0, 0}, {1, 1} } })
+--[[
+hl.curve("blocked", { type = "bezier", points = { {0, 0}, {1, 1} } })
+]]
+hl.curve("odd", make_points())
+hl.curve("sci", { type = "bezier", points = { {1e-1, .5}, {0.3, 1} } }) -- trailing note
+"#;
+        let with_block = crate::block::splice_with(
+            doc,
+            "hl.curve(\"mine\", { type = \"bezier\", points = { {0, 0}, {1, 1} } })\n",
+            &crate::look::MARKERS,
+        )
+        .unwrap();
+        let found = curves_in_config(&with_block);
+        assert_eq!(found.keys().collect::<Vec<_>>(), vec!["easeOutQuint", "odd", "sci", "warmup"]);
+        assert_eq!(found["easeOutQuint"], Some([0.23, 1.0, 0.32, 1.0]));
+        assert_eq!(found["warmup"], Some([0.47, -0.31, 0.39, 1.24]));
+        assert_eq!(found["sci"], Some([0.1, 0.5, 0.3, 1.0]));
+        assert_eq!(found["odd"], None);
+    }
+
+    #[test]
+    fn a_live_curve_the_file_does_not_define_is_not_called_the_users() {
+        let mut live = LiveMotion::default();
+        live.curves.insert("default".into(), [0.0, 0.75, 0.15, 1.0]);
+        live.curves.insert("quick".into(), [0.15, 0.0, 0.1, 1.0]);
+        live.curves.insert("custardprobe".into(), [1.0, 0.0, 0.5, 1.0]);
+        let mut config = BTreeMap::new();
+        config.insert("quick".to_string(), Some([0.15, 0.0, 0.1, 1.0]));
+        // Hyprland not running: only the file can supply this one.
+        config.insert("offline".to_string(), Some([0.2, 0.0, 0.2, 1.0]));
+        let v = view(
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &live,
+            &config,
+        );
+        let source = |n: &str| {
+            v["curves"].as_array().unwrap().iter().find(|c| c["name"] == n).unwrap()["source"]
+                .clone()
+        };
+        assert_eq!(source("default"), "builtin");
+        assert_eq!(source("quick"), "config");
+        assert_eq!(source("custardprobe"), "elsewhere");
+        assert_eq!(source("offline"), "config");
+    }
+
+    #[test]
     fn the_view_lists_every_curve_with_its_source() {
         let mut live = LiveMotion::default();
         live.curves.insert("default".into(), [0.0, 0.75, 0.15, 1.0]);
@@ -583,7 +715,9 @@ mod tests {
         curves.insert("quick".to_string(), [0.2, 0.0, 0.1, 1.0]);
         let mut anims = BTreeMap::new();
         anims.insert("fade".to_string(), s(2.0, "quick"));
-        let v = view(&curves, &anims, &BTreeMap::new(), &BTreeMap::new(), &live);
+        let mut config = BTreeMap::new();
+        config.insert("quick".to_string(), Some([0.15, 0.0, 0.1, 1.0]));
+        let v = view(&curves, &anims, &BTreeMap::new(), &BTreeMap::new(), &live, &config);
         let quick = v["curves"].as_array().unwrap().iter().find(|c| c["name"] == "quick").unwrap();
         assert_eq!(quick["source"], "here");
         assert_eq!(quick["points"], json!([0.2, 0.0, 0.1, 1.0]));
