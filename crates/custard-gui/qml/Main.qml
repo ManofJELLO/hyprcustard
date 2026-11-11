@@ -43,6 +43,7 @@ ApplicationWindow {
     readonly property var pages: [
         { label: "Look",     hint: "Borders, blur, gaps" },
         { label: "Animation", hint: "Curves and speeds" },
+        { label: "Themes",   hint: "Save and switch looks" },
         { label: "Rules",    hint: "Windows" },
         { label: "Shaders",  hint: "Files" },
         { label: "Layers",   hint: "Bars, launchers" },
@@ -379,6 +380,12 @@ ApplicationWindow {
             }
             Item {
                 AnimationPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                ThemesPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }

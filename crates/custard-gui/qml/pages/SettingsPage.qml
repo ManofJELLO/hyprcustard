@@ -192,13 +192,14 @@ Item {
             // ---------------------------------------------------------------
             Card {
                 Layout.fillWidth: true
-                title: "Appearance"
-                subtitle: "Gruvbox dark and light are built in. Anything else is a TOML file in " +
+                title: "This app's colours"
+                subtitle: "How hyprcustard itself looks — for your Hyprland look, see the "
+                          + "Look and Themes pages. Gruvbox dark and light are built in. Anything else is a TOML file in " +
                           App.state.themeDir + ", which can override as few colours as you like."
 
                 FieldRow {
                     width: parent.width
-                    label: "Theme"
+                    label: "App colours"
                     hint: "System follows your Qt colours, so the app matches the rest of your " +
                           "desktop and changes with it. The Gruvboxes ignore it and look the " +
                           "same everywhere."

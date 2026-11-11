@@ -17,6 +17,7 @@ use crate::model::{
     TagKind, TagSlot, TagValue, WindowRule, TAGS,
 };
 use crate::motion;
+use crate::preset;
 use crate::preview;
 use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
@@ -57,6 +58,8 @@ pub enum Source {
     Shaders,
     /// Loading theme files.
     Themes,
+    /// Reading the Hyprland themes folder.
+    Presets,
 }
 
 /// A non-fatal problem, and where it came from.
@@ -83,6 +86,8 @@ pub struct Session {
     /// The curves the user's own config defines, read from the file. Only the
     /// file can say this: Hyprland keeps every curve until it restarts.
     config_curves: BTreeMap<String, Option<motion::Points>>,
+    /// Every theme, built in and from the themes folder.
+    presets: Vec<preset::Entry>,
     /// Shaders found in the shader directory.
     pub shaders: Vec<ShaderInfo>,
     /// Shader edits staged but not yet written, by shader path.
@@ -140,6 +145,7 @@ impl Session {
             saved_look: look.clone(),
             look,
             config_curves,
+            presets: Vec::new(),
             shaders: Vec::new(),
             drafts: BTreeMap::new(),
             theme,
@@ -149,7 +155,66 @@ impl Session {
         };
         session.rescan_shaders();
         session.refresh_live();
+        session.rescan_presets();
         session
+    }
+
+    /// Re-read the themes folder.
+    pub fn rescan_presets(&mut self) {
+        let (entries, problems) = preset::list_in(&preset::dir());
+        self.forget(Source::Presets);
+        self.problems
+            .extend(problems.into_iter().map(|text| Problem { source: Source::Presets, text }));
+        self.presets = entries;
+    }
+
+    /// The theme a payload names: by `file` for one in the folder, by `name`
+    /// for one built in.
+    fn preset_named(&self, payload: &Value) -> Result<&preset::Entry> {
+        let file = payload.get("file").and_then(Value::as_str).filter(|f| !f.is_empty());
+        let name = payload.get("name").and_then(Value::as_str).unwrap_or_default();
+        self.presets
+            .iter()
+            .find(|e| match (file, &e.path) {
+                (Some(f), Some(p)) => p.to_string_lossy() == f,
+                (None, None) => e.preset.name == name,
+                _ => false,
+            })
+            .ok_or_else(|| Error::other(format!("there is no theme {}", file.unwrap_or(name))))
+    }
+
+    fn presets_view(&self) -> Value {
+        Value::Array(
+            self.presets
+                .iter()
+                .map(|e| {
+                    json!({
+                        "name": e.preset.name,
+                        "description": e.preset.description,
+                        "file": e.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                        "builtin": e.path.is_none(),
+                        "active": preset::matches(&e.preset, &self.look),
+                        "options": e.preset.options,
+                        "curveCount": e.preset.curves.len(),
+                        "animationCount": e.preset.animations.len(),
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    fn apply_preset(&mut self, payload: &Value) -> Result<Option<String>> {
+        let entry = self.preset_named(payload)?.clone();
+        let (look, problems) = preset::to_look(&entry.preset, &self.look, &self.live.motion);
+        self.look = look;
+        if self.look_is_live() {
+            self.resync_look()?;
+        }
+        let mut msg = format!("Applied {} — Save to keep it", entry.preset.name);
+        if !problems.is_empty() {
+            msg.push_str(&format!(". Left out: {}", problems.join("; ")));
+        }
+        Ok(Some(msg))
     }
 
     /// True when the config has unsaved changes.
@@ -416,6 +481,8 @@ impl Session {
                 .map(|p| json!({ "path": p, "name": base_name(p) }))
                 .collect::<Vec<_>>(),
             "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
+            "presets": self.presets_view(),
+            "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
                 &self.look.animations,
@@ -789,6 +856,59 @@ impl Session {
                     self.resync_look()?;
                 }
                 Ok(Some("Cleared every animation and curve set here".into()))
+            }
+            "preset.save" => {
+                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default();
+                let description =
+                    payload.get("description").and_then(Value::as_str).unwrap_or_default();
+                let replace = payload.get("replace").and_then(Value::as_bool).unwrap_or(false);
+                if self.presets.iter().any(|e| e.path.is_none() && e.preset.name == name.trim()) {
+                    return Err(Error::other(format!("{name} is a built-in theme's name")));
+                }
+                let p = preset::snapshot(
+                    name,
+                    description,
+                    &self.look,
+                    &self.live.look,
+                    &self.live.motion,
+                    &self.config_curves,
+                );
+                let path = preset::save_into(&preset::dir(), &p, replace)?;
+                self.rescan_presets();
+                Ok(Some(format!("Saved the theme {} to {}", p.name, paths::contract(&path))))
+            }
+            "preset.apply" => self.apply_preset(payload),
+            "preset.delete" => {
+                let entry = self.preset_named(payload)?.clone();
+                let path =
+                    entry.path.ok_or_else(|| Error::other("built-in themes cannot be deleted"))?;
+                std::fs::remove_file(&path).map_err(|e| Error::io(&path, e))?;
+                self.rescan_presets();
+                Ok(Some(format!("Deleted the theme {}", entry.preset.name)))
+            }
+            "preset.import" => {
+                let from =
+                    paths::expand(payload.get("path").and_then(Value::as_str).unwrap_or_default());
+                let p = preset::load(&from)?;
+                let replace = payload.get("replace").and_then(Value::as_bool).unwrap_or(false);
+                let path = preset::save_into(&preset::dir(), &p, replace)?;
+                self.rescan_presets();
+                Ok(Some(format!("Imported {} into {}", p.name, paths::contract(&path))))
+            }
+            "preset.export" => {
+                let entry = self.preset_named(payload)?.clone();
+                let to =
+                    paths::expand(payload.get("to").and_then(Value::as_str).unwrap_or_default());
+                if to.as_os_str().is_empty() {
+                    return Err(Error::other("no file to export to"));
+                }
+                let text = serde_json::to_string_pretty(&entry.preset)?;
+                paths::write_atomic(&to, &format!("{text}\n"))?;
+                Ok(Some(format!("Exported {} to {}", entry.preset.name, paths::contract(&to))))
+            }
+            "preset.rescan" => {
+                self.rescan_presets();
+                Ok(None)
             }
             "curve.set" => self.set_curve(payload),
             "curve.remove" => self.remove_curve(payload),
@@ -1505,6 +1625,10 @@ mod tests {
             look: Look::default(),
             saved_look: Look::default(),
             config_curves: BTreeMap::new(),
+            presets: preset::builtin()
+                .into_iter()
+                .map(|preset| preset::Entry { preset, path: None })
+                .collect(),
             drafts: BTreeMap::new(),
             shaders: Vec::new(),
             theme: theme::gruvbox_dark(),
@@ -1841,6 +1965,28 @@ mod tests {
         s.command("motion.set", &set("leftover")).unwrap();
         let msg = s.save().unwrap();
         assert!(msg.contains("fade uses the curve leftover"), "{msg}");
+    }
+
+    #[test]
+    fn applying_a_theme_sets_the_whole_look_and_marks_it_in_use() {
+        let mut s = session();
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 3 })).unwrap();
+        s.command("preset.apply", &json!({ "name": "Soft glass" })).unwrap();
+        assert_eq!(s.look.values["decoration.rounding"], LookValue::Int(14));
+        assert!(s.look.animations.contains_key("windows"));
+        assert!(s.look.curves.contains_key("glide"));
+        assert!(s.dirty());
+        let v = s.state();
+        let glass = v["presets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "Soft glass")
+            .unwrap()
+            .clone();
+        assert_eq!(glass["active"], json!(true));
+        assert!(s.command("preset.apply", &json!({ "name": "No such" })).is_err());
+        assert!(s.command("preset.delete", &json!({ "name": "Soft glass" })).is_err());
     }
 
     #[test]

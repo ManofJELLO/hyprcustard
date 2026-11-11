@@ -7,14 +7,20 @@ and does everything that did, with the rest of Hyprland theming to follow. Today
 that means [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade), the
 Hyprland plugin that applies GLSL fragment shaders to individual windows and layers.
 
-So far it does three things:
+For **Hyprland itself**, it:
 
 * **Sets Hyprland's own look** — gaps, borders and their gradients, rounding, opacity, dimming,
-  shadow, glow, blur, the desktop background and cursor hiding — live on your desktop as you drag, saved into a block of its own that holds
-  only what you changed. See [The Look page](#the-look-page).
+  shadow, glow, blur, the desktop background and cursor hiding — live on your desktop as you
+  drag, saved into a block of its own that holds only what you changed. See
+  [The Look page](#the-look-page).
 * **Edits animations and their curves** — every leaf of Hyprland's animation tree, with where
   its values come from, an editor for dragging a curve's control points, and a preview playing
   on that curve at that speed. See [Animations](#animations).
+* **Saves and switches themes** — the whole look, animations and curves under a name, applied
+  with one click, and shareable as a file. See [Themes](#themes-for-hyprland).
+
+For the **HyprWindowShade** plugin, it:
+
 * **Writes the plugin's section of `hyprland.lua` for you** — window rules and their shader
   tags, layer shaders, open and close animations, keybinds and startup calls — into a block
   between two marker comments. The rest of your config is never touched.
@@ -33,7 +39,7 @@ palette is a small TOML file.
 
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
-- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Animations](#animations)
+- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Animations](#animations) · [Themes](#themes-for-hyprland)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -302,6 +308,43 @@ hl.curve("snappy", { type = "bezier", points = { {0.2, 1}, {0.3, 1} } })
 
 hl.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
 ```
+
+## Themes for Hyprland
+
+A theme is the whole look: every Look option, every animation that is set, and the curves those
+animations use. **Save as theme** captures what is on the desktop now, unsaved changes
+included; **Apply** puts a theme on the desktop at once, and Save writes it to `hyprland.lua`
+like any other change.
+
+A theme is complete rather than a list of changes, so applying one gives you that theme whatever
+your own config says, and switching themes never leaves a value behind from the last one. An
+animation your config sets but the theme does not is set to what it would inherit inside the
+theme, so your config's version cannot show through. The cursor options are left alone: when
+your cursor hides is behaviour, not looks.
+
+Three themes are built in: **Hyprland defaults** (a way back to a plain desktop without editing a
+file), **Soft glass** and **Sharp and quick**. Your own live in
+`~/.config/hyprcustard/hypr-themes/` as JSON, one file per theme, and **Import…** / **Export…**
+move them in and out. A theme file can be written by hand — values take the shapes the Look
+page uses, and colours may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
+
+```json
+{
+  "name": "Mine",
+  "options": {
+    "decoration.rounding": 10,
+    "general.col.active_border": { "colors": ["rgba(89b4faee)", "rgba(cba6f7ee)"], "angle": 45 }
+  },
+  "curves": { "glide": [0.05, 0.9, 0.1, 1.05] },
+  "animations": {
+    "windows": { "enabled": true, "speed": 5, "bezier": "glide", "style": "popin 85%" }
+  }
+}
+```
+
+Anything in a theme this version does not recognise is left out, and Apply says what.
+
+The app's own colours are a separate thing, under Settings → This app's colours.
 
 ## Shader parameters
 

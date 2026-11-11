@@ -19,6 +19,7 @@ fn main() {
         "qml/components/ShaderPicker.qml",
         "qml/components/ShaderPreview.qml",
         "qml/components/Tip.qml",
+        "qml/components/ThemePreview.qml",
         "qml/components/Toast.qml",
         "qml/components/Toggle.qml",
         "qml/pages/ActionEditor.qml",
@@ -33,6 +34,7 @@ fn main() {
         "qml/pages/RulesPage.qml",
         "qml/pages/SettingsPage.qml",
         "qml/pages/ShadersPage.qml",
+        "qml/pages/ThemesPage.qml",
     ];
 
     let module = QmlModule::new("dev.hyprcustard.gui")
