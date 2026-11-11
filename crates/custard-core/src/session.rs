@@ -238,11 +238,15 @@ impl Session {
         let path = self.settings.resolved_config_path();
         let existing = if path.exists() { paths::read_to_string(&path)? } else { String::new() };
 
-        // Someone who only ever uses the Look page should not find an empty
-        // shader block in their config, so that block is written once there is
-        // something in it — or once it exists already, to keep it current.
+        // The shader block is rewritten only when something in it changed. A
+        // save from the Look page must leave it byte for byte as it was:
+        // regenerating it would restamp it and could quietly change lines a
+        // different version of the emitter wrote. And someone who only uses
+        // the Look page should not find an empty shader block appear at all.
         let mut updated = existing.clone();
-        if block::split(&existing)?.is_some() || self.config != Config::default() {
+        let shade_changed = self.config != self.saved;
+        let shade_exists = block::split(&existing)?.is_some();
+        if shade_changed && (shade_exists || self.config != Config::default()) {
             updated = block::splice(&updated, &emit::emit(&self.config)?)?;
         }
         updated = if self.look.is_empty() {
@@ -1590,17 +1594,29 @@ mod tests {
     }
 
     #[test]
-    fn an_existing_shade_block_is_kept_current_even_when_empty() {
+    fn a_look_save_leaves_an_unchanged_shade_block_byte_for_byte() {
         let dir = tempfile::tempdir().unwrap();
         let cfg_path = dir.path().join("hyprland.lua");
         let mut s = session();
         s.settings.config_path = cfg_path.to_string_lossy().into_owned();
         s.settings.backups_to_keep = 0;
-        std::fs::write(&cfg_path, block::splice("", "-- old body\n").unwrap()).unwrap();
+        // A block an older emitter wrote, which this one would word differently.
+        let old =
+            block::splice("-- mine\n", "-- old body\nhl.exec_cmd(\"hyprpm reload\")\n").unwrap();
+        std::fs::write(&cfg_path, &old).unwrap();
+
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 12 })).unwrap();
         s.save().unwrap();
         let written = std::fs::read_to_string(&cfg_path).unwrap();
-        assert!(written.contains(block::BEGIN));
+        assert!(written.starts_with(&old), "the shade block was touched:\n{written}");
+        assert!(written.contains("rounding = 12"));
+
+        // Changing the shade config does rewrite it.
+        s.command("rule.add", &json!({ "class": "kitty" })).unwrap();
+        s.save().unwrap();
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(!written.contains("-- old body"));
+        assert!(written.contains("rounding = 12"));
     }
 
     #[test]
