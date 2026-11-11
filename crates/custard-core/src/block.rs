@@ -15,6 +15,25 @@ pub const END: &str = "-- <<< HyprWindowShade (managed by hyprwindowshade-gui) <
 /// Prefix of the line carrying the serialised state.
 pub const STATE_PREFIX: &str = "-- hws-state-v1 ";
 
+/// The marker lines that fence one managed block.
+///
+/// A file can hold more than one block — the shader plugin's, and the look
+/// settings' — and each is found, replaced and removed by its own markers
+/// without disturbing the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Markers {
+    /// Opening marker.
+    pub begin: &'static str,
+    /// Closing marker.
+    pub end: &'static str,
+    /// What the block is called in error messages.
+    pub name: &'static str,
+}
+
+/// The HyprWindowShade block. Its markers predate hyprcustard and stay as they
+/// are, so a config written by hyprwindowshade-gui is found and read here.
+pub const SHADE: Markers = Markers { begin: BEGIN, end: END, name: "HyprWindowShade" };
+
 /// A file split around its managed block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Split {
@@ -30,8 +49,14 @@ pub struct Split {
 ///
 /// Returns `Ok(None)` when the document has no block yet.
 pub fn split(document: &str) -> Result<Option<Split>> {
-    let begins: Vec<usize> = line_positions(document, BEGIN);
-    let ends: Vec<usize> = line_positions(document, END);
+    split_with(document, &SHADE)
+}
+
+/// [`split`], for the block fenced by `markers`.
+pub fn split_with(document: &str, markers: &Markers) -> Result<Option<Split>> {
+    let begins: Vec<usize> = line_positions(document, markers.begin);
+    let ends: Vec<usize> = line_positions(document, markers.end);
+    let name = markers.name;
 
     match (begins.len(), ends.len()) {
         (0, 0) => Ok(None),
@@ -39,11 +64,10 @@ pub fn split(document: &str) -> Result<Option<Split>> {
             let b = begins[0];
             let e = ends[0];
             if e < b {
-                return Err(Error::Block(
-                    "the managed block's closing marker appears before its opening marker in \
-                     hyprland.lua — fix or delete the markers and try again"
-                        .into(),
-                ));
+                return Err(Error::Block(format!(
+                    "the {name} managed block's closing marker appears before its opening \
+                     marker in hyprland.lua — fix or delete the markers and try again"
+                )));
             }
             let begin_line_end = line_end(document, b);
             let before = document[..b].to_string();
@@ -51,16 +75,14 @@ pub fn split(document: &str) -> Result<Option<Split>> {
             let after = document[line_end(document, e)..].to_string();
             Ok(Some(Split { before, inner, after }))
         }
-        (0, _) | (_, 0) => Err(Error::Block(
-            "hyprland.lua has one half of the managed block's markers but not the other — \
-             remove the stray marker and try again"
-                .into(),
-        )),
-        _ => Err(Error::Block(
-            "hyprland.lua contains more than one HyprWindowShade managed block — remove the \
-             extra one and try again"
-                .into(),
-        )),
+        (0, _) | (_, 0) => Err(Error::Block(format!(
+            "hyprland.lua has one half of the {name} managed block's markers but not the \
+             other — remove the stray marker and try again"
+        ))),
+        _ => Err(Error::Block(format!(
+            "hyprland.lua contains more than one {name} managed block — remove the extra one \
+             and try again"
+        ))),
     }
 }
 
@@ -90,10 +112,15 @@ fn line_end(document: &str, start: usize) -> usize {
 /// `block_body` is the text that goes between the markers; the markers
 /// themselves are added here.
 pub fn splice(document: &str, block_body: &str) -> Result<String> {
-    let body = block_body.trim_end_matches('\n');
-    let block = format!("{BEGIN}\n{body}\n{END}\n");
+    splice_with(document, block_body, &SHADE)
+}
 
-    match split(document)? {
+/// [`splice`], for the block fenced by `markers`.
+pub fn splice_with(document: &str, block_body: &str, markers: &Markers) -> Result<String> {
+    let body = block_body.trim_end_matches('\n');
+    let block = format!("{}\n{body}\n{}\n", markers.begin, markers.end);
+
+    match split_with(document, markers)? {
         Some(s) => Ok(format!("{}{}{}", s.before, block, s.after)),
         None => {
             let mut out = document.to_string();
@@ -111,7 +138,12 @@ pub fn splice(document: &str, block_body: &str) -> Result<String> {
 
 /// Remove the managed block entirely, leaving the rest of the file alone.
 pub fn remove(document: &str) -> Result<String> {
-    match split(document)? {
+    remove_with(document, &SHADE)
+}
+
+/// [`remove`], for the block fenced by `markers`.
+pub fn remove_with(document: &str, markers: &Markers) -> Result<String> {
+    match split_with(document, markers)? {
         Some(s) => {
             let mut before = s.before.to_string();
             // Take back exactly the one blank line `splice` inserted when it
