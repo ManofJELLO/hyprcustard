@@ -1,5 +1,5 @@
 # Gruvbox Material, dark — softer contrast than stock Gruvbox.
-# Copy this into ~/.config/hyprwindowshade-gui/themes/ and pick it in Settings.
+# Copy this into ~/.config/hyprcustard/themes/ and pick it in Settings.
 
 name = "Gruvbox Material Dark"
 base = "gruvbox-dark"

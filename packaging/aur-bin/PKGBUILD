@@ -13,12 +13,12 @@
 # re-derives the checksum from what is actually published — which is how the
 # one below is checked rather than trusted — and writes the .SRCINFO the AUR
 # requires beside it.
-pkgname=hyprwindowshade-gui-bin
-_pkgname=hyprwindowshade-gui
-_reponame=HyprWindowShade-GUI
-pkgver=0.1.1
+pkgname=hyprcustard-bin
+_pkgname=hyprcustard
+_reponame=hyprcustard
+pkgver=0.1.0
 pkgrel=1
-pkgdesc="Qt Quick front end for the HyprWindowShade Hyprland plugin"
+pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
 url="https://github.com/ManofJELLO/$_reponame"
 license=('MIT')
@@ -34,7 +34,7 @@ depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc')
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
 optdepends=('hyprland: the compositor this configures'
-            'hyprwindowshade: the plugin this configures'
+            'hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure'
             'hyprpm: the Plugin page, which installs and reloads the plugin'
             'grim: the shader preview, which reads frames out of a nested compositor'
             'swaybg: your wallpaper behind the shader preview'
@@ -43,7 +43,9 @@ optdepends=('hyprland: the compositor this configures'
 # debug package from.
 options=('!strip' '!debug')
 source_x86_64=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$_pkgname-$pkgver-$CARCH.tar.gz")
-sha256sums_x86_64=('51c24e7f6d03f36d39ee65f2d37671024ffe852e631d617c1c37912868778ccc')
+# No hyprcustard release exists yet; `make aur-bin` fills this in from the
+# published asset once one does.
+sha256sums_x86_64=('SKIP')
 
 package() {
     cd "$_pkgname-$pkgver-$CARCH"

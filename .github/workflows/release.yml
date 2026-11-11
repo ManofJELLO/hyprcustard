@@ -38,7 +38,7 @@ jobs:
       - name: Test
         # Only the engine: the UI needs a compositor, and the preview tests
         # are ignored by default for the same reason.
-        run: cargo test --locked -p hws-core
+        run: cargo test --locked -p custard-core
 
       - name: Build
         run: cargo build --release --locked
@@ -47,10 +47,10 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           [ -n "$version" ] || version=$(git rev-parse --short HEAD)
-          dir="hyprwindowshade-gui-$version-x86_64"
+          dir="hyprcustard-$version-x86_64"
           mkdir "$dir"
-          cp target/release/hyprwindowshade-gui "$dir/"
-          cp packaging/hyprwindowshade-gui.desktop LICENSE README.md "$dir/"
+          cp target/release/hyprcustard "$dir/"
+          cp packaging/hyprcustard.desktop LICENSE README.md "$dir/"
           tar -czf "$dir.tar.gz" "$dir"
           sha256sum "$dir.tar.gz" | tee "$dir.tar.gz.sha256"
           # The line the AUR package needs, where the maintainer can find it.
@@ -67,5 +67,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            hyprwindowshade-gui-*-x86_64.tar.gz
-            hyprwindowshade-gui-*-x86_64.tar.gz.sha256
+            hyprcustard-*-x86_64.tar.gz
+            hyprcustard-*-x86_64.tar.gz.sha256

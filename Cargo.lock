@@ -172,6 +172,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "custard-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "png",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml",
+]
+
+[[package]]
+name = "custard-gui"
+version = "0.1.0"
+dependencies = [
+ "custard-core",
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "cxx-qt-lib",
+ "serde_json",
+]
+
+[[package]]
 name = "cxx"
 version = "1.0.202"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -442,33 +469,6 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
-
-[[package]]
-name = "hws-core"
-version = "0.1.1"
-dependencies = [
- "chrono",
- "dirs",
- "png",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "toml",
-]
-
-[[package]]
-name = "hws-gui"
-version = "0.1.1"
-dependencies = [
- "cxx",
- "cxx-qt",
- "cxx-qt-build",
- "cxx-qt-lib",
- "hws-core",
- "serde_json",
-]
 
 [[package]]
 name = "iana-time-zone"

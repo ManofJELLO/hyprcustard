@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/hws-core", "crates/hws-gui"]
+members = ["crates/custard-core", "crates/custard-gui"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
-repository = "https://github.com/ManofJELLO/hyprwindowshade-gui"
+repository = "https://github.com/ManofJELLO/hyprcustard"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

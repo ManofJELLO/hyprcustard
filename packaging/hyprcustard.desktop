@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=HyprCustard
+GenericName=Hyprland theming
+Comment=Theme Hyprland: window and layer shaders, rules and keybinds
+Exec=hyprcustard
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=hyprland;theme;shader;glsl;wayland;
+StartupNotify=true

@@ -2,9 +2,9 @@ PREFIX ?= /usr/local
 DESTDIR ?=
 CARGO ?= cargo
 
-BIN := hyprwindowshade-gui
+BIN := hyprcustard
 QMLLINT ?= qmllint
-QML_FILES := $(shell find crates/hws-gui/qml -name '*.qml')
+QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
 .PHONY: all build release test check install uninstall clean shots aur-bin
 
@@ -18,10 +18,10 @@ release:
 
 # The engine is where the decisions live, and it needs no display to test.
 test:
-	$(CARGO) test -p hws-core
+	$(CARGO) test -p custard-core
 
 # clippy builds the crate, and that build is what writes the QML module the
-# linter needs to resolve `import dev.hyprwindowshade.gui` — so it has to come
+# linter needs to resolve `import dev.hyprcustard.gui` — so it has to come
 # first. qmllint reads what the running engine tolerates but no static tool
 # should have to: reserved words, shadowed properties, bindings to nothing.
 check:
@@ -51,7 +51,7 @@ uninstall:
 # Render every page to a PNG without a compositor.
 shots: build
 	@mkdir -p shots
-	HWS_SHOT_DIR=$(PWD)/shots QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+	CUSTARD_SHOT_DIR=$(PWD)/shots QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 		./target/debug/$(BIN) || true
 
 # Stage the AUR package, ready to copy into the AUR clone and push.
@@ -70,7 +70,7 @@ aur-bin:
 	cd target/aur-bin && updpkgsums && makepkg --printsrcinfo > .SRCINFO
 	@echo
 	@echo 'target/aur-bin holds PKGBUILD and .SRCINFO. To publish:'
-	@echo '  git clone ssh://aur@aur.archlinux.org/hyprwindowshade-gui-bin.git'
+	@echo '  git clone ssh://aur@aur.archlinux.org/hyprcustard-bin.git'
 	@echo '  cp target/aur-bin/PKGBUILD target/aur-bin/.SRCINFO <clone>/'
 	@echo '  cd <clone> && git commit -am "..." && git push'
 

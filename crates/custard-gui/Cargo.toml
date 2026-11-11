@@ -1,0 +1,23 @@
+[package]
+name = "custard-gui"
+description = "Qt Quick front end for theming Hyprland"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hyprcustard"
+path = "src/main.rs"
+
+[dependencies]
+custard-core = { path = "../custard-core" }
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }
+serde_json.workspace = true
+
+[build-dependencies]
+# link_qt_object_files is what makes a Cargo-only build (no CMake) link a
+# QML module correctly.
+cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }

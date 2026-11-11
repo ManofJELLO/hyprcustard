@@ -1,9 +1,13 @@
-# hyprwindowshade-gui
+# hyprcustard
 
-A Qt Quick front end for [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade),
-the Hyprland plugin that applies GLSL fragment shaders to individual windows and layers.
+A theming GUI for Hyprland, written in Qt Quick.
 
-It does two things:
+It grows out of [hyprwindowshade-gui](https://github.com/ManofJELLO/HyprWindowShade-GUI)
+and does everything that did, with the rest of Hyprland theming to follow. Today
+that means [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade), the
+Hyprland plugin that applies GLSL fragment shaders to individual windows and layers.
+
+So far it does two things:
 
 * **Writes the plugin's section of `hyprland.lua` for you** — window rules and their shader
   tags, layer shaders, open and close animations, keybinds and startup calls — into a block
@@ -90,39 +94,27 @@ of `hyprland`.
 
 ## Install
 
-### On Arch
+There is no hyprcustard release yet, so for now [build from source](#build-from-source).
 
-The package is `hyprwindowshade-gui-bin`: the binary from the latest release,
-built in an Arch container against current Qt and glibc, so installing it costs
-a download rather than a Rust toolchain and a compile.
-
-```sh
-git clone https://github.com/ManofJELLO/HyprWindowShade-GUI
-cd HyprWindowShade-GUI/packaging/aur-bin
-makepkg -si
-```
-
-It is not on the AUR yet — new account registration there is paused while they
-deal with a wave of bot signups, and this is waiting on it. The PKGBUILD above
-is the one that will be pushed when it reopens, checksum and all, so nothing
-about the package changes when it lands.
-
-### Anywhere else
-
-Every release has a `hyprwindowshade-gui-<version>-x86_64.tar.gz` on its
-[releases page](https://github.com/ManofJELLO/HyprWindowShade-GUI/releases)
+Once there is one, every release will have a `hyprcustard-<version>-x86_64.tar.gz`
 holding the binary, the desktop entry, the licence and this README, with a
-`.sha256` beside it. The binary needs nothing but Qt 6 — the QML is compiled
-into it — so unpacking it somewhere on your `PATH` is a complete install.
+`.sha256` beside it, and `packaging/aur-bin` will install it on Arch as
+`hyprcustard-bin`. The binary needs nothing but Qt 6, because the QML is compiled
+into it.
 
-It is built against current Arch's Qt and glibc, which is the floor it sets:
-on a distribution further behind, build from source instead.
+### Coming from hyprwindowshade-gui
+
+hyprcustard reads and writes the same managed block in `hyprland.lua`, so your
+rules, layers and keybinds show up as they are. The first time it starts it copies
+`settings.toml` and `themes/` from `~/.config/hyprcustard/` into
+`~/.config/hyprcustard/`, and leaves the old directory alone. The two apps can be
+installed side by side, but don't edit with both at once.
 
 ## Build from source
 
 ```sh
-git clone https://github.com/ManofJELLO/HyprWindowShade-GUI
-cd HyprWindowShade-GUI
+git clone https://github.com/ManofJELLO/hyprcustard
+cd hyprcustard
 cargo build --release
 ```
 
@@ -132,7 +124,7 @@ If `cargo` cannot find Qt, point it at qmake:
 QMAKE=/usr/bin/qmake6 cargo build --release
 ```
 
-Then either run `./target/release/hyprwindowshade-gui`, or install it with the desktop entry:
+Then either run `./target/release/hyprcustard`, or install it with the desktop entry:
 
 ```sh
 sudo make install          # /usr/local by default
@@ -143,8 +135,8 @@ make install PREFIX=~/.local
 Build as yourself first, or root's artifacts end up in `target/` and your next
 `cargo build` cannot clean them.
 
-Two `PKGBUILD`s live in `packaging/`: `aur-bin/` is the package described
-above, which installs a released binary, and the one beside it builds from
+Two `PKGBUILD`s live in `packaging/`: `aur-bin/` installs a released
+binary, and the one beside it builds from
 source instead.
 
 ---
@@ -159,8 +151,11 @@ Everything the app generates lives between two marker lines:
 -- <<< HyprWindowShade (managed by hyprwindowshade-gui) <<<
 ```
 
+The markers still name hyprwindowshade-gui on purpose: they are how the block is found,
+and keeping them means a config written by either app opens in the other.
+
 Anything above or below is preserved byte for byte. Before every write the file is copied to
-`~/.config/hyprwindowshade-gui/backups/` with a timestamp, and the write itself is atomic —
+`~/.config/hyprcustard/backups/` with a timestamp, and the write itself is atomic —
 a crash mid-save cannot leave you with half a config, which on Hyprland means a session that
 will not start.
 
@@ -378,7 +373,7 @@ variant. The accent is the desktop's own accent colour where the platform report
 
 **Gruvbox Dark** and **Gruvbox Light** ship with the app and ignore Qt entirely, so they
 look the same on any desktop. Anything else is a TOML file in
-`~/.config/hyprwindowshade-gui/themes/`; the file stem is the theme's name in the picker.
+`~/.config/hyprcustard/themes/`; the file stem is the theme's name in the picker.
 *Settings → Write an example theme* drops a fully commented one there.
 
 ```toml
@@ -443,10 +438,10 @@ write outside your home directory: its plugin store under `/var/cache/hyprpm`, a
 Hyprland headers. There is no terminal behind a window to type that password into, so:
 
 * the operation runs in a session of its own, started with `setsid`;
-* `SUDO_ASKPASS` points at this app, re-run as `hyprwindowshade-gui --askpass`;
+* `SUDO_ASKPASS` points at this app, re-run as `hyprcustard         --askpass`;
 * sudo, having no terminal to read from, runs that helper instead;
 * the helper connects back to the window over a unix socket in
-  `$XDG_RUNTIME_DIR/hyprwindowshade-gui/`, which is created mode 0700;
+  `$XDG_RUNTIME_DIR/hyprcustard/`, which is created mode 0700;
 * what you type into the dialog goes straight back down the socket to sudo.
 
 The password is never written to disk, never appears in a command line or in the environment,
@@ -488,7 +483,7 @@ route does not apply, a `doas`-only machine for instance, since `doas` has no as
 | Repository | Where **Install** takes the plugin from. Default `https://github.com/ManofJELLO/HyprWindowShade`. |
 | Plugin name | What `hyprpm` calls it, which `enable`, `disable` and `remove` take. Default `HyprWindowShade`. |
 
-App settings live in `~/.config/hyprwindowshade-gui/settings.toml`. A malformed file is
+App settings live in `~/.config/hyprcustard/settings.toml`. A malformed file is
 reported and ignored, never silently overwritten.
 
 ---
@@ -496,17 +491,17 @@ reported and ignored, never silently overwritten.
 ## Command line
 
 ```sh
-hyprwindowshade-gui                 # the app
-hyprwindowshade-gui --print-state   # the whole state document as JSON
-hyprwindowshade-gui --print-block   # the Lua that would be written
-hyprwindowshade-gui --askpass       # sudo's askpass helper, for the Plugin page
+hyprcustard                 # the app
+hyprcustard --print-state   # the whole state document as JSON
+hyprcustard --print-block   # the Lua that would be written
+hyprcustard --askpass       # sudo's askpass helper, for the Plugin page
 ```
 
 The two `--print-*` flags do not start Qt, which makes them useful on a machine where the GUI
 will not come up, and in a script. `--askpass` is for sudo to call, not for people: see
 [Installing the plugin](#installing-the-plugin).
 
-`HWS_SHOT_DIR=<dir>` renders each page to a PNG there and quits — how the screenshots in this
+`CUSTARD_SHOT_DIR=<dir>` renders each page to a PNG there and quits — how the screenshots in this
 README were made, and how the layout is checked without a compositor.
 
 ---
@@ -515,10 +510,10 @@ README were made, and how the layout is checked without a compositor.
 
 Two crates:
 
-* **`hws-core`** — everything that decides anything. The config model, the Lua emitter, the
+* **`custard-core`** — everything that decides anything. The config model, the Lua emitter, the
   managed-block reader and writer, the GLSL parser and patcher, the importer, themes, and the
-  `hyprctl` calls. No Qt, no UI, and covered by unit tests: `cargo test -p hws-core`.
-* **`hws-gui`** — the Qt layer. One `Backend` singleton with a JSON state property, a `run`
+  `hyprctl` calls. No Qt, no UI, and covered by unit tests: `cargo test -p custard-core`.
+* **`custard-gui`** — the Qt layer. One `Backend` singleton with a JSON state property, a `run`
   method and a `query` method. The QML reads state and sends commands; it holds no
   configuration logic of its own.
 
@@ -526,7 +521,7 @@ That split is the reason the interesting parts can be tested without a display o
 compositor, and the reason a UI bug cannot corrupt a config.
 
 ```
-crates/hws-core/src/
+crates/custard-core/src/
     model.rs      the configuration, and the twenty tag slots
     emit.rs       model  -> Lua
     block.rs      the marker block, and the state blob inside it
@@ -535,7 +530,7 @@ crates/hws-core/src/
     theme.rs      the built-ins, and the TOML loader
     hyprctl.rs    clients, layers, dispatch
     session.rs    the facade: one state document, one command entry point
-crates/hws-gui/
+crates/custard-gui/
     src/bridge.rs the CXX-Qt bridge, and nothing else
     qml/          Theme and App singletons, components, six pages
 ```
