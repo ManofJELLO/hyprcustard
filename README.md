@@ -109,7 +109,7 @@ into it.
 
 hyprcustard reads and writes the same managed block in `hyprland.lua`, so your
 rules, layers and keybinds show up as they are. The first time it starts it copies
-`settings.toml` and `themes/` from `~/.config/hyprcustard/` into
+`settings.toml` and `themes/` from `~/.config/hyprwindowshade-gui/` into
 `~/.config/hyprcustard/`, and leaves the old directory alone. The two apps can be
 installed side by side, but don't edit with both at once.
 
