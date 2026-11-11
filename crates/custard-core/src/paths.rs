@@ -33,6 +33,12 @@ pub fn default_shader_dir() -> PathBuf {
 pub fn app_config_dir() -> PathBuf {
     match std::env::var_os("CUSTARD_CONFIG_DIR") {
         Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        // A unit test must never reach the real directory. They used to: a
+        // save with `backups_to_keep = 0` pruned every real backup of
+        // hyprland.lua, and the first anyone knew was that they were gone.
+        _ if cfg!(test) => {
+            std::env::temp_dir().join(format!("hyprcustard-test-{}", std::process::id()))
+        }
         _ => config_home().join("hyprcustard"),
     }
 }
@@ -139,7 +145,9 @@ pub fn backup(path: &Path, keep: usize) -> Result<Option<PathBuf>> {
 /// Separate so the naming and pruning can be exercised without writing into
 /// the real configuration directory.
 fn backup_into(dir: &Path, path: &Path, keep: usize) -> Result<Option<PathBuf>> {
-    if !path.exists() {
+    // Keeping none means taking none — not taking one and then pruning every
+    // older copy down to nothing, which is what this did.
+    if keep == 0 || !path.exists() {
         return Ok(None);
     }
     std::fs::create_dir_all(dir).map_err(|e| Error::io(dir, e))?;
@@ -338,6 +346,25 @@ mod tests {
                 "hyprland.lua.20260918-071638-2.bak",
             ]
         );
+    }
+
+    #[test]
+    fn keeping_none_takes_none_and_deletes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f.lua");
+        std::fs::write(&file, "x").unwrap();
+        let backups = dir.path().join("backups");
+        let first = backup_into(&backups, &file, 3).unwrap().unwrap();
+        assert!(backup_into(&backups, &file, 0).unwrap().is_none());
+        assert!(first.exists(), "an existing backup was pruned");
+    }
+
+    #[test]
+    fn tests_never_see_the_real_config_directory() {
+        if std::env::var_os("CUSTARD_CONFIG_DIR").is_some() {
+            return;
+        }
+        assert!(app_config_dir().starts_with(std::env::temp_dir()), "{:?}", app_config_dir());
     }
 
     #[test]
