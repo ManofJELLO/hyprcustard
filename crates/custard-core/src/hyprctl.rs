@@ -293,6 +293,14 @@ fn option(name: &str) -> Option<RawOption> {
     parsed.set.then_some(parsed)
 }
 
+/// Whether the config set an option at all, as opposed to it holding
+/// Hyprland's default. `None` when Hyprland cannot be asked.
+pub fn option_is_set(name: &str) -> Option<bool> {
+    let out = run(&["getoption", name, "-j"]).ok()?;
+    let parsed: RawOption = serde_json::from_str(&out).ok()?;
+    Some(parsed.set)
+}
+
 /// An integer option, or `None` when it is missing or another type.
 ///
 /// Hyprland reports a `bool` option as an int in some versions, so a boolean

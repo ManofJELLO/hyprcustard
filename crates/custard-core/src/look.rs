@@ -64,14 +64,25 @@ pub enum Group {
     Shadow,
     /// Background blur.
     Blur,
+    /// A coloured glow around windows.
+    Glow,
+    /// The desktop behind everything, the splash, and the cursor.
+    Desktop,
     /// Animations, as a whole.
     Motion,
 }
 
 impl Group {
     /// Every group, in page order.
-    pub const ALL: [Group; 5] =
-        [Group::Borders, Group::Windows, Group::Shadow, Group::Blur, Group::Motion];
+    pub const ALL: [Group; 7] = [
+        Group::Borders,
+        Group::Windows,
+        Group::Shadow,
+        Group::Glow,
+        Group::Blur,
+        Group::Desktop,
+        Group::Motion,
+    ];
 
     /// The heading the page shows.
     pub fn label(self) -> &'static str {
@@ -80,6 +91,8 @@ impl Group {
             Group::Windows => "Windows",
             Group::Shadow => "Shadow",
             Group::Blur => "Blur",
+            Group::Glow => "Glow",
+            Group::Desktop => "Desktop and cursor",
             Group::Motion => "Animation",
         }
     }
@@ -107,6 +120,10 @@ pub struct Opt {
     /// Hyprland's own default, as JSON in the form [`parse`] takes. Shown when
     /// Hyprland is not running to ask.
     pub default: &'static str,
+    /// For an option that, left unset, takes another's value — the unfocused
+    /// shadow colour is the focused one unless set — that other option's key.
+    /// Empty otherwise.
+    pub follows: &'static str,
 }
 
 const fn opt(
@@ -118,7 +135,13 @@ const fn opt(
     default: &'static str,
     hint: &'static str,
 ) -> Opt {
-    Opt { key, group, label, hint, kind, min, max, step, default }
+    Opt { key, group, label, hint, kind, min, max, step, default, follows: "" }
+}
+
+/// `o`, taking `key`'s value while it is not set itself.
+const fn following(mut o: Opt, key: &'static str) -> Opt {
+    o.follows = key;
+    o
 }
 
 const NONE: (f64, f64, f64) = (0.0, 0.0, 0.0);
@@ -250,6 +273,69 @@ pub static OPTIONS: &[Opt] = &[
         "[0,0]",
         "",
     ),
+    following(
+        opt(
+            "decoration.shadow.color_inactive",
+            Group::Shadow,
+            "Unfocused colour",
+            Kind::Color,
+            NONE,
+            r##""#ee1a1a1a""##,
+            "",
+        ),
+        "decoration.shadow.color",
+    ),
+    opt(
+        "decoration.shadow.scale",
+        Group::Shadow,
+        "Scale",
+        Kind::Float,
+        UNIT,
+        "1",
+        "Below 1 the shadow is smaller than the window, so it shows only past the offset.",
+    ),
+    opt(
+        "decoration.shadow.sharp",
+        Group::Shadow,
+        "Sharp edge",
+        Kind::Bool,
+        NONE,
+        "false",
+        "A hard-edged shadow with no falloff, like a solid offset copy of the window.",
+    ),
+    // --- glow ---
+    opt(
+        "decoration.glow.enabled",
+        Group::Glow,
+        "Glow",
+        Kind::Bool,
+        NONE,
+        "false",
+        "A soft coloured light around windows, drawn like a shadow.",
+    ),
+    opt("decoration.glow.range", Group::Glow, "Size", Kind::Int, (0.0, 100.0, 1.0), "10", ""),
+    opt(
+        "decoration.glow.render_power",
+        Group::Glow,
+        "Falloff",
+        Kind::Int,
+        (1.0, 4.0, 1.0),
+        "3",
+        "Higher is a harder edge.",
+    ),
+    opt("decoration.glow.color", Group::Glow, "Colour", Kind::Color, NONE, r##""#ee33ccff""##, ""),
+    following(
+        opt(
+            "decoration.glow.color_inactive",
+            Group::Glow,
+            "Unfocused colour",
+            Kind::Color,
+            NONE,
+            r##""#ee33ccff""##,
+            "",
+        ),
+        "decoration.glow.color",
+    ),
     // --- blur ---
     opt(
         "decoration.blur.enabled",
@@ -338,6 +424,88 @@ pub static OPTIONS: &[Opt] = &[
         "decoration.blur.special",
         Group::Blur,
         "Blur behind special workspaces",
+        Kind::Bool,
+        NONE,
+        "false",
+        "",
+    ),
+    opt(
+        "decoration.blur.input_methods",
+        Group::Blur,
+        "Blur input method popups",
+        Kind::Bool,
+        NONE,
+        "false",
+        "The candidate windows of an input method, such as fcitx5's.",
+    ),
+    opt(
+        "decoration.blur.new_optimizations",
+        Group::Blur,
+        "Optimised blur",
+        Kind::Bool,
+        NONE,
+        "true",
+        "Cheaper blur that skips redrawing what has not changed. Leave on unless it misbehaves.",
+    ),
+    // --- desktop and cursor ---
+    opt(
+        "general.gaps_workspaces",
+        Group::Desktop,
+        "Gap between workspaces",
+        Kind::Int,
+        (0.0, 200.0, 1.0),
+        "0",
+        "Space between workspaces while one slides in for another.",
+    ),
+    opt(
+        "misc.background_color",
+        Group::Desktop,
+        "Background colour",
+        Kind::Color,
+        NONE,
+        r##""#ff111111""##,
+        "Behind the wallpaper — what shows when there is none.",
+    ),
+    opt(
+        "misc.disable_hyprland_logo",
+        Group::Desktop,
+        "Hide the Hyprland logo",
+        Kind::Bool,
+        NONE,
+        "false",
+        "The default wallpaper's logo, when no wallpaper tool is running.",
+    ),
+    opt(
+        "misc.disable_splash_rendering",
+        Group::Desktop,
+        "Hide the splash text",
+        Kind::Bool,
+        NONE,
+        "false",
+        "",
+    ),
+    opt(
+        "misc.col.splash",
+        Group::Desktop,
+        "Splash text colour",
+        Kind::Color,
+        NONE,
+        r##""#55ffffff""##,
+        "",
+    ),
+    opt(
+        "cursor.inactive_timeout",
+        Group::Desktop,
+        "Hide an idle cursor after",
+        Kind::Float,
+        (0.0, 30.0, 0.5),
+        "0",
+        "Seconds without moving; 0 never hides it.",
+    ),
+    opt(
+        "cursor.hide_on_key_press",
+        Group::Desktop,
+        "Hide the cursor while typing",
         Kind::Bool,
         NONE,
         "false",
@@ -808,13 +976,23 @@ pub fn read_live() -> Result<BTreeMap<String, LookValue>> {
                s = 'g ' .. n(v.angle or 0) .. ' ' .. table.concat(c, ' ') \
              elseif v.top then s = 's ' .. v.top .. ' ' .. v.right .. ' ' .. v.bottom .. ' ' .. v.left \
              elseif v.x then s = 'v ' .. n(v.x) .. ' ' .. n(v.y) end \
+           elseif t == 'string' and tonumber(v) then s = 'g 0 ' .. hex(v) \
            end \
            if s then out[#out + 1] = k .. ' ' .. s end \
          end \
          return table.concat(out, '\\n')",
         keys = keys.join(", ")
     );
-    Ok(parse_live(&hyprctl_lua("repl", &code)?))
+    let mut live = parse_live(&hyprctl_lua("repl", &code)?);
+
+    // An unset "follows" option reads back as white, not as the value it is
+    // actually using. Only `getoption` says whether it was set.
+    for o in OPTIONS.iter().filter(|o| !o.follows.is_empty()) {
+        if !crate::hyprctl::option_is_set(&o.key.replace('.', ":")).unwrap_or(true) {
+            live.remove(o.key);
+        }
+    }
+    Ok(live)
 }
 
 /// Turn [`read_live`]'s answer into values, coercing each to its option's
@@ -882,7 +1060,15 @@ pub fn view(look: &Look, saved: &Look, live: &BTreeMap<String, LookValue>, runni
         .map(|o| {
             let own = look.values.get(o.key);
             let reported = live.get(o.key);
-            let value = own.or(reported).cloned().unwrap_or_else(|| default_of(o));
+            // Unset, and so showing whatever it follows.
+            let following = !o.follows.is_empty() && own.is_none() && reported.is_none();
+            let shown = |key: &str| look.values.get(key).or_else(|| live.get(key)).cloned();
+            let value = if following {
+                shown(o.follows).or_else(|| find(o.follows).map(default_of))
+            } else {
+                own.or(reported).cloned()
+            }
+            .unwrap_or_else(|| default_of(o));
             json!({
                 "key": o.key,
                 "group": o.group,
@@ -899,7 +1085,10 @@ pub fn view(look: &Look, saved: &Look, live: &BTreeMap<String, LookValue>, runni
                 "changed": own != saved.values.get(o.key),
                 // Hyprland did not answer for it: running an older version,
                 // or not running at all.
-                "unknown": reported.is_none(),
+                "unknown": reported.is_none() && !following,
+                // Not set anywhere, so it takes another option's value.
+                "following": following,
+                "follows": o.follows,
             })
         })
         .collect();

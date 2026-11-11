@@ -10,7 +10,7 @@ Hyprland plugin that applies GLSL fragment shaders to individual windows and lay
 So far it does three things:
 
 * **Sets Hyprland's own look** — gaps, borders and their gradients, rounding, opacity, dimming,
-  shadow and blur — live on your desktop as you drag, saved into a block of its own that holds
+  shadow, glow, blur, the desktop background and cursor hiding — live on your desktop as you drag, saved into a block of its own that holds
   only what you changed. See [The Look page](#the-look-page).
 * **Edits animations and their curves** — every leaf of Hyprland's animation tree, with where
   its values come from, an editor for dragging a curve's control points, and a preview playing

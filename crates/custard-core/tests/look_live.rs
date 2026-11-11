@@ -12,7 +12,10 @@ use custard_core::look;
 #[ignore = "needs a running Hyprland"]
 fn every_option_survives_a_write_and_read_back() {
     let before = look::read_live().expect("read the look from Hyprland");
-    assert_eq!(before.len(), look::OPTIONS.len(), "Hyprland did not answer for every option");
+    // Every option answers, except one that follows another and is unset.
+    for o in look::OPTIONS {
+        assert!(before.contains_key(o.key) || !o.follows.is_empty(), "no answer for {}", o.key);
+    }
 
     let all: Vec<(&str, &look::LookValue)> = before.iter().map(|(k, v)| (k.as_str(), v)).collect();
     look::apply_live(&all).expect("Hyprland accepted the emitted Lua");

@@ -67,6 +67,8 @@ Item {
             return "decoration.shadow.enabled"
         if (key.indexOf("decoration.blur.") === 0 && key !== "decoration.blur.enabled")
             return "decoration.blur.enabled"
+        if (key.indexOf("decoration.glow.") === 0 && key !== "decoration.glow.enabled")
+            return "decoration.glow.enabled"
         return ""
     }
 

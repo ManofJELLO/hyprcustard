@@ -147,6 +147,15 @@ Item {
                         row.host.tryLive(row.key, c)
                 })
             }
+            Text {
+                // Unset, and so wearing the focused colour.
+                visible: row.opt.following === true
+                text: "same as " + (((row.host && row.host.byKey[row.opt.follows]) || {}).label
+                                    || "its pair").toLowerCase() + " until set"
+                color: Theme.muted
+                font.pixelSize: Theme.fontSizeSmall
+                font.italic: true
+            }
             LineEdit {
                 id: hex
                 Layout.preferredWidth: 120
