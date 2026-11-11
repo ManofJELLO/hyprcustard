@@ -40,17 +40,20 @@ ApplicationWindow {
     palette.highlight: Theme.accent
     palette.highlightedText: Theme.onAccent
 
+    // `section` groups the sidebar: Hyprland's own settings, then the
+    // HyprWindowShade plugin's, then the app's. A heading is drawn wherever
+    // the section changes, so the order here is the order on screen.
     readonly property var pages: [
-        { label: "Look",     hint: "Borders, blur, gaps" },
-        { label: "Animation", hint: "Curves and speeds" },
-        { label: "Themes",   hint: "Save and switch looks" },
-        { label: "Rules",    hint: "Windows" },
-        { label: "Shaders",  hint: "Files" },
-        { label: "Layers",   hint: "Bars, launchers" },
-        { label: "Keybinds", hint: "And startup" },
-        { label: "Preview",  hint: "And import" },
-        { label: "Plugin",   hint: "Install, update" },
-        { label: "Settings", hint: "" }
+        { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland" },
+        { label: "Animation", hint: "Curves and speeds",   section: "Hyprland" },
+        { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
+        { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
+        { label: "Shaders",   hint: "Files",               section: "HyprWindowShade" },
+        { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade" },
+        { label: "Keybinds",  hint: "And startup",         section: "HyprWindowShade" },
+        { label: "Preview",   hint: "And import",          section: "HyprWindowShade" },
+        { label: "Plugin",    hint: "Install, update",     section: "HyprWindowShade" },
+        { label: "Settings",  hint: "",                    section: "" }
     ]
 
     property int currentPage: 0
@@ -290,8 +293,28 @@ ApplicationWindow {
                         required property var modelData
                         required property int index
 
+                        readonly property string section: navItem.modelData.section || ""
+                        readonly property bool startsSection: navItem.index === 0
+                            || (window.pages[navItem.index - 1].section || "") !== navItem.section
+
                         Layout.fillWidth: true
                         Layout.preferredHeight: 44
+                        // Room for the section's heading, or just a gap
+                        // before a page that belongs to no section.
+                        Layout.topMargin: !navItem.startsSection ? 0
+                                          : (navItem.section === "" ? Theme.pad
+                                                                    : (navItem.index === 0 ? 18 : 30))
+
+                        Text {
+                            visible: navItem.startsSection && navItem.section !== ""
+                            text: navItem.section.toUpperCase()
+                            x: 8
+                            y: -18
+                            color: Theme.muted
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: 1
+                        }
                         radius: Theme.radiusSmall
                         color: window.currentPage === navItem.index
                                ? Theme.selection
