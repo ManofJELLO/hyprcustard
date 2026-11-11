@@ -12,6 +12,9 @@ So far it does three things:
 * **Sets Hyprland's own look** — gaps, borders and their gradients, rounding, opacity, dimming,
   shadow and blur — live on your desktop as you drag, saved into a block of its own that holds
   only what you changed. See [The Look page](#the-look-page).
+* **Edits animations and their curves** — every leaf of Hyprland's animation tree, with where
+  its values come from, an editor for dragging a curve's control points, and a preview playing
+  on that curve at that speed. See [Animations](#animations).
 * **Writes the plugin's section of `hyprland.lua` for you** — window rules and their shader
   tags, layer shaders, open and close animations, keybinds and startup calls — into a block
   between two marker comments. The rest of your config is never touched.
@@ -30,7 +33,7 @@ palette is a small TOML file.
 
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
-- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page)
+- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Animations](#animations)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -263,6 +266,37 @@ because Hyprland has no way to unset a single option.
 Colours are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
 `rgba(...)`, `0xaarrggbb` or `#aarrggbb`. A border gradient can be typed the way a
 `hyprland.conf` writes one: `33ccffee 00ff99ee 45deg`.
+
+## Animations
+
+The Animation page lists every leaf of Hyprland's animation tree, from `global` down to
+`specialWorkspaceOut`, with where its values come from: **set here**, **set in your config**,
+**inherits from** a parent, or **Hyprland's default**. Hyprland resolves a leaf nothing sets
+from its nearest ancestor, so setting `windows` reaches `windowsIn`, `windowsOut` and
+`windowsMove` until one of those is set on its own. Changing anything on a leaf sets that leaf,
+with all its values at once, the way `hl.animation` takes them.
+
+For the selected leaf you get:
+
+* **Animate**, **speed** (Hyprland counts in tenths of a second; the page shows milliseconds),
+  **curve**, and **style** with its parameter — a side for `slide`, a percentage for `popin`
+  and `slidefade`. The styles offered are the documented ones for that kind of leaf, plus
+  whatever the leaf already uses; Hyprland has the final word, and says so when it refuses one.
+* **A preview** — a stand-in window doing roughly what the style does, on the curve and at the
+  speed, over and over. It is an approximation; with live edits on, the real animation is
+  already on the desktop.
+* **The curve**, with its two control points to drag. A point above the dashed box overshoots.
+  Dragging a curve defined in your config redefines it here, for everything that uses it;
+  **Copy as new curve** makes a copy under a new name for just this leaf instead.
+
+Curves and animations go into the look block on Save, after its `hl.config` call — curves
+first, so no animation names a curve before it exists:
+
+```lua
+hl.curve("snappy", { type = "bezier", points = { {0.2, 1}, {0.3, 1} } })
+
+hl.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
+```
 
 ## Shader parameters
 

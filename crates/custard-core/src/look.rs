@@ -575,7 +575,7 @@ pub fn default_of(opt: &Opt) -> LookValue {
 
 /// The options the user has set here, by key. Anything absent comes from
 /// their own config.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Look {
     /// Schema version of this blob.
     #[serde(default = "one")]
@@ -583,16 +583,55 @@ pub struct Look {
     /// The overrides.
     #[serde(default)]
     pub values: BTreeMap<String, LookValue>,
+    /// Easing curves defined or redefined here, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub curves: BTreeMap<String, crate::motion::Points>,
+    /// Animation leaves set here, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub animations: BTreeMap<String, crate::motion::AnimSetting>,
 }
 
 fn one() -> u32 {
     1
 }
 
+impl Default for Look {
+    fn default() -> Self {
+        Look {
+            version: one(),
+            values: BTreeMap::new(),
+            curves: BTreeMap::new(),
+            animations: BTreeMap::new(),
+        }
+    }
+}
+
 impl Look {
     /// True when nothing is overridden, so there is no block to write.
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
+        self.values.is_empty() && self.curves.is_empty() && self.animations.is_empty()
+    }
+
+    /// How many things are set here, for the page to count.
+    pub fn len(&self) -> usize {
+        self.values.len() + self.curves.len() + self.animations.len()
+    }
+
+    /// Everything set here as Lua: the `hl.config` call, then the curves and
+    /// animations. Empty when nothing is set.
+    pub fn lua(&self) -> String {
+        let mut out = String::new();
+        if !self.values.is_empty() {
+            out.push_str(&config_call(&self.ordered()));
+        }
+        let motion = crate::motion::lua(&self.curves, &self.animations);
+        if !motion.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&motion);
+        }
+        out
     }
 
     /// Keys in page order, then any the page no longer offers (left by a
@@ -670,7 +709,7 @@ pub fn emit(look: &Look) -> Result<String> {
     out.push_str(STATE_PREFIX);
     out.push_str(&serde_json::to_string(look)?);
     out.push_str("\n\n");
-    out.push_str(&config_call(&look.ordered()));
+    out.push_str(&look.lua());
     Ok(out)
 }
 
@@ -736,7 +775,15 @@ pub fn apply_live(values: &[(&str, &LookValue)]) -> Result<()> {
 /// Every override at once — what the desktop should look like according to
 /// the app, on top of whatever the files say.
 pub fn apply_all_live(look: &Look) -> Result<()> {
-    apply_live(&look.ordered())
+    eval(look.lua().trim_end())
+}
+
+/// Run Lua in the compositor. Empty code is a no-op.
+pub fn eval(code: &str) -> Result<()> {
+    if code.trim().is_empty() {
+        return Ok(());
+    }
+    hyprctl_lua("eval", code).map(|_| ())
 }
 
 /// Read every option the page offers from the running compositor.
@@ -983,6 +1030,7 @@ mod tests {
         look.values.insert("decoration.shadow.color".into(), LookValue::Color("#661d1d1d".into()));
         look.values.insert("decoration.shadow.offset".into(), LookValue::Vec2([2.0, -3.5]));
         let body = emit(&look).unwrap();
+        assert!(body.contains(r#""version":1"#));
         assert!(body.contains(r#"color = "rgba(1d1d1d66)","#));
         assert!(body.contains("offset = { 2, -3.5 },"));
         let doc = crate::block::splice_with("-- mine\n", &body, &MARKERS).unwrap();

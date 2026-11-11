@@ -29,6 +29,7 @@ pub mod hyprpm;
 pub mod import;
 pub mod look;
 pub mod model;
+pub mod motion;
 pub mod paths;
 pub mod preview;
 pub mod session;

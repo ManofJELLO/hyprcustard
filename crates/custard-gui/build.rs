@@ -3,10 +3,12 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 fn main() {
     let files = [
         "qml/Main.qml",
+        "qml/components/AnimationDemo.qml",
         "qml/components/Badge.qml",
         "qml/components/Card.qml",
         "qml/components/ColorButton.qml",
         "qml/components/ConfirmDialog.qml",
+        "qml/components/CurveEditor.qml",
         "qml/components/Dropdown.qml",
         "qml/components/EmptyState.qml",
         "qml/components/FieldRow.qml",
@@ -20,6 +22,7 @@ fn main() {
         "qml/components/Toast.qml",
         "qml/components/Toggle.qml",
         "qml/pages/ActionEditor.qml",
+        "qml/pages/AnimationPage.qml",
         "qml/pages/BindsPage.qml",
         "qml/pages/LayersPage.qml",
         "qml/pages/LookOptionRow.qml",

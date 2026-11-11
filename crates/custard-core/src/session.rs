@@ -16,6 +16,7 @@ use crate::model::{
     base_name, Action, Bind, Config, LayerEntry, LoadMode, ShaderRef, StartupAction, Tag, TagGroup,
     TagKind, TagSlot, TagValue, WindowRule, TAGS,
 };
+use crate::motion;
 use crate::preview;
 use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
@@ -37,6 +38,8 @@ pub struct Live {
     /// The look options as the compositor has them right now, unsaved live
     /// edits included.
     pub look: BTreeMap<String, LookValue>,
+    /// The animation leaves and curves the compositor is running with.
+    pub motion: motion::LiveMotion,
 }
 
 /// Which part of the app noticed a problem.
@@ -398,6 +401,13 @@ impl Session {
                 .map(|p| json!({ "path": p, "name": base_name(p) }))
                 .collect::<Vec<_>>(),
             "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
+            "motion": motion::view(
+                &self.look.curves,
+                &self.look.animations,
+                &self.saved_look.curves,
+                &self.saved_look.animations,
+                &self.live.motion,
+            ),
             "tagCatalog": tag_catalog(),
             "uniformCatalog": uniform_catalog(),
             "problems": self.messages(),
@@ -747,6 +757,25 @@ impl Session {
                     if n == 1 { "" } else { "s" }
                 )))
             }
+            "motion.set" => self.set_animation(payload),
+            "motion.reset" => {
+                let name = payload.get("leaf").and_then(Value::as_str).unwrap_or_default();
+                if self.look.animations.remove(name).is_some() && self.look_is_live() {
+                    self.resync_look()?;
+                }
+                Ok(None)
+            }
+            "motion.resetAll" => {
+                let n = self.look.animations.len() + self.look.curves.len();
+                self.look.animations.clear();
+                self.look.curves.clear();
+                if n > 0 && self.look_is_live() {
+                    self.resync_look()?;
+                }
+                Ok(Some("Cleared every animation and curve set here".into()))
+            }
+            "curve.set" => self.set_curve(payload),
+            "curve.remove" => self.remove_curve(payload),
             "look.discard" => {
                 self.look = self.saved_look.clone();
                 if self.live.running {
@@ -813,17 +842,85 @@ impl Session {
     /// Re-read the look options from the compositor.
     fn refresh_live_look(&mut self) {
         self.live.look = look::read_live().unwrap_or_default();
+        self.live.motion = motion::read_live().unwrap_or_default();
     }
 
     /// Labels of the saved overrides the compositor does not show, after a
     /// reload — meaning something later in the file sets them again.
     fn overridden_elsewhere(&self) -> Vec<String> {
-        self.saved_look
+        let mut lost: Vec<String> = self
+            .saved_look
             .values
             .iter()
             .filter(|(k, v)| self.live.look.get(*k).is_some_and(|live| !live.same_as(v)))
             .map(|(k, _)| look::find(k).map_or_else(|| k.clone(), |o| o.label.to_lowercase()))
-            .collect()
+            .collect();
+        lost.extend(motion::not_sticking(&self.saved_look.animations, &self.live.motion));
+        lost
+    }
+
+    /// Set one animation leaf.
+    fn set_animation(&mut self, payload: &Value) -> Result<Option<String>> {
+        let name = payload.get("leaf").and_then(Value::as_str).unwrap_or_default();
+        let leaf = motion::find(name)
+            .ok_or_else(|| Error::other(format!("no animation called {name}")))?;
+        let setting = motion::parse_setting(leaf, payload.get("setting").unwrap_or(&Value::Null))?;
+        if setting.enabled && self.live.running {
+            let known = self.look.curves.contains_key(&setting.bezier)
+                || self.live.motion.curves.contains_key(&setting.bezier);
+            if !known {
+                return Err(Error::other(format!("there is no curve called {}", setting.bezier)));
+            }
+        }
+        if self.look_is_live() {
+            look::eval(motion::animation_lua(name, &setting).trim_end())?;
+            self.refresh_live_look();
+        }
+        self.look.animations.insert(name.to_string(), setting);
+        Ok(None)
+    }
+
+    /// Define or redefine one curve.
+    fn set_curve(&mut self, payload: &Value) -> Result<Option<String>> {
+        let name = payload.get("name").and_then(Value::as_str).unwrap_or_default().trim();
+        motion::check_curve_name(name)?;
+        let points = motion::parse_points(payload.get("points").unwrap_or(&Value::Null))?;
+        let fresh =
+            !self.look.curves.contains_key(name) && !self.live.motion.curves.contains_key(name);
+        if self.look_is_live() {
+            look::eval(motion::curve_lua(name, &points).trim_end())?;
+            self.live.motion.curves.insert(name.to_string(), points);
+        }
+        self.look.curves.insert(name.to_string(), points);
+        Ok(fresh.then(|| format!("Added the curve {name}")))
+    }
+
+    /// Stop defining a curve here.
+    fn remove_curve(&mut self, payload: &Value) -> Result<Option<String>> {
+        let name = payload.get("name").and_then(Value::as_str).unwrap_or_default();
+        if !self.look.curves.contains_key(name) {
+            return Err(Error::other(format!("{name} is not defined here")));
+        }
+        // Not while something set here uses it: if the curve exists only in
+        // this block, Hyprland would refuse those animations on the next read.
+        let users: Vec<&str> = self
+            .look
+            .animations
+            .iter()
+            .filter(|(_, a)| a.enabled && a.bezier == name)
+            .map(|(n, _)| n.as_str())
+            .collect();
+        if !users.is_empty() {
+            return Err(Error::other(format!(
+                "{name} is still used by {} — give those another curve first",
+                users.join(", ")
+            )));
+        }
+        self.look.curves.remove(name);
+        if self.look_is_live() {
+            self.resync_look()?;
+        }
+        Ok(Some(format!("Removed the curve {name}")))
     }
 
     /// A preview of what an import would pull in.
@@ -1218,6 +1315,7 @@ pub fn probe_live() -> Live {
             Vec::new()
         },
         look: if running { look::read_live().unwrap_or_default() } else { BTreeMap::new() },
+        motion: if running { motion::read_live().unwrap_or_default() } else { Default::default() },
     }
 }
 
@@ -1640,6 +1738,64 @@ mod tests {
         assert_eq!(gaps["overridden"], json!(true));
         assert_eq!(gaps["changed"], json!(true));
         assert_eq!(view["look"]["dirty"], json!(true));
+    }
+
+    #[test]
+    fn animations_and_curves_save_into_the_look_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("hyprland.lua");
+        std::fs::write(&cfg_path, "-- mine\n").unwrap();
+        let mut s = session();
+        s.settings.config_path = cfg_path.to_string_lossy().into_owned();
+        s.settings.backups_to_keep = 0;
+
+        s.command("curve.set", &json!({ "name": "snappy", "points": [0.2, 1, 0.3, 1] })).unwrap();
+        s.command(
+            "motion.set",
+            &json!({ "leaf": "windowsIn", "setting": {
+                "enabled": true, "speed": 3, "bezier": "snappy", "style": "popin 80%" } }),
+        )
+        .unwrap();
+        assert!(s.dirty());
+        s.save().unwrap();
+
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.contains(look::MARKERS.begin));
+        assert!(!written.contains("hl.config({"), "an empty hl.config was written");
+        let curve = written.find("hl.curve(\"snappy\"").unwrap();
+        let anim = written.find("hl.animation({ leaf = \"windowsIn\"").unwrap();
+        assert!(curve < anim, "the curve must be defined before it is used");
+        assert_eq!(read_look(&cfg_path).unwrap(), s.look);
+
+        // The curve cannot go while windowsIn uses it.
+        assert!(s.command("curve.remove", &json!({ "name": "snappy" })).is_err());
+        s.command("motion.reset", &json!({ "leaf": "windowsIn" })).unwrap();
+        s.command("curve.remove", &json!({ "name": "snappy" })).unwrap();
+        assert!(s.look.is_empty());
+    }
+
+    #[test]
+    fn animation_settings_are_checked() {
+        let mut s = session();
+        let set = |leaf: &str, style: &str| json!({ "leaf": leaf, "setting": { "speed": 2, "bezier": "default", "style": style } });
+        assert!(s.command("motion.set", &set("nope", "")).is_err());
+        assert!(s.command("motion.set", &set("fadeIn", "slide in from far")).is_err());
+        assert!(s
+            .command("curve.set", &json!({ "name": "bad name", "points": [0, 0, 1, 1] }))
+            .is_err());
+        assert!(s.look.is_empty());
+        s.command("motion.set", &set("workspaces", "slidefade 20%")).unwrap();
+        let v = s.state();
+        let ws = v["motion"]["leaves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["name"] == "workspacesIn")
+            .unwrap()
+            .clone();
+        assert_eq!(ws["source"], "inherited");
+        assert_eq!(ws["from"], "workspaces");
+        assert_eq!(ws["setting"]["style"], "slidefade 20%");
     }
 
     #[test]
