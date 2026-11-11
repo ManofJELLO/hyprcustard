@@ -89,6 +89,10 @@ pub mod qobject {
         #[cxx_name = "refresh"]
         fn refresh(self: Pin<&mut Backend>);
 
+        #[qinvokable]
+        #[cxx_name = "lookTry"]
+        fn look_try(self: &Backend, key: &QString, value: &QString) -> QString;
+
         /// Ask the compositor what is on screen, on a background thread.
         ///
         /// Returns immediately; `stateJson` updates when the answer arrives.
@@ -318,6 +322,22 @@ impl qobject::Backend {
         match answer {
             Ok(text) => QString::from(&text),
             Err(e) => QString::from(&json!({ "error": e }).to_string()),
+        }
+    }
+
+    /// Show a look value on the desktop while a control is still moving.
+    ///
+    /// Stores nothing and pushes no state — it runs for every step of a drag,
+    /// and the whole state document is far too much to rebuild that often.
+    /// Returns an empty string, or the reason it did not take.
+    pub fn look_try(&self, key: &QString, value: &QString) -> QString {
+        let Some(session) = self.rust().session.as_ref() else {
+            return QString::from("");
+        };
+        let value: Value = serde_json::from_str(&value.to_string()).unwrap_or(Value::Null);
+        match session.try_look(&key.to_string(), &value) {
+            Ok(()) => QString::from(""),
+            Err(e) => QString::from(&e.to_string()),
         }
     }
 

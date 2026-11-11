@@ -27,6 +27,7 @@ pub mod error;
 pub mod hyprctl;
 pub mod hyprpm;
 pub mod import;
+pub mod look;
 pub mod model;
 pub mod paths;
 pub mod preview;

@@ -23,6 +23,10 @@ Item {
     // A reference point on the track, or null for none.
     property var markValue: null
 
+    // True while the handle is held, so a caller feeding `value` from state
+    // can leave it alone mid-drag.
+    readonly property bool pressed: slider.pressed
+
     readonly property bool hasMark: root.markValue !== null && root.markValue !== undefined
                                     && root.markValue >= root.from && root.markValue <= root.to
 

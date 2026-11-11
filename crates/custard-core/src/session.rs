@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
+use crate::look::{self, Look, LookValue};
 use crate::model::{
     base_name, Action, Bind, Config, LayerEntry, LoadMode, ShaderRef, StartupAction, Tag, TagGroup,
     TagKind, TagSlot, TagValue, WindowRule, TAGS,
@@ -33,6 +34,9 @@ pub struct Live {
     pub classes: Vec<String>,
     /// Layer namespaces currently mapped.
     pub namespaces: Vec<String>,
+    /// The look options as the compositor has them right now, unsaved live
+    /// edits included.
+    pub look: BTreeMap<String, LookValue>,
 }
 
 /// Which part of the app noticed a problem.
@@ -69,6 +73,10 @@ pub struct Session {
     pub config: Config,
     /// The last config read from or written to disk, for the dirty check.
     saved: Config,
+    /// Hyprland look options set in the app, saved or not.
+    pub look: Look,
+    /// The look block as last read from or written to disk.
+    saved_look: Look,
     /// Shaders found in the shader directory.
     pub shaders: Vec<ShaderInfo>,
     /// Shader edits staged but not yet written, by shader path.
@@ -103,6 +111,13 @@ impl Session {
                 Config::default()
             }
         };
+        let look = match read_look(&settings.resolved_config_path()) {
+            Ok(l) => l,
+            Err(e) => {
+                problems.push(Problem { source: Source::Config, text: e.to_string() });
+                Look::default()
+            }
+        };
 
         let (themes, theme_problems) = theme::load_all();
         problems.extend(
@@ -115,6 +130,8 @@ impl Session {
             settings,
             saved: config.clone(),
             config,
+            saved_look: look.clone(),
+            look,
             shaders: Vec::new(),
             drafts: BTreeMap::new(),
             theme,
@@ -133,7 +150,7 @@ impl Session {
     /// by the Shaders page's own save, so a dirty shader must not light up a
     /// Save button that writes the Hyprland config. See [`Session::dirty_shaders`].
     pub fn dirty(&self) -> bool {
-        self.config != self.saved
+        self.config != self.saved || self.look != self.saved_look
     }
 
     /// How many shaders have edits staged but not written.
@@ -221,22 +238,52 @@ impl Session {
         let path = self.settings.resolved_config_path();
         let existing = if path.exists() { paths::read_to_string(&path)? } else { String::new() };
 
-        let body = emit::emit(&self.config)?;
-        let updated = block::splice(&existing, &body)?;
+        // Someone who only ever uses the Look page should not find an empty
+        // shader block in their config, so that block is written once there is
+        // something in it — or once it exists already, to keep it current.
+        let mut updated = existing.clone();
+        if block::split(&existing)?.is_some() || self.config != Config::default() {
+            updated = block::splice(&updated, &emit::emit(&self.config)?)?;
+        }
+        updated = if self.look.is_empty() {
+            block::remove_with(&updated, &look::MARKERS)?
+        } else {
+            block::splice_with(&updated, &look::emit(&self.look)?, &look::MARKERS)?
+        };
 
+        let look_changed = self.look != self.saved_look;
         let backup = paths::backup(&path, self.settings.backups_to_keep)?;
         paths::write_atomic(&path, &updated)?;
         self.saved = self.config.clone();
+        self.saved_look = self.look.clone();
 
         let mut msg = format!("Saved to {}", paths::contract(&path));
         if let Some(b) = backup {
             msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
         }
 
-        if self.settings.reload_after_save && self.live.running {
+        if self.live.running && self.settings.reload_after_save {
             match hyprctl::reload_config() {
                 Ok(()) => msg.push_str(" and reloaded Hyprland"),
                 Err(e) => msg.push_str(&format!(", but the reload failed: {e}")),
+            }
+        } else if self.live.running && look_changed {
+            // The desktop already shows the new look, edited live, but an
+            // override taken away is still showing until the file is re-read.
+            // A config-only reload also proves the saved block takes effect.
+            if let Err(e) = hyprctl::reload_config_only() {
+                msg.push_str(&format!(", but the reload failed: {e}"));
+            }
+        }
+        if self.live.running && look_changed {
+            self.refresh_live_look();
+            let lost = self.overridden_elsewhere();
+            if !lost.is_empty() {
+                msg.push_str(&format!(
+                    ". Something later in your config sets {} again, so the app's value does not \
+                     stick — move the HyprCustard look block below it",
+                    lost.join(", ")
+                ));
             }
         }
         Ok(msg)
@@ -246,8 +293,16 @@ impl Session {
     pub fn reload_from_disk(&mut self) -> Result<String> {
         let path = self.settings.resolved_config_path();
         let config = read_config(&path)?;
+        let look = read_look(&path)?;
+        let look_was_dirty = self.look != look;
         self.config = config.clone();
         self.saved = config;
+        self.look = look.clone();
+        self.saved_look = look;
+        // Unsaved look edits are on the desktop as well as in the app.
+        if look_was_dirty && self.live.running {
+            self.resync_look()?;
+        }
         self.rescan_shaders();
         self.refresh_theme();
         Ok(format!("Reloaded {}", paths::contract(&path)))
@@ -338,6 +393,7 @@ impl Session {
                 .iter()
                 .map(|p| json!({ "path": p, "name": base_name(p) }))
                 .collect::<Vec<_>>(),
+            "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
             "tagCatalog": tag_catalog(),
             "uniformCatalog": uniform_catalog(),
             "problems": self.messages(),
@@ -655,6 +711,52 @@ impl Session {
                 Ok(None)
             }
 
+            // --- Hyprland look ---
+            "look.set" => {
+                let key = payload.get("key").and_then(Value::as_str).unwrap_or_default();
+                let opt = look::require(key)?;
+                let value = look::parse(opt, payload.get("value").unwrap_or(&Value::Null))?;
+                // Apply before storing, so a value Hyprland refuses is never
+                // saved into the block.
+                if self.look_is_live() {
+                    look::apply_live(&[(key, &value)])?;
+                    self.live.look.insert(key.to_string(), value.clone());
+                }
+                self.look.values.insert(key.to_string(), value);
+                Ok(None)
+            }
+            "look.reset" => {
+                let key = payload.get("key").and_then(Value::as_str).unwrap_or_default();
+                if self.look.values.remove(key).is_some() && self.look_is_live() {
+                    self.resync_look()?;
+                }
+                Ok(None)
+            }
+            "look.resetAll" => {
+                let n = self.look.values.len();
+                self.look.values.clear();
+                if n > 0 && self.look_is_live() {
+                    self.resync_look()?;
+                }
+                Ok(Some(format!(
+                    "Cleared {n} look setting{} — save to take them out of hyprland.lua",
+                    if n == 1 { "" } else { "s" }
+                )))
+            }
+            "look.discard" => {
+                self.look = self.saved_look.clone();
+                if self.live.running {
+                    self.resync_look()?;
+                }
+                Ok(Some("Put the look back to what hyprland.lua says".into()))
+            }
+            "look.resync" => {
+                if self.live.running {
+                    self.resync_look()?;
+                }
+                Ok(None)
+            }
+
             // --- import ---
             "import.apply" => self.apply_import(),
 
@@ -671,6 +773,53 @@ impl Session {
 
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
+    }
+
+    /// Whether look edits should reach the compositor as they are made.
+    fn look_is_live(&self) -> bool {
+        self.live.running && self.settings.live_look_edits
+    }
+
+    /// Put one look value on the desktop without storing it — for following
+    /// a slider while it is dragged. [`Session::command`] `look.set` stores it
+    /// once the slider is let go.
+    pub fn try_look(&self, key: &str, value: &Value) -> Result<()> {
+        if !self.look_is_live() {
+            return Ok(());
+        }
+        let opt = look::require(key)?;
+        let value = look::parse(opt, value)?;
+        look::apply_live(&[(key, &value)])
+    }
+
+    /// Make the desktop match the app: re-read the file, then lay the
+    /// unsaved overrides back over it.
+    ///
+    /// Hyprland cannot unset an option, so taking an override away live means
+    /// reloading the config and re-applying everything else.
+    fn resync_look(&mut self) -> Result<()> {
+        hyprctl::reload_config_only()?;
+        if self.settings.live_look_edits {
+            look::apply_all_live(&self.look)?;
+        }
+        self.refresh_live_look();
+        Ok(())
+    }
+
+    /// Re-read the look options from the compositor.
+    fn refresh_live_look(&mut self) {
+        self.live.look = look::read_live().unwrap_or_default();
+    }
+
+    /// Labels of the saved overrides the compositor does not show, after a
+    /// reload — meaning something later in the file sets them again.
+    fn overridden_elsewhere(&self) -> Vec<String> {
+        self.saved_look
+            .values
+            .iter()
+            .filter(|(k, v)| self.live.look.get(*k).is_some_and(|live| !live.same_as(v)))
+            .map(|(k, _)| look::find(k).map_or_else(|| k.clone(), |o| o.label.to_lowercase()))
+            .collect()
     }
 
     /// A preview of what an import would pull in.
@@ -1064,7 +1213,15 @@ pub fn probe_live() -> Live {
         } else {
             Vec::new()
         },
+        look: if running { look::read_live().unwrap_or_default() } else { BTreeMap::new() },
     }
+}
+
+fn read_look(path: &Path) -> Result<Look> {
+    if !path.exists() {
+        return Ok(Look::default());
+    }
+    look::read(&paths::read_to_string(path)?)
 }
 
 fn read_config(path: &Path) -> Result<Config> {
@@ -1200,6 +1357,8 @@ mod tests {
             settings: Settings::default(),
             config: Config::default(),
             saved: Config::default(),
+            look: Look::default(),
+            saved_look: Look::default(),
             drafts: BTreeMap::new(),
             shaders: Vec::new(),
             theme: theme::gruvbox_dark(),
@@ -1399,6 +1558,72 @@ mod tests {
         assert_eq!(back.rules.len(), 1);
         assert_eq!(back.rules[0].match_.class.as_deref(), Some("kitty"));
         assert_eq!(back.rules[0].tags[0].slot, TagSlot::Inactive);
+    }
+
+    #[test]
+    fn look_settings_get_their_own_block_and_leave_out_an_empty_shade_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("hyprland.lua");
+        std::fs::write(&cfg_path, "hl.config({ decoration = { rounding = 6 } })\n").unwrap();
+
+        let mut s = session();
+        s.settings.config_path = cfg_path.to_string_lossy().into_owned();
+        s.settings.backups_to_keep = 0;
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 12 })).unwrap();
+        assert!(s.dirty());
+        s.save().unwrap();
+        assert!(!s.dirty());
+
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.starts_with("hl.config({ decoration = { rounding = 6 } })\n"));
+        assert!(written.contains(look::MARKERS.begin));
+        assert!(written.contains("        rounding = 12,\n"));
+        assert!(!written.contains(block::BEGIN), "an empty shade block was written");
+        assert_eq!(read_look(&cfg_path).unwrap(), s.look);
+
+        // Resetting the last override and saving takes the block out again.
+        s.command("look.reset", &json!({ "key": "decoration.rounding" })).unwrap();
+        assert!(s.dirty());
+        s.save().unwrap();
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert_eq!(written, "hl.config({ decoration = { rounding = 6 } })\n");
+    }
+
+    #[test]
+    fn an_existing_shade_block_is_kept_current_even_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("hyprland.lua");
+        let mut s = session();
+        s.settings.config_path = cfg_path.to_string_lossy().into_owned();
+        s.settings.backups_to_keep = 0;
+        std::fs::write(&cfg_path, block::splice("", "-- old body\n").unwrap()).unwrap();
+        s.save().unwrap();
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.contains(block::BEGIN));
+        assert!(!written.contains("-- old body"));
+    }
+
+    #[test]
+    fn look_values_are_checked_against_their_option() {
+        let mut s = session();
+        assert!(s.command("look.set", &json!({ "key": "decoration.nope", "value": 1 })).is_err());
+        assert!(s
+            .command("look.set", &json!({ "key": "decoration.blur.enabled", "value": "yes" }))
+            .is_err());
+        assert!(s.look.is_empty());
+        s.command("look.set", &json!({ "key": "general.gaps_out", "value": [1, 4] })).unwrap();
+        let view = s.state();
+        let gaps = view["look"]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["key"] == "general.gaps_out")
+            .unwrap()
+            .clone();
+        assert_eq!(gaps["value"], json!([1, 4, 1, 4]));
+        assert_eq!(gaps["overridden"], json!(true));
+        assert_eq!(gaps["changed"], json!(true));
+        assert_eq!(view["look"]["dirty"], json!(true));
     }
 
     #[test]

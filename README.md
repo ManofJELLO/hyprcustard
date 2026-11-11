@@ -7,8 +7,11 @@ and does everything that did, with the rest of Hyprland theming to follow. Today
 that means [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade), the
 Hyprland plugin that applies GLSL fragment shaders to individual windows and layers.
 
-So far it does two things:
+So far it does three things:
 
+* **Sets Hyprland's own look** — gaps, borders and their gradients, rounding, opacity, dimming,
+  shadow and blur — live on your desktop as you drag, saved into a block of its own that holds
+  only what you changed. See [The Look page](#the-look-page).
 * **Writes the plugin's section of `hyprland.lua` for you** — window rules and their shader
   tags, layer shaders, open and close animations, keybinds and startup calls — into a block
   between two marker comments. The rest of your config is never touched.
@@ -27,7 +30,7 @@ palette is a small TOML file.
 
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
-- [How it writes your config](#how-it-writes-your-config)
+- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -218,6 +221,48 @@ re-issued instead through a shell-delayed `hyprctl dispatch`, which runs once th
 certainly up. Leave it at zero unless you actually see the problem.
 
 ---
+
+## The Look page
+
+Every value on the page is what Hyprland is running with right now, read with `hyprctl`, so it
+is right whether your settings live in `hyprland.lua`, in a sourced file, or were changed at
+runtime. Change one and it goes onto the desktop straight away (`hyprctl eval`); turn
+*Show changes on the desktop as you make them* off to change values without that.
+
+**Save** writes the changed values, and only those, into a second managed block at the end of
+`hyprland.lua`:
+
+```lua
+-- >>> HyprCustard look (managed by hyprcustard) >>>
+-- custard-look-v1 {...}
+
+hl.config({
+    general = {
+        col = {
+            active_border = { colors = { "rgba(33ccffee)", "rgba(00ff99ee)" }, angle = 45 },
+        },
+    },
+    decoration = {
+        rounding = 10,
+    },
+})
+-- <<< HyprCustard look (managed by hyprcustard) <<<
+```
+
+Hyprland merges repeated `hl.config` calls key by key, so your own `hl.config` stays exactly
+as you wrote it and everything not set here still comes from it. That only works while the
+block comes *after* your own settings; if something later in the file sets the same option
+again, Save says which options did not stick.
+
+A coloured bar marks a row set here — the accent colour once saved, the warning colour while
+unsaved. **Reset** stops setting that one option, **Clear all** stops setting any (and Save
+then takes the block out), and **Discard changes** puts both the page and the desktop back to
+what the file says. Undoing a value on the desktop means a `hyprctl reload config-only`,
+because Hyprland has no way to unset a single option.
+
+Colours are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
+`rgba(...)`, `0xaarrggbb` or `#aarrggbb`. A border gradient can be typed the way a
+`hyprland.conf` writes one: `33ccffee 00ff99ee 45deg`.
 
 ## Shader parameters
 

@@ -78,6 +78,19 @@ QtObject {
         }
     }
 
+    readonly property var look: state.look || ({ options: [], groups: [] })
+
+    // Live-only: puts a value on the desktop mid-drag without storing it.
+    function lookTry(key, value) {
+        if (!app.backend)
+            return ""
+        return app.backend.lookTry(key, JSON.stringify(value))
+    }
+
+    function lookSet(key, value) {
+        app.run("look.set", { key: key, value: value })
+    }
+
     function refresh() {
         if (app.backend)
             app.backend.refresh()

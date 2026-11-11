@@ -22,6 +22,8 @@ pub struct Settings {
     pub reload_shaders_after_edit: bool,
     /// Write a shader edit as soon as a slider settles, rather than on Apply.
     pub live_shader_edits: bool,
+    /// Show Look page edits on the desktop as they are made, before saving.
+    pub live_look_edits: bool,
     /// The repository the plugin page installs from with `hyprpm add`.
     ///
     /// Configurable because a fork, or a local clone, is a perfectly ordinary
@@ -45,6 +47,7 @@ impl Default for Settings {
             reload_after_save: false,
             reload_shaders_after_edit: false,
             live_shader_edits: true,
+            live_look_edits: true,
             plugin_repo_url: DEFAULT_PLUGIN_REPO.to_string(),
             plugin_name: DEFAULT_PLUGIN_NAME.to_string(),
         }

@@ -41,6 +41,7 @@ ApplicationWindow {
     palette.highlightedText: Theme.onAccent
 
     readonly property var pages: [
+        { label: "Look",     hint: "Borders, blur, gaps" },
         { label: "Rules",    hint: "Windows" },
         { label: "Shaders",  hint: "Files" },
         { label: "Layers",   hint: "Bars, launchers" },
@@ -369,6 +370,12 @@ ApplicationWindow {
             Layout.fillHeight: true
             currentIndex: window.currentPage
 
+            Item {
+                LookPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
             Item {
                 RulesPage {
                     anchors.fill: parent

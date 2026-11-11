@@ -177,6 +177,12 @@ pub fn reload_config() -> Result<()> {
     run(&["reload"]).map(|_| ())
 }
 
+/// Re-read the config without re-initialising monitors, which is all a
+/// change of look needs and does not blank the screen.
+pub fn reload_config_only() -> Result<()> {
+    run(&["reload", "config-only"]).map(|_| ())
+}
+
 /// Whether the plugin reports itself as loaded.
 pub fn plugin_loaded() -> Result<bool> {
     let json = run(&["-j", "plugin", "list"])?;
