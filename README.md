@@ -344,6 +344,22 @@ page uses, and colours may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
 
 Anything in a theme this version does not recognise is left out, and Apply says what.
 
+### Shaders in a theme
+
+With **Include shaders** on, a theme also carries the HyprWindowShade setup: the window rules
+and their shader tags, the layer shaders and their open and close animations, and **the shader
+files they use, as text** — a shader's tuned values live inside its file, so without them a
+theme would look different on another machine, or on this one after a shader is edited. Inside
+the theme the paths are written `$SHADERS/crt.glsl`, so it works whatever your shader folder is.
+Keybinds, startup actions and how the plugin loads stay out: those are behaviour, not looks.
+
+Applying such a theme writes any shader you do not have into your shader folder. If you have a
+**different** version of one, it asks first: **Replace mine** backs yours up and writes the
+theme's over it; **Keep both** leaves yours alone and adds the theme's beside it as
+`crt-<theme name>.glsl`, which the theme's rules then use. **Look only** applies the look and
+animations and leaves your shader setup as it is. A theme without shaders never touches them.
+The shader rules, like any other, take effect when you save.
+
 The app's own colours are a separate thing, under Settings → This app's colours.
 
 ## Shader parameters

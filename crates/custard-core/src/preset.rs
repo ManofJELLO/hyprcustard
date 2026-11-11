@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use crate::error::{Error, Result};
 use crate::look::{self, Look, LookValue};
+use crate::model::{Config, LayerEntry, ShaderRef, TagValue, WindowRule};
 use crate::motion::{self, AnimSetting, LiveMotion, Points};
 use crate::paths;
 
@@ -46,6 +47,208 @@ pub struct Preset {
     /// within the theme, the way Hyprland resolves them.
     #[serde(default)]
     pub animations: BTreeMap<String, AnimSetting>,
+    /// The HyprWindowShade setup that goes with the look, if the theme
+    /// carries one. A theme without it leaves the shader setup alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shaders: Option<ShaderSetup>,
+}
+
+/// What a path to a shader inside a theme starts with: the shader folder,
+/// wherever it is on the machine the theme is applied on.
+pub const SHADER_PREFIX: &str = "$SHADERS/";
+
+/// The shader side of a theme: the window rules and layer shaders, and the
+/// shaders themselves.
+///
+/// Keybinds and startup actions are left out on purpose — like the cursor,
+/// they are behaviour rather than looks — and so is how the plugin is loaded.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ShaderSetup {
+    /// Window rules, their shader paths written as `$SHADERS/<file>`.
+    #[serde(default)]
+    pub rules: Vec<WindowRule>,
+    /// Layer shaders, written the same way.
+    #[serde(default)]
+    pub layers: Vec<LayerEntry>,
+    /// Every shader they use, by file name, as source text. Carried in the
+    /// theme because a shader's tuned values live inside its file: without
+    /// them a theme would look different on another machine, or on this one
+    /// after the shader is edited.
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+}
+
+/// Every shader reference in a set of rules and layers.
+fn for_each_ref(
+    rules: &mut [WindowRule],
+    layers: &mut [LayerEntry],
+    mut f: impl FnMut(&mut ShaderRef),
+) {
+    for r in rules {
+        for t in &mut r.tags {
+            if let TagValue::Path(s) = &mut t.value {
+                f(s);
+            }
+        }
+    }
+    for l in layers {
+        for s in [&mut l.shader, &mut l.open_anim, &mut l.close_anim].into_iter().flatten() {
+            f(s);
+        }
+    }
+}
+
+/// The shader setup in `config`, with the files it uses read in, or `None`
+/// when there is nothing to carry.
+///
+/// A reference that is not a readable file — a layer's `clear`, a shader
+/// since deleted — is kept as it is written. Two different files with the
+/// same name are told apart with a number.
+pub fn capture_shaders(config: &Config) -> Option<ShaderSetup> {
+    if config.rules.is_empty() && config.layers.is_empty() {
+        return None;
+    }
+    let mut rules = config.rules.clone();
+    let mut layers = config.layers.clone();
+    let mut files: BTreeMap<String, String> = BTreeMap::new();
+    let mut named: BTreeMap<String, String> = BTreeMap::new();
+    for_each_ref(&mut rules, &mut layers, |s| {
+        if let Some(name) = named.get(&s.path) {
+            s.path = format!("{SHADER_PREFIX}{name}");
+            return;
+        }
+        let path = paths::expand(&s.path);
+        let Ok(source) = std::fs::read_to_string(&path) else { return };
+        let base = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut name = base.clone();
+        let mut n = 2;
+        while files.get(&name).is_some_and(|other| *other != source) {
+            name = numbered(&base, n);
+            n += 1;
+        }
+        files.insert(name.clone(), source);
+        named.insert(s.path.clone(), name.clone());
+        s.path = format!("{SHADER_PREFIX}{name}");
+    });
+    Some(ShaderSetup { rules, layers, files })
+}
+
+/// `crt.glsl` as `crt-2.glsl`.
+fn numbered(name: &str, n: usize) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, ext)) => format!("{stem}-{n}.{ext}"),
+        None => format!("{name}-{n}"),
+    }
+}
+
+/// A shader file name a theme may write: no directories, nothing hidden.
+fn safe_file_name(name: &str) -> Result<()> {
+    let ok = !name.is_empty()
+        && !name.starts_with('.')
+        && !name.contains('/')
+        && !name.contains('\\')
+        && name != "..";
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::other(format!("{name:?} cannot be a shader file name")))
+    }
+}
+
+/// The shaders in `setup` that exist in `dir` with different contents: what
+/// applying it would have to either replace or keep beside.
+pub fn shader_conflicts(setup: &ShaderSetup, dir: &Path) -> Vec<String> {
+    setup
+        .files
+        .iter()
+        .filter(|(name, source)| {
+            std::fs::read_to_string(dir.join(name)).is_ok_and(|have| have != **source)
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// What to do with a shader the user already has a different version of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnConflict {
+    /// Back the user's up, then write the theme's over it.
+    Replace,
+    /// Write the theme's beside it under a new name, and use that.
+    KeepBoth,
+}
+
+/// Write the theme's shaders into `dir` and return its rules and layers
+/// pointing at them, plus a note per file that needed handling.
+pub fn install_shaders(
+    setup: &ShaderSetup,
+    dir: &Path,
+    theme: &str,
+    on_conflict: OnConflict,
+    backups_to_keep: usize,
+) -> Result<(Vec<WindowRule>, Vec<LayerEntry>, Vec<String>)> {
+    let mut notes = Vec::new();
+    let mut final_name: BTreeMap<&str, String> = BTreeMap::new();
+    for (name, source) in &setup.files {
+        safe_file_name(name)?;
+        let target = dir.join(name);
+        let chosen = match std::fs::read_to_string(&target) {
+            Err(_) => {
+                paths::write_atomic(&target, source)?;
+                notes.push(format!("added {name}"));
+                name.clone()
+            }
+            Ok(have) if have == *source => name.clone(),
+            Ok(_) if on_conflict == OnConflict::Replace => {
+                paths::backup(&target, backups_to_keep)?;
+                paths::write_atomic(&target, source)?;
+                notes.push(format!("replaced {name}"));
+                name.clone()
+            }
+            Ok(_) => {
+                let slug = file_name(theme);
+                let slug = slug.trim_end_matches(".json");
+                let (stem, ext) = name.rsplit_once('.').unwrap_or((name.as_str(), "glsl"));
+                let mut candidate = format!("{stem}-{slug}.{ext}");
+                let mut n = 2;
+                loop {
+                    match std::fs::read_to_string(dir.join(&candidate)) {
+                        Err(_) => {
+                            paths::write_atomic(&dir.join(&candidate), source)?;
+                            break;
+                        }
+                        Ok(have) if have == *source => break,
+                        Ok(_) => {
+                            candidate = format!("{stem}-{slug}-{n}.{ext}");
+                            n += 1;
+                        }
+                    }
+                }
+                notes.push(format!("kept your {name} and added the theme's as {candidate}"));
+                candidate
+            }
+        };
+        final_name.insert(name.as_str(), chosen);
+    }
+    let (rules, layers) = resolve(setup, dir, &final_name);
+    Ok((rules, layers, notes))
+}
+
+/// The setup's rules and layers with `$SHADERS/` paths pointing into `dir`,
+/// under the names in `renamed` where a file was renamed.
+fn resolve(
+    setup: &ShaderSetup,
+    dir: &Path,
+    renamed: &BTreeMap<&str, String>,
+) -> (Vec<WindowRule>, Vec<LayerEntry>) {
+    let mut rules = setup.rules.clone();
+    let mut layers = setup.layers.clone();
+    for_each_ref(&mut rules, &mut layers, |s| {
+        if let Some(name) = s.path.strip_prefix(SHADER_PREFIX) {
+            let name = renamed.get(name).cloned().unwrap_or_else(|| name.to_string());
+            s.path = dir.join(name).to_string_lossy().into_owned();
+        }
+    });
+    (rules, layers)
 }
 
 fn format() -> u32 {
@@ -124,6 +327,7 @@ pub fn snapshot(
         options,
         curves,
         animations,
+        shaders: None,
     }
 }
 
@@ -200,7 +404,7 @@ pub fn to_look(preset: &Preset, current: &Look, motion_live: &LiveMotion) -> (Lo
 
 /// Whether `current` is what applying `preset` would give, as far as the
 /// theme itself goes — so the page can mark the theme in use.
-pub fn matches(preset: &Preset, current: &Look) -> bool {
+pub fn matches(preset: &Preset, current: &Look, config: &Config) -> bool {
     let options_match = preset.options.iter().all(|(key, value)| {
         match (look::find(key), current.values.get(key)) {
             (Some(o), Some(have)) => look::parse(o, value).is_ok_and(|want| want.same_as(have)),
@@ -209,7 +413,11 @@ pub fn matches(preset: &Preset, current: &Look) -> bool {
     });
     let animations_match =
         preset.animations.iter().all(|(name, a)| current.animations.get(name) == Some(a));
-    options_match && animations_match && !preset.options.is_empty()
+    let shaders_match = preset.shaders.as_ref().is_none_or(|setup| {
+        let (rules, layers) = resolve(setup, &paths::expand(&config.shader_dir), &BTreeMap::new());
+        rules == config.rules && layers == config.layers
+    });
+    options_match && animations_match && shaders_match && !preset.options.is_empty()
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +518,7 @@ pub fn builtin() -> Vec<Preset> {
         options: BTreeMap::new(),
         curves: BTreeMap::new(),
         animations: BTreeMap::new(),
+        shaders: None,
     };
     for o in look::OPTIONS.iter().filter(|o| themed(o.key) && o.follows.is_empty()) {
         defaults.options.insert(o.key.to_string(), look::default_of(o).to_json());
@@ -421,7 +630,11 @@ mod tests {
         for p in builtin() {
             let (look, problems) = to_look(&p, &Look::default(), &LiveMotion::default());
             assert!(problems.is_empty(), "{}: {problems:?}", p.name);
-            assert!(matches(&p, &look), "{} does not match its own result", p.name);
+            assert!(
+                matches(&p, &look, &Config::default()),
+                "{} does not match its own result",
+                p.name
+            );
         }
     }
 
@@ -450,7 +663,7 @@ mod tests {
 
         let (applied, problems) = to_look(&p, &current, &motion_live);
         assert!(problems.is_empty(), "{problems:?}");
-        assert!(matches(&p, &applied));
+        assert!(matches(&p, &applied, &Config::default()));
         // The app's cursor setting survives applying a theme.
         assert_eq!(applied.values["cursor.inactive_timeout"], LookValue::Float(3.0));
     }
@@ -501,6 +714,101 @@ mod tests {
         let (entries, problems) = list_in(dir.path());
         assert_eq!(entries.len(), builtin().len() + 1);
         assert_eq!(problems.len(), 1);
+    }
+
+    fn shader_config(dir: &Path) -> Config {
+        use crate::model::{Match, Tag, TagSlot};
+        std::fs::write(dir.join("crt.glsl"), "// crt\n").unwrap();
+        std::fs::write(dir.join("blur.glsl"), "// blur\n").unwrap();
+        let mut config = Config::default();
+        config.shader_dir = dir.to_string_lossy().into_owned();
+        let mut rule = WindowRule::new("rule1");
+        rule.match_ = Match { class: Some("kitty".into()), ..Default::default() };
+        rule.tags.push(Tag {
+            slot: TagSlot::Inactive,
+            is_default: false,
+            value: TagValue::Path(ShaderRef {
+                path: dir.join("crt.glsl").to_string_lossy().into_owned(),
+                duration: Some(0.4),
+            }),
+        });
+        config.rules.push(rule);
+        let mut layer = LayerEntry::new("layer1", "rofi");
+        layer.shader = Some(ShaderRef::new(dir.join("blur.glsl").to_string_lossy()));
+        layer.close_anim = Some(ShaderRef::new("clear"));
+        config.layers.push(layer);
+        config
+    }
+
+    #[test]
+    fn a_shader_setup_travels_with_its_files() {
+        let from = tempfile::tempdir().unwrap();
+        let config = shader_config(from.path());
+        let setup = capture_shaders(&config).unwrap();
+        assert_eq!(setup.files.len(), 2);
+        assert_eq!(setup.files["crt.glsl"], "// crt\n");
+        let TagValue::Path(r) = &setup.rules[0].tags[0].value else { panic!() };
+        assert_eq!(r.path, "$SHADERS/crt.glsl");
+        assert_eq!(r.duration, Some(0.4));
+        assert_eq!(setup.layers[0].close_anim.as_ref().unwrap().path, "clear");
+        assert!(capture_shaders(&Config::default()).is_none());
+
+        // On another machine, with an empty shader folder.
+        let to = tempfile::tempdir().unwrap();
+        assert!(shader_conflicts(&setup, to.path()).is_empty());
+        let (rules, layers, notes) =
+            install_shaders(&setup, to.path(), "Mine", OnConflict::Replace, 0).unwrap();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(std::fs::read_to_string(to.path().join("crt.glsl")).unwrap(), "// crt\n");
+        let TagValue::Path(r) = &rules[0].tags[0].value else { panic!() };
+        assert_eq!(std::path::Path::new(&r.path), to.path().join("crt.glsl"));
+        assert_eq!(layers[0].close_anim.as_ref().unwrap().path, "clear");
+
+        // Applying it over the same folder again needs nothing.
+        let (_, _, notes) =
+            install_shaders(&setup, to.path(), "Mine", OnConflict::Replace, 0).unwrap();
+        assert!(notes.is_empty(), "{notes:?}");
+    }
+
+    #[test]
+    fn a_shader_the_user_changed_is_replaced_or_kept_beside() {
+        let from = tempfile::tempdir().unwrap();
+        let setup = capture_shaders(&shader_config(from.path())).unwrap();
+        let to = tempfile::tempdir().unwrap();
+        std::fs::write(to.path().join("crt.glsl"), "// my own crt\n").unwrap();
+        assert_eq!(shader_conflicts(&setup, to.path()), vec!["crt.glsl"]);
+
+        let (rules, _, notes) =
+            install_shaders(&setup, to.path(), "Soft glass", OnConflict::KeepBoth, 0).unwrap();
+        assert_eq!(std::fs::read_to_string(to.path().join("crt.glsl")).unwrap(), "// my own crt\n");
+        let kept = to.path().join("crt-soft-glass.glsl");
+        assert_eq!(std::fs::read_to_string(&kept).unwrap(), "// crt\n");
+        let TagValue::Path(r) = &rules[0].tags[0].value else { panic!() };
+        assert_eq!(std::path::Path::new(&r.path), kept);
+        assert!(notes.iter().any(|n| n.contains("crt-soft-glass.glsl")), "{notes:?}");
+
+        install_shaders(&setup, to.path(), "Soft glass", OnConflict::Replace, 0).unwrap();
+        assert_eq!(std::fs::read_to_string(to.path().join("crt.glsl")).unwrap(), "// crt\n");
+    }
+
+    #[test]
+    fn a_theme_cannot_write_outside_the_shader_folder() {
+        let mut setup = ShaderSetup::default();
+        setup.files.insert("../escape.glsl".into(), "x".into());
+        let to = tempfile::tempdir().unwrap();
+        assert!(install_shaders(&setup, to.path(), "Bad", OnConflict::Replace, 0).is_err());
+        assert!(!to.path().parent().unwrap().join("escape.glsl").exists());
+    }
+
+    #[test]
+    fn a_theme_with_shaders_is_in_use_only_with_those_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = shader_config(dir.path());
+        let mut p = builtin().remove(1);
+        p.shaders = capture_shaders(&config);
+        let (look, _) = to_look(&p, &Look::default(), &LiveMotion::default());
+        assert!(matches(&p, &look, &config));
+        assert!(!matches(&p, &look, &Config { rules: Vec::new(), ..config.clone() }));
     }
 
     #[test]

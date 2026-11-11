@@ -27,6 +27,36 @@ Item {
     // The theme an export dialog was opened for.
     property var exporting: null
 
+    // Apply a theme, asking first if it would change shaders the user
+    // already has different versions of.
+    function apply(theme, lookOnly) {
+        var pick = { name: theme.name, file: theme.file || "", lookOnly: lookOnly === true }
+        if (!theme.hasShaders || lookOnly) {
+            App.run("preset.apply", pick)
+            return
+        }
+        var conflicts = App.queryJson("presetConflicts", pick)
+        if (!Array.isArray(conflicts) || conflicts.length === 0) {
+            App.run("preset.apply", pick)
+            return
+        }
+        App.choose(
+            "Change your shaders?",
+            theme.name + " has its own version of " + conflicts.join(", ")
+            + ", and yours is different. Replace yours (it is backed up first), or keep "
+            + "yours and add the theme's beside it under a new name?",
+            "Replace mine", true,
+            function () {
+                pick.onConflict = "replace"
+                App.run("preset.apply", pick)
+            },
+            "Keep both",
+            function () {
+                pick.onConflict = "keep_both"
+                App.run("preset.apply", pick)
+            })
+    }
+
     FileDialog {
         id: importDialog
         title: "Import a theme"
@@ -66,7 +96,8 @@ Item {
                 Layout.fillWidth: true
                 title: "Themes"
                 subtitle: "A theme is the whole look: every Look option, the animations and "
-                          + "their curves. Applying one puts it on the desktop straight away; "
+                          + "their curves — and, if you include them, the HyprWindowShade rules, "
+                          + "layer shaders and the shader files they use. Applying one puts it on the desktop straight away; "
                           + "Save writes it to hyprland.lua. Themes are files in "
                           + page.presetDir + "."
 
@@ -100,7 +131,8 @@ Item {
                                     taken = true
                             var save = function (replace) {
                                 App.run("preset.save", {
-                                    name: name, description: descEdit.text, replace: replace
+                                    name: name, description: descEdit.text, replace: replace,
+                                    includeShaders: withShaders.checked
                                 })
                                 nameEdit.text = ""
                                 descEdit.text = ""
@@ -117,6 +149,12 @@ Item {
 
                 Row {
                     spacing: Theme.gap
+                    Toggle {
+                        id: withShaders
+                        text: "Include shaders"
+                        checked: true
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                     PillButton {
                         text: "Import…"
                         tooltip: "Copy a theme file into your themes."
@@ -172,6 +210,7 @@ Item {
                             Row {
                                 spacing: Theme.gapSmall
                                 visible: themeCard.modelData.active || themeCard.modelData.builtin
+                                         || themeCard.modelData.hasShaders
 
                                 Badge {
                                     visible: themeCard.modelData.active
@@ -181,6 +220,11 @@ Item {
                                     visible: themeCard.modelData.builtin
                                     text: "Built in"
                                     tint: Theme.muted
+                                }
+                                Badge {
+                                    visible: themeCard.modelData.hasShaders
+                                    text: "Shaders"
+                                    tint: Theme.accentAlt
                                 }
                             }
 
@@ -194,8 +238,14 @@ Item {
                             }
                             Text {
                                 width: parent.width
+                                wrapMode: Text.WordWrap
                                 text: App.plural(themeCard.modelData.animationCount, "animation")
                                       + " · " + App.plural(themeCard.modelData.curveCount, "curve")
+                                      + (themeCard.modelData.hasShaders
+                                         ? " · " + App.plural(themeCard.modelData.ruleCount, "rule")
+                                           + " · " + App.plural(themeCard.modelData.layerCount, "layer")
+                                           + " · " + App.plural(themeCard.modelData.shaderFiles, "shader")
+                                         : "")
                                 color: Theme.muted
                                 font.pixelSize: Theme.fontSizeSmall
                             }
@@ -207,10 +257,17 @@ Item {
                                     text: "Apply"
                                     primary: true
                                     compact: true
-                                    onClicked: App.run("preset.apply", {
-                                        name: themeCard.modelData.name,
-                                        file: themeCard.modelData.file || ""
-                                    })
+                                    tooltip: themeCard.modelData.hasShaders
+                                             ? "The look and the shaders." : ""
+                                    onClicked: page.apply(themeCard.modelData, false)
+                                }
+                                PillButton {
+                                    text: "Look only"
+                                    compact: true
+                                    visible: themeCard.modelData.hasShaders
+                                    tooltip: "Apply the look and animations, and leave your "
+                                             + "shaders as they are."
+                                    onClicked: page.apply(themeCard.modelData, true)
                                 }
                                 PillButton {
                                     text: "Export…"

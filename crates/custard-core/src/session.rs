@@ -193,7 +193,11 @@ impl Session {
                         "description": e.preset.description,
                         "file": e.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
                         "builtin": e.path.is_none(),
-                        "active": preset::matches(&e.preset, &self.look),
+                        "active": preset::matches(&e.preset, &self.look, &self.config),
+                        "hasShaders": e.preset.shaders.is_some(),
+                        "ruleCount": e.preset.shaders.as_ref().map_or(0, |s| s.rules.len()),
+                        "layerCount": e.preset.shaders.as_ref().map_or(0, |s| s.layers.len()),
+                        "shaderFiles": e.preset.shaders.as_ref().map_or(0, |s| s.files.len()),
                         "options": e.preset.options,
                         "curveCount": e.preset.curves.len(),
                         "animationCount": e.preset.animations.len(),
@@ -203,14 +207,67 @@ impl Session {
         )
     }
 
+    /// Shaders a theme would have to replace or keep beside the user's own,
+    /// for the page to ask about before applying it.
+    pub fn preset_conflicts(&self, payload: &Value) -> Result<Vec<String>> {
+        let entry = self.preset_named(payload)?;
+        Ok(entry.preset.shaders.as_ref().map_or_else(Vec::new, |setup| {
+            preset::shader_conflicts(setup, &paths::expand(&self.config.shader_dir))
+        }))
+    }
+
     fn apply_preset(&mut self, payload: &Value) -> Result<Option<String>> {
         let entry = self.preset_named(payload)?.clone();
+        let look_only = payload.get("lookOnly").and_then(Value::as_bool).unwrap_or(false);
+
+        // The shaders first: they write files, and can refuse, and a refusal
+        // should leave the look as it was too.
+        let mut shader_notes = Vec::new();
+        let mut shaders_applied = false;
+        if let (Some(setup), false) = (&entry.preset.shaders, look_only) {
+            let dir = paths::expand(&self.config.shader_dir);
+            let on_conflict = match payload.get("onConflict").and_then(Value::as_str) {
+                Some("replace") => preset::OnConflict::Replace,
+                Some("keep_both") => preset::OnConflict::KeepBoth,
+                _ => {
+                    let conflicts = preset::shader_conflicts(setup, &dir);
+                    if !conflicts.is_empty() {
+                        return Err(Error::other(format!(
+                            "{} would change shaders you already have ({}) — say whether to \
+                             replace them or keep both",
+                            entry.preset.name,
+                            conflicts.join(", ")
+                        )));
+                    }
+                    preset::OnConflict::Replace
+                }
+            };
+            let (rules, layers, notes) = preset::install_shaders(
+                setup,
+                &dir,
+                &entry.preset.name,
+                on_conflict,
+                self.settings.backups_to_keep,
+            )?;
+            self.config.rules = rules;
+            self.config.layers = layers;
+            shader_notes = notes;
+            shaders_applied = true;
+            self.rescan_shaders();
+        }
+
         let (look, problems) = preset::to_look(&entry.preset, &self.look, &self.live.motion);
         self.look = look;
         if self.look_is_live() {
             self.resync_look()?;
         }
         let mut msg = format!("Applied {} — Save to keep it", entry.preset.name);
+        if shaders_applied {
+            msg.push_str(". Its shader rules take effect when you save");
+            if !shader_notes.is_empty() {
+                msg.push_str(&format!(" ({})", shader_notes.join("; ")));
+            }
+        }
         if !problems.is_empty() {
             msg.push_str(&format!(". Left out: {}", problems.join("; ")));
         }
@@ -862,10 +919,12 @@ impl Session {
                 let description =
                     payload.get("description").and_then(Value::as_str).unwrap_or_default();
                 let replace = payload.get("replace").and_then(Value::as_bool).unwrap_or(false);
+                let with_shaders =
+                    payload.get("includeShaders").and_then(Value::as_bool).unwrap_or(true);
                 if self.presets.iter().any(|e| e.path.is_none() && e.preset.name == name.trim()) {
                     return Err(Error::other(format!("{name} is a built-in theme's name")));
                 }
-                let p = preset::snapshot(
+                let mut p = preset::snapshot(
                     name,
                     description,
                     &self.look,
@@ -873,6 +932,9 @@ impl Session {
                     &self.live.motion,
                     &self.config_curves,
                 );
+                if with_shaders {
+                    p.shaders = preset::capture_shaders(&self.config);
+                }
                 let path = preset::save_into(&preset::dir(), &p, replace)?;
                 self.rescan_presets();
                 Ok(Some(format!("Saved the theme {} to {}", p.name, paths::contract(&path))))
@@ -1987,6 +2049,53 @@ mod tests {
         assert_eq!(glass["active"], json!(true));
         assert!(s.command("preset.apply", &json!({ "name": "No such" })).is_err());
         assert!(s.command("preset.delete", &json!({ "name": "Soft glass" })).is_err());
+    }
+
+    #[test]
+    fn a_theme_with_shaders_asks_before_changing_the_users_and_then_applies() {
+        use crate::model::{Tag, TagSlot};
+        let dir = tempfile::tempdir().unwrap();
+        let shaders = dir.path().join("shaders");
+        std::fs::create_dir_all(&shaders).unwrap();
+        std::fs::write(shaders.join("crt.glsl"), "// theme crt\n").unwrap();
+
+        let mut s = session();
+        s.config.shader_dir = shaders.to_string_lossy().into_owned();
+        let mut rule = WindowRule::new("rule1");
+        rule.match_.class = Some("kitty".into());
+        rule.tags.push(Tag {
+            slot: TagSlot::Inactive,
+            is_default: false,
+            value: TagValue::Path(ShaderRef::new(shaders.join("crt.glsl").to_string_lossy())),
+        });
+        s.config.rules.push(rule);
+        let mut p = preset::builtin().remove(1);
+        p.name = "With shaders".into();
+        p.shaders = preset::capture_shaders(&s.config);
+        s.presets.push(preset::Entry { preset: p, path: Some(dir.path().join("t.json")) });
+        let pick =
+            json!({ "name": "With shaders", "file": dir.path().join("t.json").to_string_lossy() });
+
+        // The user edits their crt, and clears their rules.
+        std::fs::write(shaders.join("crt.glsl"), "// my crt\n").unwrap();
+        s.config.rules.clear();
+        assert_eq!(s.preset_conflicts(&pick).unwrap(), vec!["crt.glsl"]);
+        assert!(s.command("preset.apply", &pick).is_err(), "applied without asking");
+        assert!(s.config.rules.is_empty());
+
+        let mut keep = pick.clone();
+        keep["onConflict"] = json!("keep_both");
+        s.command("preset.apply", &keep).unwrap();
+        assert_eq!(s.config.rules.len(), 1);
+        assert_eq!(std::fs::read_to_string(shaders.join("crt.glsl")).unwrap(), "// my crt\n");
+        assert!(shaders.join("crt-with-shaders.glsl").exists());
+
+        // Look only leaves the rules alone.
+        s.config.rules.clear();
+        let mut look_only = pick.clone();
+        look_only["lookOnly"] = json!(true);
+        s.command("preset.apply", &look_only).unwrap();
+        assert!(s.config.rules.is_empty());
     }
 
     #[test]

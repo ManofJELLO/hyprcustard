@@ -184,6 +184,12 @@ QtObject {
     // Ask before doing something that rewrites a file or throws work away.
     // With no dialog wired up the action still happens, so a page is never
     // left with a button that quietly does nothing.
+    // Like confirm, with a second answer besides the main one.
+    function choose(heading, body, acceptText, danger, onAccept, altText, onAlt) {
+        if (app.confirmDialog)
+            app.confirmDialog.choose(heading, body, acceptText, danger, onAccept, altText, onAlt)
+    }
+
     function confirm(heading, body, acceptText, danger, onAccept) {
         if (app.confirmDialog)
             app.confirmDialog.ask(heading, body, acceptText, danger, onAccept)

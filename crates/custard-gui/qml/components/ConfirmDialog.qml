@@ -20,17 +20,35 @@ Item {
     property string acceptText: "Continue"
     property bool danger: false
     property var _onAccept: null
+    // An optional second way forward, between Cancel and the main button —
+    // for a question with two real answers, such as replace or keep both.
+    property string altText: ""
+    property var _onAlt: null
 
     // `onAccept` is a function called if the user confirms. Nothing happens on
     // cancel, which is the point.
     function ask(heading, body, acceptText, danger, onAccept) {
+        root.choose(heading, body, acceptText, danger, onAccept, "", null)
+    }
+
+    // `ask`, with a second answer: `onAlt` runs if the user picks `altText`.
+    function choose(heading, body, acceptText, danger, onAccept, altText, onAlt) {
         root.heading = heading
         root.body = body
         root.acceptText = acceptText
         root.danger = danger === true
         root._onAccept = onAccept
+        root.altText = altText || ""
+        root._onAlt = onAlt || null
         root.visible = true
         acceptButton.forceActiveFocus()
+    }
+
+    function alt() {
+        var fn = root._onAlt
+        root.close()
+        if (fn)
+            fn()
     }
 
     function accept() {
@@ -43,6 +61,7 @@ Item {
     function close() {
         root.visible = false
         root._onAccept = null
+        root._onAlt = null
     }
 
     // Swallows clicks and keystrokes aimed at the interface behind it.
@@ -109,6 +128,12 @@ Item {
                 PillButton {
                     text: "Cancel"
                     onClicked: root.close()
+                }
+
+                PillButton {
+                    visible: root.altText !== ""
+                    text: root.altText
+                    onClicked: root.alt()
                 }
 
                 PillButton {

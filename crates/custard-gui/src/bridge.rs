@@ -305,6 +305,10 @@ impl qobject::Backend {
         let answer: Result<String, String> = match what.as_str() {
             "state" => Ok(session.state().to_string()),
             "preview" => session.preview().map_err(|e| e.to_string()),
+            "presetConflicts" => session
+                .preset_conflicts(&payload)
+                .map(|v| json!(v).to_string())
+                .map_err(|e| e.to_string()),
             "importPreview" => {
                 session.import_preview().map(|v| v.to_string()).map_err(|e| e.to_string())
             }
