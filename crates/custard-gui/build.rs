@@ -27,6 +27,7 @@ fn main() {
         "qml/pages/AnimationPage.qml",
         "qml/pages/BindsPage.qml",
         "qml/pages/ColorsPage.qml",
+        "qml/pages/WallpaperPage.qml",
         "qml/pages/LayersPage.qml",
         "qml/pages/LookOptionRow.qml",
         "qml/pages/LookPage.qml",

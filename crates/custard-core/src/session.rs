@@ -24,7 +24,10 @@ use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
 use crate::shader::{DraftItem, ShaderDraft};
 use crate::theme::Theme;
-use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme};
+use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme, walls};
+
+mod walls_page;
+pub use walls_page::{WallJob, WallOutcome};
 
 /// Live information about the running compositor.
 #[derive(Debug, Clone, Default)]
@@ -125,6 +128,10 @@ pub struct Session {
     /// Whether this session runs under systemd's graphical session target,
     /// so the watcher could be a user service. Asked once, at start.
     systemd_session: bool,
+    /// What the Wallpaper page last saw on screen; `None` until it looks.
+    wall_scan: Option<walls::Scan>,
+    /// True while a wallpaper is going up.
+    wall_busy: bool,
 }
 
 impl Session {
@@ -186,6 +193,8 @@ impl Session {
             colors_building: false,
             colors_applied: colors::current(),
             systemd_session: colors::follow::systemd_available(),
+            wall_scan: None,
+            wall_busy: false,
         };
         session.rescan_shaders();
         session.refresh_live();
@@ -622,6 +631,7 @@ impl Session {
             "presets": self.presets_view(),
             "lookRules": self.rules_view(),
             "colors": self.colors_view(),
+            "wallpaper": self.wall_view(),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -1142,6 +1152,9 @@ impl Session {
                 self.colors_built = None;
                 Ok(Some(format!("{} color schemes available", self.palettes.len())))
             }
+
+            // --- wallpaper ---
+            c if c.starts_with("wallpaper.") => self.wall_command(c, payload),
 
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
@@ -2293,6 +2306,8 @@ mod tests {
             colors_building: false,
             colors_applied: None,
             systemd_session: false,
+            wall_scan: None,
+            wall_busy: false,
         }
     }
 
@@ -3216,5 +3231,144 @@ mod tests {
         assert!(msg.ends_with("Stopped following the wallpaper"), "{msg}");
         assert!(colors::follow::following().is_none());
         assert!(!std::fs::read_to_string(&cfg).unwrap().contains("custard-watch"));
+    }
+
+    fn argv(s: &str) -> Vec<String> {
+        s.split(' ').map(String::from).collect()
+    }
+
+    fn swaybg_scan(image: &str) -> walls::Scan {
+        let procs = vec![(1, argv(&format!("swaybg -o * -i {image} -m fill")))];
+        walls::Scan {
+            found: colors::wallpaper::Found {
+                wallpapers: colors::wallpaper::swaybg_args(&procs[0].1),
+                monitors: vec!["DP-1".into()],
+                ..Default::default()
+            },
+            running: vec!["swaybg"],
+            services: Vec::new(),
+            procs,
+        }
+    }
+
+    #[test]
+    fn wallpaper_choices_merge_and_folders_are_added_and_hidden() {
+        let mut s = session();
+        s.command("wallpaper.set", &json!({ "fit": "fit", "program": "swaybg" })).unwrap();
+        assert_eq!(s.settings.wallpaper.fit, "fit");
+        assert_eq!(s.state()["wallpaper"]["using"]["id"], "swaybg");
+        assert!(s.command("wallpaper.set", &json!({ "folders": [] })).is_err());
+
+        let dir = tempfile::tempdir().unwrap();
+        let found = dir.path().join("found");
+        let added = dir.path().join("added");
+        std::fs::create_dir_all(&found).unwrap();
+        std::fs::create_dir_all(&added).unwrap();
+        let mut scan = swaybg_scan(&found.join("a.png").to_string_lossy());
+        scan.found.wallpapers[0].path = found.join("a.png");
+        s.set_wall_scan(scan);
+        let listed = |s: &Session| -> Vec<(String, bool)> {
+            s.state()["wallpaper"]["folders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f["path"].as_str().unwrap().starts_with(&*dir.path().to_string_lossy()))
+                .map(|f| (f["path"].as_str().unwrap().to_string(), f["found"].as_bool().unwrap()))
+                .collect()
+        };
+        let url = format!("file://{}", added.display());
+        s.command("wallpaper.addFolder", &json!({ "path": url })).unwrap();
+        assert_eq!(listed(&s).len(), 2);
+        assert!(listed(&s)[0].1 && !listed(&s)[1].1);
+
+        s.command("wallpaper.removeFolder", &json!({ "path": added })).unwrap();
+        s.command("wallpaper.removeFolder", &json!({ "path": found })).unwrap();
+        assert!(listed(&s).is_empty());
+        assert_eq!(s.settings.wallpaper.hidden.len(), 1, "the found one is hidden");
+        s.command("wallpaper.addFolder", &json!({ "path": found })).unwrap();
+        assert!(s.settings.wallpaper.hidden.is_empty() && s.settings.wallpaper.folders.is_empty());
+        assert!(s.command("wallpaper.addFolder", &json!({ "path": "/no/such" })).is_err());
+    }
+
+    #[test]
+    fn keeping_a_wallpaper_at_login_follows_each_pick_and_gives_back() {
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = colors::follow::clear_snapshot();
+        let mine =
+            "hl.on(\"hyprland.start\", function()\n    hl.exec_cmd(\"swaybg -i /old.png\")\nend)\n";
+        let (dir, cfg, mut s) = rule_session(mine);
+        let png = dir.path().join("new.png");
+        std::fs::write(&png, b"x").unwrap();
+
+        // Not handed over: a pick says the old one comes back at login.
+        s.set_wall_scan(swaybg_scan("/cur.png"));
+        s.settings.wallpaper.program = "swaybg".into();
+        let job = s.wall_job(&json!({ "path": png, "monitor": "" })).unwrap();
+        assert_eq!(job.program, "swaybg");
+        assert!(job.recolor.is_none());
+        assert!(s.state()["wallpaper"]["busy"].as_bool().unwrap());
+        assert!(s.wall_job(&json!({ "path": png })).is_err(), "one at a time");
+        let out = WallOutcome { result: Ok(()), scan: swaybg_scan("/cur.png"), colors: None };
+        let msg = s.wall_done(&job, out).unwrap().unwrap();
+        assert!(msg.contains("still starts the old one"), "{msg}");
+        let lines = s.state()["wallpaper"]["startup"]["lines"].clone();
+        assert_eq!(lines[0]["number"], 2);
+
+        s.command("wallpaper.keepAtLogin", &json!({})).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("hl.exec_cmd(\"swaybg -o '*' -i /cur.png -m fill\")"), "{text}");
+        assert!(
+            text.contains(&format!("{}hl.exec_cmd(\"swaybg -i /old.png", walls::startup::MOVED))
+        );
+        assert!(s.state()["wallpaper"]["startup"]["managed"].as_bool().unwrap());
+
+        // Handed over: each pick rewrites the block.
+        let job = s.wall_job(&json!({ "path": png })).unwrap();
+        let shown = png.to_string_lossy().into_owned();
+        let out = WallOutcome { result: Ok(()), scan: swaybg_scan(&shown), colors: None };
+        let msg = s.wall_done(&job, out).unwrap().unwrap();
+        assert!(!msg.contains("old one"), "{msg}");
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains(&format!("-i {shown} -m fill")) && !text.contains("/cur.png"));
+
+        // A failure leaves the block alone and says why.
+        let job = s.wall_job(&json!({ "path": png })).unwrap();
+        let out = WallOutcome {
+            result: Err("swaybg stopped as soon as it started".into()),
+            scan: swaybg_scan("/other.png"),
+            colors: None,
+        };
+        assert!(s.wall_done(&job, out).is_err());
+        assert!(!s.wall_busy);
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), text);
+
+        s.command("wallpaper.giveBack", &json!({})).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+    }
+
+    #[test]
+    fn a_pick_can_recolor_the_desktop() {
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = colors::follow::clear_snapshot();
+        let (dir, _cfg, mut s) = rule_session("-- mine\n");
+        let png = dir.path().join("new.png");
+        std::fs::write(&png, b"x").unwrap();
+        s.set_wall_scan(swaybg_scan("/cur.png"));
+        s.settings.wallpaper.program = "swaybg".into();
+        s.settings.wallpaper.recolor = true;
+        s.settings.colors.source = "scheme:nord".into();
+
+        let job = s.wall_job(&json!({ "path": png })).unwrap();
+        assert_eq!(s.settings.colors.source, "wallpaper", "reading colors from it now");
+        assert!(s.colors_building);
+        let asked = job.recolor.clone().unwrap();
+        let seed = colors::ColorSettings { source: "color:#88d0ec".into(), ..asked.clone() };
+        let built = colors::build(&seed, &s.palettes).unwrap();
+        let out =
+            WallOutcome { result: Ok(()), scan: swaybg_scan("/cur.png"), colors: Some(Ok(built)) };
+        let msg = s.wall_done(&job, out).unwrap().unwrap();
+        assert!(!s.colors_building);
+        assert!(msg.contains("is up") && msg.contains("#88d0ec"), "{msg}");
+        assert_eq!(colors::current().unwrap().name, "#88d0ec");
     }
 }

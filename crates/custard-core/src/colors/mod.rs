@@ -147,8 +147,12 @@ pub fn build(settings: &ColorSettings, palettes: &[Named]) -> Result<Built> {
     if s.source != "wallpaper" {
         return Err(Error::other(format!("unknown color source `{}`", s.source)));
     }
+    build_from(&s, &wallpaper::detect())
+}
 
-    let found = wallpaper::detect();
+/// [`build`] from the wallpaper, with what is on screen already known.
+pub fn build_from(settings: &ColorSettings, found: &wallpaper::Found) -> Result<Built> {
+    let s = settings.clone().sanitized();
     let w = found.for_monitor(&s.monitor).cloned().ok_or_else(|| {
         let why = if found.unreadable.is_empty() {
             "No wallpaper program is running that hyprcustard can read — it reads \

@@ -39,6 +39,7 @@ pub mod session;
 pub mod settings;
 pub mod shader;
 pub mod theme;
+pub mod walls;
 
 pub use error::{Error, Result};
 pub use session::Session;

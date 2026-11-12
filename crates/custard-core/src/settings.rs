@@ -33,6 +33,8 @@ pub struct Settings {
     pub plugin_name: String,
     /// The Colors page's choices.
     pub colors: crate::colors::ColorSettings,
+    /// The Wallpaper page's choices.
+    pub wallpaper: crate::walls::WallSettings,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -53,6 +55,7 @@ impl Default for Settings {
             plugin_repo_url: DEFAULT_PLUGIN_REPO.to_string(),
             plugin_name: DEFAULT_PLUGIN_NAME.to_string(),
             colors: crate::colors::ColorSettings::default(),
+            wallpaper: crate::walls::WallSettings::default(),
         }
     }
 }
@@ -104,6 +107,7 @@ impl Settings {
             self.plugin_name = DEFAULT_PLUGIN_NAME.to_string();
         }
         self.colors = self.colors.sanitized();
+        self.wallpaper = self.wallpaper.sanitized();
         self
     }
 

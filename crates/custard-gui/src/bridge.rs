@@ -45,6 +45,11 @@ pub mod qobject {
         #[cxx_name = "notify"]
         fn notify(self: Pin<&mut Backend>, message: &QString, is_error: bool);
 
+        /// A wallpaper's preview has been made.
+        #[qsignal]
+        #[cxx_name = "wallpaperThumbReady"]
+        fn wallpaper_thumb_ready(self: Pin<&mut Backend>, file: &QString, thumb: &QString);
+
         /// One line of output from the running hyprpm operation.
         ///
         /// `transient` marks a progress bar redrawn in place: it should
@@ -106,6 +111,26 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "colorsBuild"]
         fn colors_build(self: Pin<&mut Backend>);
+
+        /// Look at what is on the desktop's background, on a thread. The
+        /// Wallpaper page's state fills in when it is done.
+        #[qinvokable]
+        #[cxx_name = "wallpaperScan"]
+        fn wallpaper_scan(self: Pin<&mut Backend>);
+
+        /// Put a wallpaper up: `{"path": ..., "monitor": ...}`, an empty
+        /// monitor meaning all of them. Returns at once; the toast says how
+        /// it went.
+        #[qinvokable]
+        #[cxx_name = "wallpaperSet"]
+        fn wallpaper_set(self: Pin<&mut Backend>, payload: &QString);
+
+        /// Make the previews missing for these files (a JSON array of
+        /// paths), in order, replacing any previous request.
+        /// `wallpaperThumbReady` comes for each one.
+        #[qinvokable]
+        #[cxx_name = "wallpaperThumbs"]
+        fn wallpaper_thumbs(self: Pin<&mut Backend>, files: &QString);
 
         /// Start a hyprpm operation: `add`, `remove`, `enable`, `disable`,
         /// `update` or `reload`. `argument` is the URL or plugin name the
@@ -194,6 +219,7 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use custard_core::hyprpm;
@@ -254,6 +280,11 @@ pub struct BackendRust {
     preview_shader: QString,
     /// Bumped per frame, so QML sees a new URL each time.
     preview_frames: u64,
+
+    /// True while the Wallpaper page's scan is out.
+    wall_scanning: bool,
+    /// Set to stop the running preview maker, when a new list replaces it.
+    thumbs_stop: Arc<AtomicBool>,
 }
 
 impl cxx_qt::Initialize for qobject::Backend {
@@ -324,6 +355,7 @@ impl qobject::Backend {
             "importPreview" => {
                 session.import_preview().map(|v| v.to_string()).map_err(|e| e.to_string())
             }
+            "wallpaperLibrary" => Ok(session.wall_library().to_string()),
             "shaderSource" => payload
                 .get("path")
                 .and_then(Value::as_str)
@@ -418,6 +450,86 @@ impl qobject::Backend {
                 // The choices changed while it ran, so it was dropped: go
                 // again for what is asked for now.
                 backend.colors_build();
+            });
+        });
+    }
+
+    /// Scan the desktop's background away from the Qt thread.
+    pub fn wallpaper_scan(mut self: Pin<&mut Self>) {
+        if self.as_ref().rust().wall_scanning {
+            return;
+        }
+        self.as_mut().rust_mut().wall_scanning = true;
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let scan = custard_core::walls::scan();
+            let _ = thread.queue(move |mut backend| {
+                backend.as_mut().rust_mut().wall_scanning = false;
+                if let Some(session) = backend.as_mut().rust_mut().session.as_mut() {
+                    session.set_wall_scan(scan);
+                }
+                backend.push_state();
+            });
+        });
+    }
+
+    /// Put a wallpaper up on a thread, then hand the result back.
+    pub fn wallpaper_set(mut self: Pin<&mut Self>, payload: &QString) {
+        let payload = parse_payload(&payload.to_string());
+        let job = match self.as_mut().rust_mut().session.as_mut() {
+            Some(session) => session.wall_job(&payload),
+            None => Err(custard_core::Error::other("the backend is still starting up")),
+        };
+        let job = match job {
+            Ok(job) => job,
+            Err(e) => {
+                let m = QString::from(&e.to_string());
+                self.as_mut().notify(&m, true);
+                return;
+            }
+        };
+        self.as_mut().push_state();
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let outcome = job.run();
+            let _ = thread.queue(move |mut backend| {
+                let result = match backend.as_mut().rust_mut().session.as_mut() {
+                    Some(session) => session.wall_done(&job, outcome),
+                    None => Ok(None),
+                };
+                backend.as_mut().push_state();
+                match result {
+                    Ok(Some(m)) => backend.as_mut().notify(&QString::from(&m), false),
+                    Ok(None) => {}
+                    Err(e) => backend.as_mut().notify(&QString::from(&e.to_string()), true),
+                }
+            });
+        });
+    }
+
+    /// Make previews on a thread pool, one signal per finished file.
+    pub fn wallpaper_thumbs(mut self: Pin<&mut Self>, files: &QString) {
+        let files: Vec<std::path::PathBuf> =
+            serde_json::from_str::<Vec<String>>(&files.to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect();
+        // Stop the last batch; it is for a list no longer on screen.
+        self.as_ref().rust().thumbs_stop.store(true, Ordering::Relaxed);
+        let stop = Arc::new(AtomicBool::new(false));
+        self.as_mut().rust_mut().thumbs_stop = Arc::clone(&stop);
+        if files.is_empty() || !custard_core::colors::extract::have_ffmpeg() {
+            return;
+        }
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            custard_core::walls::thumbs::make_all(&files, &stop, |file, thumb| {
+                let file = QString::from(&file.to_string_lossy().into_owned());
+                let thumb = QString::from(&thumb.to_string_lossy().into_owned());
+                let _ = thread.queue(move |backend| {
+                    backend.wallpaper_thumb_ready(&file, &thumb);
+                });
             });
         });
     }

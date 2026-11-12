@@ -81,11 +81,7 @@ pub fn detect() -> Found {
     };
     // Only this session's programs: the shader preview runs a swaybg inside
     // its own nested Hyprland, and that is not the desktop's wallpaper.
-    let ours = std::env::var("WAYLAND_DISPLAY").ok();
-    let procs: Vec<(u32, Vec<String>)> = processes()
-        .into_iter()
-        .filter(|(pid, _)| same_display(ours.as_deref(), display_of(*pid).as_deref()))
-        .collect();
+    let procs = session_processes(false);
     let running = |name: &str| procs.iter().any(|(_, argv)| program(argv) == name);
 
     for (pid, argv) in &procs {
@@ -175,6 +171,26 @@ fn background_namespaces() -> Vec<String> {
     out
 }
 
+/// This session's processes and their command lines.
+///
+/// `strict` keeps only processes known to be on this compositor's display,
+/// which is what anything that stops a process must use; otherwise a process
+/// whose display cannot be read is kept too.
+pub fn session_processes(strict: bool) -> Vec<(u32, Vec<String>)> {
+    let ours = std::env::var("WAYLAND_DISPLAY").ok();
+    processes()
+        .into_iter()
+        .filter(|(pid, _)| {
+            let theirs = display_of(*pid);
+            if strict {
+                ours.is_some() && ours == theirs
+            } else {
+                same_display(ours.as_deref(), theirs.as_deref())
+            }
+        })
+        .collect()
+}
+
 /// Every process's command line.
 fn processes() -> Vec<(u32, Vec<String>)> {
     let Ok(rd) = std::fs::read_dir("/proc") else { return Vec::new() };
@@ -210,7 +226,8 @@ fn same_display(ours: Option<&str>, theirs: Option<&str>) -> bool {
     }
 }
 
-fn program(argv: &[String]) -> &str {
+/// The program's name, without its directory.
+pub fn program(argv: &[String]) -> &str {
     argv.first().map(|a| a.rsplit('/').next().unwrap_or(a)).unwrap_or("")
 }
 
@@ -244,8 +261,9 @@ fn open_media(pid: u32, path: &Path) -> Option<PathBuf> {
 // Readers, one per program. Each takes text, so each is tested on its own.
 // ---------------------------------------------------------------------------
 
-/// `mpvpaper [options] <output> <path>`.
-pub fn mpvpaper_args(argv: &[String]) -> Option<Wallpaper> {
+/// Where in an mpvpaper command line its output and path are: the indexes
+/// of the arguments that are not options or option values.
+pub fn mpvpaper_positions(argv: &[String]) -> Vec<usize> {
     let takes_value = |c: char| matches!(c, 'a' | 'n' | 'l' | 'o');
     let long_value = ["--auto-mode", "--slideshow", "--layer", "--mpv-options"];
     let mut positional = Vec::new();
@@ -262,10 +280,16 @@ pub fn mpvpaper_args(argv: &[String]) -> Option<Wallpaper> {
                 i += 1;
             }
         } else {
-            positional.push(a.clone());
+            positional.push(i);
         }
         i += 1;
     }
+    positional
+}
+
+/// `mpvpaper [options] <output> <path>`.
+pub fn mpvpaper_args(argv: &[String]) -> Option<Wallpaper> {
+    let positional: Vec<&String> = mpvpaper_positions(argv).into_iter().map(|i| &argv[i]).collect();
     let [output, path, ..] = positional.as_slice() else { return None };
     Some(Wallpaper {
         program: "mpvpaper".into(),
@@ -307,10 +331,13 @@ pub fn swaybg_args(argv: &[String]) -> Vec<Wallpaper> {
     out
 }
 
-/// `hyprctl hyprpaper listactive`: `MONITOR = /path`, one per line.
+/// `hyprctl hyprpaper listactive`: one per line, `MONITOR = /path` before
+/// hyprpaper 0.8 and `MONITOR: /path` from it on.
 pub fn hyprpaper_active(text: &str) -> Vec<Wallpaper> {
     text.lines()
-        .filter_map(|l| l.split_once('='))
+        .filter_map(|l| {
+            l.split_once(" = ").or_else(|| l.split_once(": ")).or_else(|| l.split_once('='))
+        })
         .map(|(m, p)| (m.trim(), p.trim()))
         .filter(|(_, p)| !p.is_empty())
         .map(|(m, p)| Wallpaper {
@@ -490,6 +517,10 @@ mod tests {
         let ws = hyprpaper_active("DP-1 = /p/a.png\n = /p/all.png\n");
         assert_eq!(ws[0].monitor.as_deref(), Some("DP-1"));
         assert_eq!(ws[1].monitor, None);
+        // hyprpaper 0.8, as it answers in a nested Hyprland.
+        let ws = hyprpaper_active("HEADLESS-1: /p/my: file.png\n");
+        assert_eq!(ws[0].monitor.as_deref(), Some("HEADLESS-1"));
+        assert_eq!(ws[0].path, PathBuf::from("/p/my: file.png"));
 
         let old =
             hyprpaper_conf("preload = /x.png\nwallpaper = DP-2,/x.png\nwallpaper = ,/y.png\n");

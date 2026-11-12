@@ -40,7 +40,7 @@ palette is a small TOML file.
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
 - [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Look rules](#look-rules) · [Animations](#animations) · [Themes](#themes-for-hyprland)
-- [Colors for the whole desktop](#colors-for-the-whole-desktop)
+- [Wallpaper](#wallpaper) · [Colors for the whole desktop](#colors-for-the-whole-desktop)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -86,7 +86,10 @@ own save: the header **Save** writes your Hyprland config, and **Save shader** w
   `qt6-base` and `qt6-declarative`.
 * **HyprWindowShade** itself, and a Lua Hyprland config (`~/.config/hypr/hyprland.lua`).
   Hyprland 0.57 dropped `hyprland.conf` altogether, and so has the plugin.
-* **ffmpeg**, which the Colors page reads wallpapers with — stills and videos alike.
+* **ffmpeg**, which the Colors page reads wallpapers with — stills and videos alike — and the
+  Wallpaper page makes its previews with.
+* For the **Wallpaper** page, a wallpaper program: awww (or swww), hyprpaper, swaybg, or
+  mpvpaper for videos. Whichever you already use is fine.
 
 Hyprland does not have to be running. Without it the app still edits your config and your
 shaders; it just cannot offer you the list of open window classes or live layer namespaces,
@@ -420,6 +423,49 @@ animations and leaves your shader setup as it is. A theme without shaders never 
 The shader rules, like any other, take effect when you save.
 
 The app's own colors are a separate thing, under Settings → This app's colors.
+
+## Wallpaper
+
+The **Wallpaper** page (under *Desktop*) shows previews of your wallpapers and puts the one you
+click on screen. It does not replace your wallpaper program; it drives the one you already
+run, and keeps your own options for it.
+
+* **Your folders.** The list starts from the folder your wallpaper program is reading and the
+  usual places (`~/Pictures/Wallpapers`, `~/wallpapers`, `~/.local/share/backgrounds`,
+  `/usr/share/backgrounds` and their variants), whichever exist. Add your own folders, and
+  take any off with ×. Images and videos are listed, subfolders included. Previews are made
+  once with ffmpeg and kept in `~/.cache/hyprcustard/thumbs/`.
+* **Where.** Every monitor, or click a monitor at the top to put picks on that one only.
+* **Which program.** The one running, unless you choose another under *Show it with*;
+  switching moves every monitor to the new one and stops the old one. Each is driven its
+  own way:
+
+  | Program | How a wallpaper goes up | Videos | Whole folders |
+  |---|---|---|---|
+  | awww / swww | `awww img`, starting `awww-daemon` if needed | — (GIFs play) | — |
+  | hyprpaper | `hyprctl hyprpaper wallpaper` | — | — |
+  | swaybg | started again with the new image; other monitors keep theirs | — | — |
+  | mpvpaper | started again with the new file, with every option you gave it | yes | yes, *Play the whole folder* |
+
+  A restarted program's new copy is up before the old one is stopped, so a file it cannot
+  open leaves your wallpaper as it was, and the page says why.
+* **Colors.** *Recolor the desktop to match each pick* builds a scheme from the new wallpaper
+  and applies it, as the Colors page's Apply would. When colors follow the wallpaper, each
+  pick recolors at once, without waiting for `custard-watch`'s minimum gap.
+
+### At login
+
+Picking a wallpaper changes the screen, not your config, so whatever starts your wallpaper at
+login still runs next time. The page shows the lines in `hyprland.lua` that start one. **Start
+what is on screen instead** comments those lines out, marking them so they can be restored
+exactly, and adds a managed block (`HyprCustard wallpaper`) that starts what is on screen now.
+After that, every pick rewrites the block. A backup is made first. **Give it back** removes the
+block and restores your lines.
+
+For hyprpaper, the block starts it with a config of hyprcustard's own,
+`~/.config/hyprcustard/wallpaper/hyprpaper.conf`, so yours is never edited. awww and swww
+remember their last image themselves, so their block only starts the daemon. A systemd user
+service that starts a wallpaper is pointed out, but left alone.
 
 ## Colors for the whole desktop
 
@@ -810,11 +856,13 @@ crates/custard-core/src/
     theme.rs      the built-ins, and the TOML loader
     colors/       desktop color schemes: wallpaper readers, ffmpeg sampling,
                   Material and base16 schemes, and the per-app writers
+    walls/        the Wallpaper page: folders, previews, driving each
+                  wallpaper program, and the login block
     hyprctl.rs    clients, layers, dispatch
     session.rs    the facade: one state document, one command entry point
 crates/custard-gui/
     src/bridge.rs the CXX-Qt bridge, and nothing else
-    qml/          Theme and App singletons, components, six pages
+    qml/          Theme and App singletons, components, one file per page
 ```
 
 ---

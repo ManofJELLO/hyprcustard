@@ -37,7 +37,10 @@ optdepends=('hyprland: the compositor this configures'
             'hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure'
             'hyprpm: the Plugin page, which installs and reloads the plugin'
             'grim: the shader preview, which reads frames out of a nested compositor'
-            'swaybg: your wallpaper behind the shader preview'
+            'swaybg: your wallpaper behind the shader preview, and a wallpaper program the Wallpaper page drives'
+            'awww: a wallpaper program the Wallpaper page drives (swww works too)'
+            'hyprpaper: a wallpaper program the Wallpaper page drives'
+            'mpvpaper: video wallpapers and whole folders on the Wallpaper page'
             'kitty: a terminal for the preview window and "Run in a terminal" (foot, alacritty, ghostty, wezterm, konsole or xterm will do as well)')
 # Already stripped by the release profile, and there is no source to build a
 # debug package from.

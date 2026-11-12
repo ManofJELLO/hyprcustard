@@ -48,6 +48,7 @@ ApplicationWindow {
         { label: "Look rules", hint: "Per app and workspace", section: "Hyprland" },
         { label: "Animation", hint: "Curves and speeds",   section: "Hyprland" },
         { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
+        { label: "Wallpaper", hint: "Pick and put up",     section: "Desktop" },
         { label: "Colors",    hint: "One scheme, every app", section: "Desktop" },
         { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
         { label: "Shaders",   hint: "Files",               section: "HyprWindowShade" },
@@ -417,6 +418,12 @@ ApplicationWindow {
             }
             Item {
                 ThemesPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                WallpaperPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }
