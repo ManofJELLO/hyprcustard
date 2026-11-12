@@ -192,7 +192,7 @@ pub const EFFECTS: &[Field] = &[
     field(
         W,
         "border_color",
-        "Border colour",
+        "Border color",
         "Used focused or not.",
         Kind::Gradient,
         NONE,
@@ -517,7 +517,7 @@ fn ordered<'a>(
 
 /// An effect's value as Lua. Two take a string where the rest take the value
 /// itself: opacity is `"0.9 override 0.8 override"`, so it replaces the
-/// global opacity rather than multiplying it, and a border colour is the
+/// global opacity rather than multiplying it, and a border color is the
 /// gradient spelled out the way a `.conf` would.
 fn effect_lua(key: &str, v: &LookValue) -> String {
     match (key, v) {
@@ -552,6 +552,11 @@ fn field_view(f: &Field, value: Option<&LookValue>) -> Value {
 
 /// Every field the page can offer, by kind.
 pub fn catalog() -> Value {
+    static CATALOG: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(build_catalog).clone()
+}
+
+fn build_catalog() -> Value {
     let list = |all: &[Field], rule: RuleKind| -> Vec<Value> {
         all.iter().filter(|f| f.rule == rule).map(|f| field_view(f, None)).collect()
     };
@@ -563,6 +568,44 @@ pub fn catalog() -> Value {
         );
     }
     Value::Object(out)
+}
+
+fn is_ident(k: &str) -> bool {
+    let mut chars = k.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !matches!(k, "and" | "or" | "not" | "nil" | "true" | "false" | "function" | "end")
+}
+
+/// A rule from a file — a theme, or the look block's state line — checked
+/// before any of it reaches Lua. Every key has to be a plain name and every
+/// value kept as written has to be a literal, which is then written back in
+/// the app's own spelling; anything else would let a shared theme run code.
+pub fn checked(rule: &Rule) -> Result<Rule> {
+    let bad = |what: &str| Error::other(format!("a rule in it has {what}"));
+    let mut out = rule.clone();
+    for k in rule.matches.keys().chain(rule.effects.keys()) {
+        if !is_ident(k) {
+            return Err(bad(&format!("the field {k:?}, which is not a name")));
+        }
+    }
+    for (k, v) in &rule.effects {
+        if let Some(f) = effect(rule.kind, k) {
+            out.effects.insert(k.clone(), parse_value(f, &v.to_json())?);
+        }
+    }
+    out.extra.clear();
+    for (k, v) in &rule.extra {
+        if !is_ident(k) || matches!(k.as_str(), "match" | "name") {
+            return Err(bad(&format!("the field {k:?}, which is not a name")));
+        }
+        let lit = lua_table(&format!("x = {v}"))
+            .and_then(|t| t.into_iter().next())
+            .map(|(_, lit)| lit)
+            .ok_or_else(|| bad(&format!("`{k} = {v}`, which is not a plain value")))?;
+        out.extra.push((k.clone(), lit.lua()));
+    }
+    Ok(out)
 }
 
 /// Apply a change from the page to a copy of `rule`: `label`, `enabled`,
@@ -690,6 +733,9 @@ pub struct HandRule {
     pub kind: RuleKind,
     /// The call exactly as it is in the file.
     pub text: String,
+    /// The same call with any comments in it blanked, safe to run again as
+    /// part of a longer chunk.
+    pub code: String,
     /// Its `name`, if it has a plain one.
     pub name: String,
     /// The call read as data, when every value in it is a literal.
@@ -741,6 +787,7 @@ pub fn in_config(document: &str) -> Vec<HandRule> {
         let name = kind.function();
         for (at, end) in crate::import::call_spans(&code, name) {
             let text = outside[at..end].to_string();
+            let call_code = code[at..end].to_string();
             let open = code[at..end].find('{').map(|i| at + i);
             let Some(open) = open else { continue };
             let body = &code[open + 1..code[..end].rfind('}').unwrap_or(end)];
@@ -767,7 +814,7 @@ pub fn in_config(document: &str) -> Vec<HandRule> {
             let line_end = code[end..].find('\n').map_or(code.len(), |i| end + i);
             let alone =
                 code[line_start..at].trim().is_empty() && code[end..line_end].trim().is_empty();
-            out.push(HandRule { kind, text, name, rule, look, alone });
+            out.push(HandRule { kind, text, code: call_code, name, rule, look, alone });
         }
     }
     out
@@ -781,8 +828,12 @@ fn outside_blocks(document: &str) -> String {
         if let Some(begin) = out.find(markers.begin) {
             if let Some(rel) = out[begin..].find(markers.end) {
                 let end = begin + rel + markers.end.len();
-                let blank: String =
-                    out[begin..end].chars().map(|c| if c == '\n' { '\n' } else { ' ' }).collect();
+                // Byte for byte, so offsets past the block still line up
+                // when it holds multi-byte characters.
+                let blank: String = out.as_bytes()[begin..end]
+                    .iter()
+                    .map(|&b| if b == b'\n' { '\n' } else { ' ' })
+                    .collect();
                 out.replace_range(begin..end, &blank);
             }
         }
@@ -790,14 +841,19 @@ fn outside_blocks(document: &str) -> String {
     out
 }
 
-/// The user's own workspace rules for any of `workspaces`, as their calls.
-pub fn theirs_for(hand: &[HandRule], workspaces: &[&str]) -> Vec<String> {
-    hand.iter()
+/// The user's own workspace rules for any of `workspaces`, as their calls
+/// with comments blanked — a `--` would otherwise swallow whatever follows
+/// it in the chunk they are run in. Line breaks are kept as they are.
+pub fn theirs_for<'a>(
+    hand: impl IntoIterator<Item = &'a HandRule>,
+    workspaces: &[&str],
+) -> Vec<String> {
+    hand.into_iter()
         .filter(|h| h.kind == RuleKind::Workspace)
         .filter(|h| {
             h.rule.as_ref().and_then(Rule::workspace).is_some_and(|w| workspaces.contains(&w))
         })
-        .map(|h| h.text.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|h| h.code.trim().to_string())
         .collect()
 }
 
@@ -1056,23 +1112,30 @@ fn effect_from(f: &Field, v: &Lit) -> Option<LookValue> {
                 _ => None,
             }
         }
+        // Only the two forms the app writes: one color, or colors and then
+        // an angle. Two colors with no angle mean focused and unfocused to
+        // Hyprland, which one gradient for both would not be.
         (_, Lit::Str(s)) if f.kind == Kind::Gradient => {
-            let mut colors = Vec::new();
-            let mut angle = 0.0;
-            for w in s.split_whitespace() {
-                if let Some(deg) = w.strip_suffix("deg") {
-                    angle = deg.parse().ok()?;
-                } else {
-                    colors.push(look::parse_color(w).ok()?);
-                }
+            let words: Vec<&str> = s.split_whitespace().collect();
+            let (angle, colors) = match words.split_last() {
+                Some((one, [])) => (0.0, vec![*one]),
+                Some((last, rest)) => (last.strip_suffix("deg")?.parse().ok()?, rest.to_vec()),
+                None => return None,
+            };
+            if colors.len() > 1 && words.len() == colors.len() {
+                return None;
             }
+            let colors =
+                colors.iter().map(|c| look::parse_color(c).ok()).collect::<Option<Vec<_>>>()?;
             parse_value(f, &json!({ "colors": colors, "angle": angle })).ok()
         }
         _ => {
-            let got = parse_value(f, &lit_json(v)).ok()?;
-            // Clamped into the slider's range: not the same rule any more.
-            (got.to_json() == lit_json(v) || f.kind == Kind::Sides || f.kind == Kind::Float)
-                .then_some(got)
+            // Read once as written and once into the slider's range: a value
+            // the range would clamp is not the same rule any more.
+            let json = lit_json(v);
+            let got = parse_value(f, &json).ok()?;
+            let unclamped = look::parse_as(f.key, f.kind, (0.0, 0.0), &json).ok()?;
+            got.same_as(&unclamped).then_some(got)
         }
     }
 }
@@ -1375,6 +1438,97 @@ hl.window_rule({ match = { class = "x" .. y }, no_blur = true })
         assert!(edited(&r, &json!({ "effects": { "gaps_out": 1 } })).is_err());
         assert!(edited(&r, &json!({ "matches": { "namespace": "x" } })).is_err());
         assert!(edited(&r, &json!({ "effects": { "no_shadow": "yes" } })).is_err());
+    }
+
+    fn moved(src: &str) -> Rule {
+        in_config(src).remove(0).rule.unwrap()
+    }
+
+    #[test]
+    fn a_moved_rule_keeps_values_the_page_would_clamp() {
+        let r = moved(r#"hl.workspace_rule({ workspace = "2", gaps_out = 150 })"#);
+        assert!(r.effects.is_empty());
+        assert_eq!(r.extra, vec![("gaps_out".to_string(), "150".to_string())]);
+        let r = moved(r#"hl.window_rule({ match = { class = "k" }, rounding_power = 15 })"#);
+        assert_eq!(r.extra[0].0, "rounding_power");
+        // In range, and a whole number where a fraction is allowed: kept as an effect.
+        let r = moved(r#"hl.layer_rule({ match = { namespace = "w" }, ignore_alpha = 1 })"#);
+        assert_eq!(r.effects["ignore_alpha"], LookValue::Float(1.0));
+    }
+
+    #[test]
+    fn a_moved_border_color_keeps_its_meaning() {
+        // Focused and unfocused colors, not a gradient.
+        let r = moved(
+            r#"hl.window_rule({ match = { class = "k" }, border_color = "rgb(ff0000) rgb(880808)" })"#,
+        );
+        assert!(r.effects.is_empty() && r.extra[0].0 == "border_color");
+        let r = moved(
+            r#"hl.window_rule({ match = { class = "k" }, border_color = "rgb(ff0000) rgb(00ff00) 45deg rgb(111111) 0deg" })"#,
+        );
+        assert!(r.effects.is_empty());
+        let r = moved(
+            r#"hl.window_rule({ match = { class = "k" }, border_color = "rgb(ff0000) rgb(00ff00) 45deg" })"#,
+        );
+        assert_eq!(
+            effect_lua("border_color", &r.effects["border_color"]),
+            "\"rgba(ff0000ff) rgba(00ff00ff) 45deg\""
+        );
+        let r =
+            moved(r#"hl.window_rule({ match = { class = "k" }, border_color = "rgb(ff0000)" })"#);
+        assert_eq!(effect_lua("border_color", &r.effects["border_color"]), "\"rgba(ff0000ff)\"");
+    }
+
+    #[test]
+    fn a_comment_in_the_users_workspace_rule_does_not_reach_the_live_chunk() {
+        let src = "hl.workspace_rule({ workspace = \"1\", -- big gaps\n    gaps_out = 20 })\n";
+        let theirs = theirs_for(&in_config(src), &["1"]);
+        assert_eq!(theirs.len(), 1);
+        assert!(!theirs[0].contains("--"), "{}", theirs[0]);
+        assert!(theirs[0].contains("gaps_out = 20"));
+        // Still the whole call, ready to run.
+        assert!(lua_table(
+            &theirs[0][theirs[0].find('{').unwrap() + 1..theirs[0].rfind('}').unwrap()]
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn multi_byte_text_in_a_block_does_not_shift_the_users_rules() {
+        let doc = format!(
+            "{}\n-- Café — dim\nhyprcustard_rules[\"lr1\"] = hl.window_rule({{ match = {{ class = \"é\" }}, no_blur = true }})\n{}\nhl.window_rule({{ match = {{ class = \"b\" }}, no_blur = true }})\n",
+            look::MARKERS.begin,
+            look::MARKERS.end
+        );
+        let found = in_config(&doc);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].alone && found[0].text.contains("\"b\""));
+        let out = comment_out(&doc, &found[0].text).unwrap();
+        assert!(out.ends_with("-- hl.window_rule({ match = { class = \"b\" }, no_blur = true })\n"));
+    }
+
+    #[test]
+    fn rules_from_a_file_cannot_carry_code() {
+        let mut r = Rule::new("lr1", RuleKind::Window);
+        r.matches.insert("class".into(), LookValue::Text("k".into()));
+        r.extra.push(("float".into(), "os.execute('touch /tmp/x') or true".into()));
+        assert!(checked(&r).is_err());
+
+        let mut r2 = r.clone();
+        r2.extra = vec![("x = os.execute('y'), z".into(), "true".into())];
+        assert!(checked(&r2).is_err());
+
+        let mut r3 = r.clone();
+        r3.extra.clear();
+        r3.effects.insert("no_blur = os.execute('y') or true, z".into(), LookValue::Bool(true));
+        assert!(checked(&r3).is_err());
+
+        let mut ok = r.clone();
+        ok.extra = vec![("size".into(), "{200,300}".into()), ("float".into(), "true".into())];
+        ok.effects.insert("rounding".into(), LookValue::Int(99));
+        let c = checked(&ok).unwrap();
+        assert_eq!(c.extra[0], ("size".to_string(), "{ 200, 300 }".to_string()));
+        assert_eq!(c.effects["rounding"], LookValue::Int(40));
     }
 
     #[test]

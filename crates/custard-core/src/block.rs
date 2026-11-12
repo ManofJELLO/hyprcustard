@@ -12,7 +12,7 @@ use crate::model::Config;
 pub const BEGIN: &str = "-- >>> HyprWindowShade (managed by hyprwindowshade-gui) >>>";
 /// Closing marker.
 pub const END: &str = "-- <<< HyprWindowShade (managed by hyprwindowshade-gui) <<<";
-/// Prefix of the line carrying the serialised state.
+/// Prefix of the line carrying the serialized state.
 pub const STATE_PREFIX: &str = "-- hws-state-v1 ";
 
 /// The marker lines that fence one managed block.
@@ -148,7 +148,7 @@ pub fn remove_with(document: &str, markers: &Markers) -> Result<String> {
             let mut before = s.before.to_string();
             // Take back exactly the one blank line `splice` inserted when it
             // appended the block. Anything beyond that is the user's own
-            // spacing, and removing the block is not licence to reflow it.
+            // spacing, and removing the block is not license to reflow it.
             if before.ends_with("\n\n") {
                 before.pop();
             }
@@ -158,7 +158,7 @@ pub fn remove_with(document: &str, markers: &Markers) -> Result<String> {
     }
 }
 
-/// Pull the serialised [`Config`] out of a block body.
+/// Pull the serialized [`Config`] out of a block body.
 pub fn extract_state(inner: &str) -> Result<Option<Config>> {
     for line in inner.lines() {
         let line = line.trim();

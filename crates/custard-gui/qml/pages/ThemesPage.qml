@@ -199,7 +199,7 @@ Item {
                                 options: themeCard.modelData.options
                             }
 
-                            Text {
+                            FitText {
                                 width: parent.width
                                 text: themeCard.modelData.name
                                 color: Theme.fg

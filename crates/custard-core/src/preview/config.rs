@@ -36,7 +36,7 @@ pub struct PreviewConfig {
     pub demo_class: String,
     /// The plugin `.so` to load once the session is up.
     pub plugin_so: String,
-    /// Background colour behind everything, as `0xRRGGBB`.
+    /// Background color behind everything, as `0xRRGGBB`.
     pub background: u32,
     /// Pane size in pixels, which the preview's output is fixed to.
     pub size: (u32, u32),
@@ -209,7 +209,7 @@ fn emit_rule(out: &mut String, cfg: &PreviewConfig) {
 
     // The plugin draws nothing over a fullscreen or maximized window unless it
     // opted in, and on 0.57 the demo terminal asks to be maximized as it maps.
-    // Granted, every window in the cycle came up unshaded — the neighbour too,
+    // Granted, every window in the cycle came up unshaded — the neighbor too,
     // since a window opened over a maximized one inherits its mode — and only
     // took its shader once focus moved and the request was forgotten.
     out.push_str("\nhl.window_rule({\n");

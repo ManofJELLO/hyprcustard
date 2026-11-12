@@ -25,6 +25,6 @@ void main() {
     float edge = smoothstep(n - SOFTNESS, n + SOFTNESS, progress);
 
     vec4 col = texture(tex, v_texcoord);
-    // Premultiplied: colour never exceeds alpha, so the wrapper's clamp is a no-op.
+    // Premultiplied: color never exceeds alpha, so the wrapper's clamp is a no-op.
     fragColor = col * edge;
 }

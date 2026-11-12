@@ -198,10 +198,10 @@ QtObject {
             onAccept()
     }
 
-    // --- colours ------------------------------------------------------------
+    // --- colors ------------------------------------------------------------
     // Shared by the Look page and the look rules' editor.
 
-    // A QML colour as `#aarrggbb`, the form the backend deals in.
+    // A QML color as `#aarrggbb`, the form the backend deals in.
     function argb(c) {
         function h(x) {
             var s = Math.round(x * 255).toString(16)

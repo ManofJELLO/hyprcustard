@@ -29,7 +29,7 @@ For the **HyprWindowShade** plugin, it:
   value back, then save that shader when you mean it. The plugin reloads a shader when its
   mtime changes, so saving is the moment it reaches the screen.
 
-It wears your Qt colours by default, so it looks like the rest of your desktop.
+It wears your Qt colors by default, so it looks like the rest of your desktop.
 Gruvbox dark and light are built in if you would rather it did not; any other
 palette is a small TOML file.
 
@@ -95,7 +95,7 @@ the app, and both in the Arch repositories:
 
 * `grim`, to read frames out of the compositor it starts. Without it there is no preview.
 * `swaybg`, to draw your wallpaper behind the preview window. Without it the preview still
-  runs, on the flat colour of the pane. If swaybg is also what sets your own wallpaper, it
+  runs, on the flat color of the pane. If swaybg is also what sets your own wallpaper, it
   costs nothing at all — see [below](#where-the-wallpaper-behind-it-comes-from).
 
 It also opens a terminal as its demo window — kitty, foot, alacritty, ghostty, wezterm or
@@ -109,7 +109,7 @@ of `hyprland`.
 There is no hyprcustard release yet, so for now [build from source](#build-from-source).
 
 Once there is one, every release will have a `hyprcustard-<version>-x86_64.tar.gz`
-holding the binary, the desktop entry, the licence and this README, with a
+holding the binary, the desktop entry, the license and this README, with a
 `.sha256` beside it, and `packaging/aur-bin` will install it on Arch as
 `hyprcustard-bin`. The binary needs nothing but Qt 6, because the QML is compiled
 into it.
@@ -263,13 +263,13 @@ as you wrote it and everything not set here still comes from it. That only works
 block comes *after* your own settings; if something later in the file sets the same option
 again, Save says which options did not stick.
 
-A coloured bar marks a row set here — the accent colour once saved, the warning colour while
+A colored bar marks a row set here — the accent color once saved, the warning color while
 unsaved. **Reset** stops setting that one option, **Clear all** stops setting any (and Save
 then takes the block out), and **Discard changes** puts both the page and the desktop back to
 what the file says. Undoing a value on the desktop means a `hyprctl reload config-only`,
 because Hyprland has no way to unset a single option.
 
-Colours are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
+Colors are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
 `rgba(...)`, `0xaarrggbb` or `#aarrggbb`. A border gradient can be typed the way a
 `hyprland.conf` writes one: `33ccffee 00ff99ee 45deg`.
 
@@ -281,13 +281,15 @@ a single window. A rule is for:
 
 * **Windows** — by class or title (regular expressions, as Hyprland takes them), or by being
   floating, tiled, fullscreen, a dialog, on some workspace, and so on. It can change opacity
-  (focused and unfocused, replacing the global opacity), the border's size and colour,
+  (focused and unfocused, replacing the global opacity), the border's size and color,
   rounding, shadow, glow, blur, dimming, decorations and the animation style.
 * **A layer** — by namespace: `waybar`, `rofi`, `notifications`. Blur behind it, how see-through
   a pixel can be before blur skips it, dimming behind it, its animation.
 * **Workspaces** — `1`, `name:web`, or a selector such as `w[tv1]` (one tiled window) or `f[1]`
   (a window fullscreen): gaps inside and at the edges, borders, rounding, shadows. **No gaps
-  when there is only one window** adds the two rules Hyprland's example config calls smart gaps.
+  when there is only one window**, under **Common rules**, adds the two rules Hyprland's example
+  config calls smart gaps. Common rules has a few other ready-made ones; each is an ordinary rule
+  once added.
 
 Open windows and layers are offered by name, and Hyprland checks every rule as it is made, so
 one it would not take is refused with its reason instead of being saved. With live edits on, a
@@ -320,8 +322,10 @@ Hyprland merges every rule for one workspace into one, which is why the app keep
 workspace, and why, if your config has its own rule for that workspace, a live edit runs yours
 again first — switching the app's rule off would otherwise take yours with it until a reload.
 
-A theme saved with look rules carries them, and applying it replaces the app's rules with the
-theme's. A theme without any leaves your rules alone.
+A theme carries the look rules it was saved with, and applying it sets the app's rules to
+exactly those, as it does every other part of the look — so a theme without any, the built-in
+ones included, takes the app's rules away. A rule moved here is one of the app's from then on.
+Rules still in your own `hyprland.lua` are never touched by a theme.
 
 ## Animations
 
@@ -370,13 +374,13 @@ A theme is complete rather than a list of changes, so applying one gives you tha
 your own config says, and switching themes never leaves a value behind from the last one. An
 animation your config sets but the theme does not is set to what it would inherit inside the
 theme, so your config's version cannot show through. The cursor options are left alone: when
-your cursor hides is behaviour, not looks.
+your cursor hides is behavior, not looks.
 
 Three themes are built in: **Hyprland defaults** (a way back to a plain desktop without editing a
 file), **Soft glass** and **Sharp and quick**. Your own live in
 `~/.config/hyprcustard/hypr-themes/` as JSON, one file per theme, and **Import…** / **Export…**
 move them in and out. A theme file can be written by hand — values take the shapes the Look
-page uses, and colours may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
+page uses, and colors may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
 
 ```json
 {
@@ -392,7 +396,7 @@ page uses, and colours may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
 }
 ```
 
-Anything in a theme this version does not recognise is left out, and Apply says what.
+Anything in a theme this version does not recognize is left out, and Apply says what.
 
 ### Shaders in a theme
 
@@ -401,7 +405,7 @@ and their shader tags, the layer shaders and their open and close animations, an
 files they use, as text** — a shader's tuned values live inside its file, so without them a
 theme would look different on another machine, or on this one after a shader is edited. Inside
 the theme the paths are written `$SHADERS/crt.glsl`, so it works whatever your shader folder is.
-Keybinds, startup actions and how the plugin loads stay out: those are behaviour, not looks.
+Keybinds, startup actions and how the plugin loads stay out: those are behavior, not looks.
 
 Applying such a theme writes any shader you do not have into your shader folder. If you have a
 **different** version of one, it asks first: **Replace mine** backs yours up and writes the
@@ -410,7 +414,7 @@ theme's over it; **Keep both** leaves yours alone and adds the theme's beside it
 animations and leaves your shader setup as it is. A theme without shaders never touches them.
 The shader rules, like any other, take effect when you save.
 
-The app's own colours are a separate thing, under Settings → This app's colours.
+The app's own colors are a separate thing, under Settings → This app's colors.
 
 ## Shader parameters
 
@@ -422,7 +426,7 @@ line endings intact — and the plugin picks it up on the next frame.
 Staging rather than writing is what makes a shader safe to experiment with. Every value that
 has moved says **was 0.6** beside it — what the file still holds — and carries a tick on its
 slider at that position, so you can see how far you have wandered without reading a number.
-A **Revert** beside it puts that one value back. A colour shows the same thing as a colour:
+A **Revert** beside it puts that one value back. A color shows the same thing as a color:
 the swatch splits, the shade the file holds sitting underneath the one you are trying. **Revert all** drops everything staged for that
 shader; nothing on disk has changed, so there is nothing to undo. Dragging a slider back to
 the value the file already has clears the mark by itself.
@@ -453,7 +457,7 @@ const bool INVERT = false;
 **Inferred**, for shaders you did not write: any `const float/int/bool/vec2/vec3/vec4` with a
 plain literal gets a slider with a guessed range, marked *guessed range* in the UI. A `vec3`
 whose name contains `color`, `tint` or `rgb` and whose components are all in 0–1 becomes a
-colour picker.
+color picker.
 
 A `const` named like a mathematical constant — `PI`, `TAU`, `EPSILON` and the usual
 spellings of those — is left out and noted instead. It is not a tuning knob, and a slider
@@ -504,7 +508,7 @@ your wallpaper already drawn on it — photographs that, and gives it back.
 Nothing appears on your screen, nothing of yours moves, and what comes back is
 your wallpaper and nothing else. If your wallpaper daemon is pinned to a named
 monitor it will not follow onto that scratch output, and the preview quietly
-falls back to the pane's own colour. **On your wallpaper** in the pane's header
+falls back to the pane's own color. **On your wallpaper** in the pane's header
 switches between the two.
 
 The window **opens, holds, is shoved aside, and closes**, on a loop, because a
@@ -529,7 +533,7 @@ read frames out. The button says when one of those is missing.
 
 ### Where the wallpaper behind it comes from
 
-**On your wallpaper** stands the preview on your desktop rather than on a flat colour,
+**On your wallpaper** stands the preview on your desktop rather than on a flat color,
 because whether a dissolve really reaches zero alpha only shows against something with
 light and dark in it.
 
@@ -553,16 +557,16 @@ button under the pane does.
 
 ## Themes
 
-**System (Qt)** is the default, and is the app taking its colours from Qt's palette —
+**System (Qt)** is the default, and is the app taking its colors from Qt's palette —
 whatever your platform theme sets, whether that is qt6ct, Kvantum, a desktop's own
 theme, or nothing at all. Change your Qt theme and the app follows without a restart.
 
-Qt has no palette role meaning "success" or "warning", and `mid` is a light grey even
-under some dark themes, so those few colours are not taken from it: hairlines and shades
-are mixed from the window and text colours, which are always present and always in the
+Qt has no palette role meaning "success" or "warning", and `mid` is a light gray even
+under some dark themes, so those few colors are not taken from it: hairlines and shades
+are mixed from the window and text colors, which are always present and always in the
 right relationship to each other, and ok/warn/error are fixed in a light and a dark
-variant. The accent is the desktop's own accent colour where the platform reports one
-(Qt 6.6+), and the selection colour otherwise.
+variant. The accent is the desktop's own accent color where the platform reports one
+(Qt 6.6+), and the selection color otherwise.
 
 **Gruvbox Dark** and **Gruvbox Light** ship with the app and ignore Qt entirely, so they
 look the same on any desktop. Anything else is a TOML file in
@@ -590,10 +594,10 @@ ok         = "#b8bb26"
 warn       = "#fabd2f"
 error      = "#fb4934"
 selection  = "#3c3836"
-on_accent  = "#1d2021"    # text drawn on the accent colour
+on_accent  = "#1d2021"    # text drawn on the accent color
 ```
 
-Every key is optional. `#rgb`, `#rrggbb` and `#aarrggbb` all work. A file with a broken colour
+Every key is optional. `#rgb`, `#rrggbb` and `#aarrggbb` all work. A file with a broken color
 is reported by name and role rather than silently ignored, and the other themes still load.
 
 ---
@@ -601,7 +605,7 @@ is reported by name and role rather than silently ignored, and the other themes 
 ## Importing rules you already wrote
 
 *Preview → Look for rules* reads the parts of your config **outside** the managed block and
-shows what it recognises: `hl.window_rule` calls carrying a shader tag, `layershader` and the
+shows what it recognizes: `hl.window_rule` calls carrying a shader tag, `layershader` and the
 layer animations, and plugin calls inside `hl.bind`.
 
 It understands string literals and concatenations with `local`s defined in the same file —
@@ -738,7 +742,7 @@ Layers page flags this when you pick such a shader, because it is the single mos
 thing about layer shaders.
 
 **Fullscreen drops everything by default.** A fullscreen window gets no shaders at all unless
-you set *While fullscreen* or *Keep stack fullscreen*. That is the plugin's behaviour, not a
+you set *While fullscreen* or *Keep stack fullscreen*. That is the plugin's behavior, not a
 limitation here.
 
 **`_default` is documented for eight tags.** The plugin's tag table says any shader tag accepts
@@ -755,6 +759,6 @@ ignores that specific complaint and surfaces anything else.
 
 ---
 
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

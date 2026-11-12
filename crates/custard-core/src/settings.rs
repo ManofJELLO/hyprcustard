@@ -68,7 +68,7 @@ impl Settings {
         let path = Self::path();
         match std::fs::read_to_string(&path) {
             Ok(text) => match toml::from_str::<Settings>(&text) {
-                Ok(s) => (s.sanitised(), None),
+                Ok(s) => (s.sanitized(), None),
                 Err(e) => (
                     Settings::default(),
                     Some(format!(
@@ -89,7 +89,7 @@ impl Settings {
         paths::write_atomic(&path, &text)
     }
 
-    fn sanitised(mut self) -> Self {
+    fn sanitized(mut self) -> Self {
         self.backups_to_keep = self.backups_to_keep.clamp(0, 200);
         if self.config_path.trim().is_empty() {
             self.config_path = Settings::default().config_path;
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn absurd_values_are_clamped() {
         let s: Settings = toml::from_str("backups_to_keep = 99999\n").unwrap();
-        assert_eq!(s.sanitised().backups_to_keep, 200);
+        assert_eq!(s.sanitized().backups_to_keep, 200);
     }
 
     #[test]

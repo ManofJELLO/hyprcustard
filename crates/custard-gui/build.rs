@@ -12,6 +12,7 @@ fn main() {
         "qml/components/Dropdown.qml",
         "qml/components/EmptyState.qml",
         "qml/components/FieldRow.qml",
+        "qml/components/FitText.qml",
         "qml/components/LabeledSlider.qml",
         "qml/components/LineEdit.qml",
         "qml/components/PasswordDialog.qml",
@@ -39,7 +40,7 @@ fn main() {
     ];
 
     let module = QmlModule::new("dev.hyprcustard.gui")
-        // Theme and App are QML singletons: every component reads colours and
+        // Theme and App are QML singletons: every component reads colors and
         // state from them rather than having them threaded down by hand.
         .qml_file(QmlFile::from("qml/Theme.qml").singleton(true))
         .qml_file(QmlFile::from("qml/App.qml").singleton(true))

@@ -56,14 +56,22 @@ fn main() {
 
     // Every control in this app draws its own background and contents, so the
     // Qt Quick Controls style only decides the few parts Qt still draws — and
-    // Basic is the one that does not impose colours of its own on them.
+    // Basic is the one that does not impose colors of its own on them.
     //
-    // This does not stand between the app and the desktop's colours: the
+    // This does not stand between the app and the desktop's colors: the
     // palette comes from the platform theme regardless of the style, and the
     // default theme reads it. Overriding this variable changes how those
-    // remaining parts are drawn, not what colour anything is.
+    // remaining parts are drawn, not what color anything is.
     if std::env::var_os("QT_QUICK_CONTROLS_STYLE").is_none() {
         std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Basic");
+    }
+
+    // Qt's Wayland text input logs a warning every time focus leaves a text
+    // field ("Trying to disable … but 0x0 is focused") — a known Qt quirk,
+    // harmless, and noise in the terminal. Off unless the user asks for
+    // logging rules of their own.
+    if std::env::var_os("QT_LOGGING_RULES").is_none() {
+        std::env::set_var("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false");
     }
 
     let mut app = QGuiApplication::new();

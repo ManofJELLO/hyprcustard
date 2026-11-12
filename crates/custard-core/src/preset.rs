@@ -8,7 +8,7 @@
 //!
 //! Themes are JSON files in `~/.config/hyprcustard/hypr-themes/`, one per
 //! theme, readable and shareable as they are. Values take the same shapes the
-//! Look page uses, and colours may be written either `#aarrggbb` or
+//! Look page uses, and colors may be written either `#aarrggbb` or
 //! Hyprland's `rgba(rrggbbaa)`.
 
 use std::collections::BTreeMap;
@@ -51,10 +51,12 @@ pub struct Preset {
     /// carries one. A theme without it leaves the shader setup alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shaders: Option<ShaderSetup>,
-    /// Look rules for some windows, layers or workspaces. A theme without
-    /// them leaves the app's rules as they are; one with them replaces them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rules: Option<Vec<crate::rules::Rule>>,
+    /// Look rules for some windows, layers or workspaces. Like every other
+    /// part of the look, applying the theme sets them to exactly these, so a
+    /// theme without any takes the app's away. Rules in the user's own
+    /// config are never touched.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<crate::rules::Rule>,
 }
 
 /// What a path to a shader inside a theme starts with: the shader folder,
@@ -65,7 +67,7 @@ pub const SHADER_PREFIX: &str = "$SHADERS/";
 /// shaders themselves.
 ///
 /// Keybinds and startup actions are left out on purpose — like the cursor,
-/// they are behaviour rather than looks — and so is how the plugin is loaded.
+/// they are behavior rather than looks — and so is how the plugin is loaded.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ShaderSetup {
     /// Window rules, their shader paths written as `$SHADERS/<file>`.
@@ -259,7 +261,7 @@ fn format() -> u32 {
     FORMAT
 }
 
-/// Whether an option belongs in a theme. The cursor options are behaviour,
+/// Whether an option belongs in a theme. The cursor options are behavior,
 /// not looks: a theme should not decide when someone's cursor hides.
 pub fn themed(key: &str) -> bool {
     !key.starts_with("cursor.")
@@ -332,7 +334,7 @@ pub fn snapshot(
         curves,
         animations,
         shaders: None,
-        rules: (!current.rules.is_empty()).then(|| current.rules.clone()),
+        rules: current.rules.clone(),
     }
 }
 
@@ -404,7 +406,18 @@ pub fn to_look(preset: &Preset, current: &Look, motion_live: &LiveMotion) -> (Lo
     }
     out.animations.extend(pinned);
 
-    out.rules = preset.rules.clone().unwrap_or_else(|| current.rules.clone());
+    // Checked, since a theme is a file anyone could have written.
+    out.rules = preset
+        .rules
+        .iter()
+        .filter_map(|r| match crate::rules::checked(r) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                problems.push(e.to_string());
+                None
+            }
+        })
+        .collect();
 
     (out, problems)
 }
@@ -424,7 +437,7 @@ pub fn matches(preset: &Preset, current: &Look, config: &Config) -> bool {
         let (rules, layers) = resolve(setup, &paths::expand(&config.shader_dir), &BTreeMap::new());
         rules == config.rules && layers == config.layers
     });
-    let rules_match = preset.rules.as_ref().is_none_or(|r| *r == current.rules);
+    let rules_match = preset.rules == current.rules;
     options_match && animations_match && shaders_match && rules_match && !preset.options.is_empty()
 }
 
@@ -527,7 +540,7 @@ pub fn builtin() -> Vec<Preset> {
         curves: BTreeMap::new(),
         animations: BTreeMap::new(),
         shaders: None,
-        rules: None,
+        rules: Vec::new(),
     };
     for o in look::OPTIONS.iter().filter(|o| themed(o.key) && o.follows.is_empty()) {
         defaults.options.insert(o.key.to_string(), look::default_of(o).to_json());
@@ -821,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_may_be_written_either_way_round() {
+    fn colors_may_be_written_either_way_round() {
         let mut p = builtin().remove(0);
         p.options.insert("decoration.shadow.color".into(), json!("rgba(1d1d1d66)"));
         let (look, problems) = to_look(&p, &Look::default(), &LiveMotion::default());

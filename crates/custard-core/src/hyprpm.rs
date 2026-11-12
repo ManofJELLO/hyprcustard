@@ -306,7 +306,7 @@ struct Shared {
     /// output between it and the last answer is the only sign there is that
     /// the answer was refused.
     output_since_answer: AtomicBool,
-    cancelled: AtomicBool,
+    canceled: AtomicBool,
 }
 
 /// What the reader, socket and waiter threads send to the job's own thread.
@@ -377,7 +377,7 @@ impl Job {
             remembered: Mutex::new(None),
             child_pid: Mutex::new(Some(child.id())),
             output_since_answer: AtomicBool::new(true),
-            cancelled: AtomicBool::new(false),
+            canceled: AtomicBool::new(false),
         });
 
         let (tx, rx) = channel::<Msg>();
@@ -444,7 +444,7 @@ impl Job {
     /// The whole thing runs in a session of its own, so the signal goes to the
     /// process group: `hyprpm` itself, and whichever compiler it is waiting on.
     pub fn cancel(&self) {
-        self.shared.cancelled.store(true, Ordering::SeqCst);
+        self.shared.canceled.store(true, Ordering::SeqCst);
         self.shared.pending.lock().unwrap().take();
 
         let target = match read_pid(&self.shared.pidfile) {
@@ -553,10 +553,10 @@ fn run_loop(op: Op, shared: Arc<Shared>, rx: Receiver<Msg>, sink: impl Fn(Event)
         }
     }
 
-    let cancelled = shared.cancelled.load(Ordering::SeqCst);
-    let ok = !cancelled && matches!(code, Some(Some(0)));
-    let message = if cancelled {
-        format!("{} — cancelled", op.label())
+    let canceled = shared.canceled.load(Ordering::SeqCst);
+    let ok = !canceled && matches!(code, Some(Some(0)));
+    let message = if canceled {
+        format!("{} — canceled", op.label())
     } else if ok {
         format!("{} — done", op.label())
     } else {
@@ -813,7 +813,7 @@ fn read_pid(path: &Path) -> Option<u32> {
 
 /// Remove terminal escape sequences from text.
 ///
-/// hyprpm colours its output whether or not it is talking to a terminal, so
+/// hyprpm colors its output whether or not it is talking to a terminal, so
 /// without this the log pane shows the escapes as mojibake.
 fn strip_ansi(text: &str) -> String {
     let mut out = String::with_capacity(text.len());

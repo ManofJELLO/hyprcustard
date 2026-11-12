@@ -3,7 +3,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import dev.hyprcustard.gui
 
-// One tunable constant from a shader: a slider, a switch, a colour, or a small
+// One tunable constant from a shader: a slider, a switch, a color, or a small
 // group of sliders, depending on what the type and the annotations say.
 //
 // An edit is staged, not written: `value` is what is being edited and
@@ -199,15 +199,15 @@ Item {
             }
         }
 
-        // --- colour ---
+        // --- color ---
         Row {
             width: parent.width
             visible: editor.kindName === "color"
             spacing: Theme.gap
 
-            // The colour as it stands, and — while it has moved — the one the
+            // The color as it stands, and — while it has moved — the one the
             // file still holds underneath it. Three numbers in a badge are not
-            // a colour; this is.
+            // a color; this is.
             Column {
                 id: swatch
                 width: 56
@@ -249,7 +249,7 @@ Item {
                     Tip {
                         visible: savedSwatchHover.hovered
                         delay: 400
-                        text: "The colour in the file: " + editor.savedText
+                        text: "The color in the file: " + editor.savedText
                     }
                 }
             }

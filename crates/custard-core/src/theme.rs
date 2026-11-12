@@ -1,10 +1,10 @@
-//! Colours for the app's own window.
+//! Colors for the app's own window.
 //!
 //! By default the app wears whatever Qt is already wearing, so it matches the
 //! rest of the desktop rather than announcing itself. Gruvbox dark and light
 //! are built in for anyone who would rather it did. Anything else is a TOML
 //! file in `~/.config/hyprcustard/themes/`, which may override as few
-//! or as many of the colours as it likes and set the window's opacity.
+//! or as many of the colors as it likes and set the window's opacity.
 //!
 //! The system theme is the one thing this module cannot resolve on its own:
 //! reading a Qt palette needs Qt. It is named here and filled in by the UI.
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-/// The colour roles the UI uses. Every field is a `#rrggbb` string.
+/// The color roles the UI uses. Every field is a `#rrggbb` string.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
     /// Window background.
@@ -59,7 +59,7 @@ pub struct Theme {
     pub dark: bool,
     /// Window opacity, 0.3 to 1.0. Hyprland composites the rest.
     pub opacity: f32,
-    /// Take the colours from Qt's palette instead of from `colors`.
+    /// Take the colors from Qt's palette instead of from `colors`.
     ///
     /// Only the built-in `system` theme sets this. The engine has no way to
     /// read a Qt palette — that is the one piece of theming the UI layer has
@@ -68,7 +68,7 @@ pub struct Theme {
     /// `--print-state`.
     #[serde(default)]
     pub system: bool,
-    /// The colours.
+    /// The colors.
     pub colors: Palette,
 }
 
@@ -128,10 +128,10 @@ pub fn gruvbox_light() -> Theme {
     }
 }
 
-/// The user's Qt colours, whatever they are.
+/// The user's Qt colors, whatever they are.
 ///
 /// The palette this stands for is read by the UI layer, which is the only part
-/// that can see one; the colours below are only what a reader with no Qt
+/// that can see one; the colors below are only what a reader with no Qt
 /// palette falls back to. See [`Theme::system`].
 pub fn system() -> Theme {
     Theme {
@@ -169,12 +169,12 @@ pub struct ThemeFile {
     pub dark: Option<bool>,
     /// Window opacity, clamped to 0.3 – 1.0.
     pub opacity: Option<f32>,
-    /// Colour overrides.
+    /// Color overrides.
     #[serde(default)]
     pub colors: PaletteFile,
 }
 
-/// Optional overrides for each colour role.
+/// Optional overrides for each color role.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(missing_docs)]
@@ -255,7 +255,7 @@ pub fn from_toml(id: &str, text: &str) -> Result<Theme> {
 
     if !bad.is_empty() {
         return Err(Error::other(format!(
-            "theme `{id}`: not a colour — {}. Use #rgb, #rrggbb or #aarrggbb.",
+            "theme `{id}`: not a color — {}. Use #rgb, #rrggbb or #aarrggbb.",
             bad.join(", ")
         )));
     }
@@ -338,11 +338,11 @@ ok         = "#b8bb26"
 warn       = "#fabd2f"
 error      = "#fb4934"
 selection  = "#3c3836"
-on_accent  = "#1d2021"    # text drawn on the accent colour
+on_accent  = "#1d2021"    # text drawn on the accent color
 "##;
 
 // ---------------------------------------------------------------------------
-// Colour helpers
+// Color helpers
 // ---------------------------------------------------------------------------
 
 /// True for `#rgb`, `#rrggbb` and `#aarrggbb`.
@@ -388,7 +388,7 @@ mod tests {
         assert!(system().system);
         assert!(!gruvbox_dark().system);
         assert!(!gruvbox_light().system);
-        // A theme file always names its own colours, so it never defers.
+        // A theme file always names its own colors, so it never defers.
         assert!(!from_toml("mine", "base = \"gruvbox-light\"\n").unwrap().system);
     }
 
@@ -422,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bad_colour_is_reported_with_its_role() {
+    fn a_bad_color_is_reported_with_its_role() {
         let err = from_toml("m", "[colors]\naccent = \"blue\"\n").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("accent"));
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn a_misspelled_colour_key_is_reported_rather_than_ignored() {
+    fn a_misspelled_color_key_is_reported_rather_than_ignored() {
         let err = from_toml("mine", "[colors]\naccent_altt = \"#ffffff\"\n").unwrap_err();
         assert!(err.to_string().contains("accent_altt"), "{err}");
     }

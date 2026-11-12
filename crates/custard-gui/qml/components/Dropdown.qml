@@ -69,11 +69,16 @@ ComboBox {
         padding: 1
 
         contentItem: ListView {
+            id: options
             clip: true
             implicitHeight: contentHeight
             model: control.popup.visible ? control.delegateModel : null
             currentIndex: control.highlightedIndex
-            ScrollIndicator.vertical: ScrollIndicator {}
+            // Always drawn when the list is longer than the popup, so it is
+            // plain there is more to scroll to before anyone tries.
+            ScrollBar.vertical: ScrollBar {
+                policy: options.contentHeight > options.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
         }
 
         background: Rectangle {

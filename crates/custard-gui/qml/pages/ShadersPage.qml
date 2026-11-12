@@ -148,7 +148,7 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: Theme.gapSmall
 
-                                Text {
+                                FitText {
                                     Layout.fillWidth: true
                                     text: shaderRow.modelData.name
                                     color: Theme.fg
@@ -574,7 +574,7 @@ Item {
                         anchors.rightMargin: Theme.gap
                         spacing: Theme.gap
 
-                        Text {
+                        FitText {
                             Layout.fillWidth: true
                             text: App.plural(page.selectedStaged, "change") + " not written to "
                                   + App.fileName(page.selectedPath)

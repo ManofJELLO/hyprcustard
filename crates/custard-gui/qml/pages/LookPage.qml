@@ -116,9 +116,9 @@ Item {
         App.run("settings.update", { settings: copy })
     }
 
-    // --- colours -------------------------------------------------------------
+    // --- colors -------------------------------------------------------------
 
-    // A QML colour as `#aarrggbb`, the form the backend deals in.
+    // A QML color as `#aarrggbb`, the form the backend deals in.
     function argb(c) {
         return App.argb(c)
     }
@@ -135,7 +135,7 @@ Item {
         property var pickFn: null
         property bool picking: false
 
-        title: "Pick a colour"
+        title: "Pick a color"
         options: ColorDialog.ShowAlphaChannel
         onSelectedColorChanged: {
             if (colorDialog.picking && colorDialog.pickFn)
@@ -155,7 +155,7 @@ Item {
         }
     }
 
-    // `pick(color, done)` is called with each colour tried, then once with
+    // `pick(color, done)` is called with each color tried, then once with
     // `done` set when the dialog is accepted.
     function pickColor(initial, pick) {
         colorDialog.picking = false

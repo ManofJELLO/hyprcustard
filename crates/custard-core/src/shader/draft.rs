@@ -11,7 +11,7 @@
 //! handed the source and the result is written.
 //!
 //! Staging the value a file already has is not an edit, so [`ShaderDraft::set_param`]
-//! and its neighbours drop the entry instead of recording it. Dragging a slider
+//! and its neighbors drop the entry instead of recording it. Dragging a slider
 //! away and back leaves the shader clean, which is what makes "unsaved" mean
 //! something.
 

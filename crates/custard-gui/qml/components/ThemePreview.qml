@@ -18,7 +18,7 @@ Item {
         return v === undefined || v === null ? fallback : v
     }
 
-    // `#aarrggbb` or `rgba(rrggbbaa)` as a CSS colour the canvas takes.
+    // `#aarrggbb` or `rgba(rrggbbaa)` as a CSS color the canvas takes.
     function css(c) {
         var s = String(c || "#ff000000").trim().toLowerCase()
         var a, r, g, b
@@ -108,7 +108,7 @@ Item {
 
             ctx.save()
             ctx.globalAlpha = opacity
-            // Border: the whole shape in the border colour, the window inside it.
+            // Border: the whole shape in the border color, the window inside it.
             if (bw > 0) {
                 roundRect(ctx, x, y, w, h, radius)
                 ctx.fillStyle = borderStyle(ctx, sketch.opt(focused ? "general.col.active_border"

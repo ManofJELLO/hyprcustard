@@ -6,11 +6,11 @@ import QtQuick
 // types (Backend) are available without importing it. Importing it here would
 // make the two singletons depend on each other through the module.
 
-// Colours and metrics for the whole app.
+// Colors and metrics for the whole app.
 //
 // The engine decides *which* theme is in use and, for its own themes, what the
-// colours are. The one it cannot answer is `system`, because reading a Qt
-// palette needs Qt: those colours are derived here instead, from SystemPalette.
+// colors are. The one it cannot answer is `system`, because reading a Qt
+// palette needs Qt: those colors are derived here instead, from SystemPalette.
 QtObject {
     id: theme
 
@@ -41,7 +41,7 @@ QtObject {
     readonly property real windowOpacity: _theme.opacity === undefined ? 1.0 : _theme.opacity
 
     // Qt has no "is this a dark theme" flag, so it is read off the window
-    // colour. Everything derived below leans on this to know which way to
+    // color. Everything derived below leans on this to know which way to
     // push a shade.
     readonly property bool dark: _useSystem
                                  ? _luma(_sys.window) < 0.5
@@ -51,7 +51,7 @@ QtObject {
     //
     // Mapped from the Qt roles that are dependable. SystemPalette does not
     // expose brightText, link or the toolTip pair at all, and `mid` is a light
-    // grey even under a dark theme on at least one widely used style — so
+    // gray even under a dark theme on at least one widely used style — so
     // hairlines and shades are mixed from window and windowText, which are
     // always present and always in the right relationship to each other.
 
@@ -73,7 +73,7 @@ QtObject {
                                               : (_c.muted || "#928374")
 
     // The desktop's accent if the platform reports one (Qt 6.6+), otherwise
-    // the selection colour, which every theme sets.
+    // the selection color, which every theme sets.
     readonly property color accent: _useSystem ? _opaque(_sys.accent || _sys.highlight)
                                                : (_c.accent || "#83a598")
     readonly property color accentAlt: _useSystem ? _opaque(_sys.highlight)
@@ -95,7 +95,7 @@ QtObject {
     readonly property color error: _useSystem ? (dark ? "#e56b5c" : "#a11")
                                               : (_c.error || "#fb4934")
 
-    // --- colour helpers -----------------------------------------------------
+    // --- color helpers -----------------------------------------------------
 
     // Perceived brightness, 0 to 1.
     function _luma(c) {
@@ -110,7 +110,7 @@ QtObject {
                        1)
     }
 
-    // Push a colour towards white (positive) or black (negative).
+    // Push a color towards white (positive) or black (negative).
     function _shade(c, amount) {
         return amount >= 0 ? _mix(Qt.rgba(1, 1, 1, 1), c, amount)
                            : _mix(Qt.rgba(0, 0, 0, 1), c, -amount)
@@ -132,7 +132,7 @@ QtObject {
     readonly property int sidebarWidth: 188
     readonly property int listWidth: 300
 
-    // The widest a page's column of cards is allowed to get, centred in
+    // The widest a page's column of cards is allowed to get, centered in
     // whatever is left over. Past this a wider window only stretches the
     // fields inside it, and a dropdown reading "Toggle on the focused window"
     // two thousand pixels wide is not easier to use, only stranger.
@@ -145,7 +145,7 @@ QtObject {
 
     readonly property string monoFamily: "monospace"
 
-    // A translucent wash of a colour, for badges and hover states.
+    // A translucent wash of a color, for badges and hover states.
     function wash(c, amount) {
         return Qt.rgba(c.r, c.g, c.b, amount === undefined ? 0.18 : amount)
     }

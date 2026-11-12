@@ -27,7 +27,7 @@ Item {
     implicitHeight: body.implicitHeight + (hintText.visible ? hintText.implicitHeight + 3 : 0)
     opacity: row.switchedOn ? 1 : 0.45
 
-    // Set here: accent once saved, warning colour while unsaved.
+    // Set here: accent once saved, warning color while unsaved.
     Rectangle {
         visible: row.opt.overridden === true
         x: -Theme.pad + 4
@@ -150,7 +150,7 @@ Item {
             }
             ColorButton {
                 value: row.opt.value || "#ff000000"
-                tooltip: "Pick a colour"
+                tooltip: "Pick a color"
                 onClicked: row.host.pickColor(row.opt.value, function (c, done) {
                     if (done)
                         row.host.set(row.key, c)
@@ -159,7 +159,7 @@ Item {
                 })
             }
             Text {
-                // Unset, and so wearing the focused colour.
+                // Unset, and so wearing the focused color.
                 visible: row.opt.following === true
                 text: "same as " + (((row.host && row.host.byKey[row.opt.follows]) || {}).label
                                     || "its pair").toLowerCase() + " until set"
@@ -216,7 +216,7 @@ Item {
                     ColorButton {
                         required property int index
                         value: ramp.colors[index] || "#ff000000"
-                        tooltip: "Colour " + (index + 1) + " — click to change"
+                        tooltip: "Color " + (index + 1) + " — click to change"
                         onClicked: {
                             var at = index
                             row.host.pickColor(ramp.colors[at], function (c, done) {
@@ -233,7 +233,7 @@ Item {
                     compact: true
                     text: "+"
                     enabled: ramp.colors.length < 10
-                    tooltip: "Add a colour to the gradient"
+                    tooltip: "Add a color to the gradient"
                     onClicked: row.host.set(row.key, {
                         colors: ramp.colors.concat([ramp.colors[ramp.colors.length - 1]]),
                         angle: ramp.angle
@@ -243,7 +243,7 @@ Item {
                     compact: true
                     text: "−"
                     enabled: ramp.colors.length > 1
-                    tooltip: "Take the last colour off"
+                    tooltip: "Take the last color off"
                     onClicked: row.host.set(row.key, {
                         colors: ramp.colors.slice(0, ramp.colors.length - 1),
                         angle: ramp.angle

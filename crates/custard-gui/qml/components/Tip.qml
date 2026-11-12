@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import dev.hyprcustard.gui
 
-// A tooltip in the app's colours.
+// A tooltip in the app's colors.
 //
 // The stock ToolTip draws itself from the *system* palette — toolTipBase,
 // toolTipText and dark — which no theme here sets, so it comes up as a white

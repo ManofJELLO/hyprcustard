@@ -1,7 +1,7 @@
 import QtQuick
 import dev.hyprcustard.gui
 
-// A labelled row: caption on the left, one control on the right.
+// A labeled row: caption on the left, one control on the right.
 //
 // The hint runs the full width underneath rather than sharing the caption
 // column. A sentence of explanation squeezed into 150px becomes eight very

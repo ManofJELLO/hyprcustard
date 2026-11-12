@@ -125,7 +125,7 @@ fn emit_rules(out: &mut String, config: &Config, ctx: &Ctx) {
     for rule in active {
         // Hyprland's Lua window_rule takes one tag per call, so a rule carrying
         // several tags becomes several calls sharing a match. They stack, which
-        // is the documented behaviour.
+        // is the documented behavior.
         let multi = rule.tags.len() > 1;
         for tag in &rule.tags {
             out.push('\n');

@@ -160,7 +160,7 @@ Item {
                         onTapped: page.selected = leafRow.modelData
                     }
 
-                    // Set here: accent once saved, warning colour while not.
+                    // Set here: accent once saved, warning color while not.
                     Rectangle {
                         visible: leafRow.l.overridden === true
                         width: 3
@@ -191,7 +191,7 @@ Item {
                                        ? Theme.fgDim : Theme.fg
                             }
                         }
-                        Text {
+                        FitText {
                             width: parent.width
                             elide: Text.ElideRight
                             text: leafRow.l.source === "inherited"

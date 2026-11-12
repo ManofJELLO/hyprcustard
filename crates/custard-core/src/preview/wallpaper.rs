@@ -1,6 +1,6 @@
 //! Putting the user's own desktop behind the preview window.
 //!
-//! A flat colour is honest but uninformative: whether a dissolve really reaches
+//! A flat color is honest but uninformative: whether a dissolve really reaches
 //! zero alpha, or a tint lifts blacks, only shows against something with light
 //! and dark in it. The most representative something is the desktop the shader
 //! is actually going to run on.
@@ -228,9 +228,9 @@ pub fn image_path(dir: &Path) -> PathBuf {
 /// Whether a capture looks like it caught nothing.
 ///
 /// A wallpaper daemon pinned to a named monitor will not follow onto the
-/// scratch output, and what comes back is then a single flat colour. Decoding
+/// scratch output, and what comes back is then a single flat color. Decoding
 /// the image to find out would mean carrying a PNG decoder for one check, so
-/// this goes by size instead: a flat colour compresses to almost nothing,
+/// this goes by size instead: a flat color compresses to almost nothing,
 /// while any real picture does not come close to this floor. Being wrong in
 /// the cautious direction costs the backdrop, not the preview.
 fn looks_blank(image: &Path, pixels: u64) -> bool {
@@ -238,7 +238,7 @@ fn looks_blank(image: &Path, pixels: u64) -> bool {
     bytes < pixels / 100
 }
 
-/// The image to stand the preview on, or `None` for the flat colour.
+/// The image to stand the preview on, or `None` for the flat color.
 ///
 /// Called **before** the preview's compositor is started, and that ordering is
 /// not incidental: a nested compositor puts a window on the user's screen for
@@ -246,7 +246,7 @@ fn looks_blank(image: &Path, pixels: u64) -> bool {
 /// that catches the preview's own scaffolding in the picture.
 ///
 /// Best-effort throughout: without it the preview still runs, on the flat
-/// colour of the pane, and only the backdrop is lost.
+/// color of the pane, and only the backdrop is lost.
 pub fn find_image(dir: &Path) -> Option<PathBuf> {
     // Nothing to show it with is reason enough not to go looking.
     paths::which(SHOW)?;
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(image_in(&argv("swaybg --image=/home/me/wall.png")), Some("/home/me/wall.png"));
         // One wallpaper per output: the first will do for a pane this size.
         assert_eq!(image_in(&argv("swaybg -o DP-1 -i /a.png -o DP-2 -i /b.png")), Some("/a.png"));
-        // A flat colour is not an image, and there is nothing to show.
+        // A flat color is not an image, and there is nothing to show.
         assert_eq!(image_in(&argv("swaybg -c 1e1e2e")), None);
         // `-i` is the last word, so there is nothing after it to take.
         assert_eq!(image_in(&argv("swaybg -i")), None);
@@ -495,8 +495,8 @@ mod tests {
         let gone = fake_proc("1234", &["swaybg", "-i", "/nowhere/wall.png"]);
         assert_eq!(swaybg_image_under(gone.path(), Path::new("/run/preview")), None);
 
-        // A swaybg showing a flat colour has no image to lend.
-        let colour = fake_proc("1234", &["swaybg", "-c", "1e1e2e"]);
-        assert_eq!(swaybg_image_under(colour.path(), Path::new("/run/preview")), None);
+        // A swaybg showing a flat color has no image to lend.
+        let color = fake_proc("1234", &["swaybg", "-c", "1e1e2e"]);
+        assert_eq!(swaybg_image_under(color.path(), Path::new("/run/preview")), None);
     }
 }

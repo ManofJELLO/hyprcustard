@@ -163,7 +163,7 @@ Item {
             // ---------------------------------------------------------------
             Card {
                 Layout.fillWidth: true
-                title: "Behaviour"
+                title: "Behavior"
 
                 FieldRow {
                     width: parent.width
@@ -192,15 +192,15 @@ Item {
             // ---------------------------------------------------------------
             Card {
                 Layout.fillWidth: true
-                title: "This app's colours"
+                title: "This app's colors"
                 subtitle: "How hyprcustard itself looks — for your Hyprland look, see the "
                           + "Look and Themes pages. Gruvbox dark and light are built in. Anything else is a TOML file in " +
-                          App.state.themeDir + ", which can override as few colours as you like."
+                          App.state.themeDir + ", which can override as few colors as you like."
 
                 FieldRow {
                     width: parent.width
-                    label: "App colours"
-                    hint: "System follows your Qt colours, so the app matches the rest of your " +
+                    label: "App colors"
+                    hint: "System follows your Qt colors, so the app matches the rest of your " +
                           "desktop and changes with it. The Gruvboxes ignore it and look the " +
                           "same everywhere."
 
@@ -226,7 +226,7 @@ Item {
 
                     PillButton {
                         text: "Write an example theme"
-                        tooltip: "Creates example.toml in the theme folder, with every colour " +
+                        tooltip: "Creates example.toml in the theme folder, with every color " +
                                  "documented"
                         onClicked: App.run("theme.writeExample", {})
                     }

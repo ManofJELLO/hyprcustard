@@ -22,9 +22,9 @@
 //! * **It stands on the user's own wallpaper**, photographed without any of
 //!   their windows in the way — see [`wallpaper`] for how. Whether a dissolve
 //!   really reaches zero alpha only shows against something with light and dark
-//!   in it, and a flat colour shows nothing. Failing that — no screenshot tool,
+//!   in it, and a flat color shows nothing. Failing that — no screenshot tool,
 //!   nothing to show it with, a wallpaper that could not be photographed — the
-//!   compositor clears to the colour of the pane instead, and the window
+//!   compositor clears to the color of the pane instead, and the window
 //!   appears to float on the app. True transparency would be better than either
 //!   and is not available: on a headless output an opaque window is captured
 //!   with zero alpha, with or without the plugin, so the frame would come back
@@ -78,13 +78,13 @@ pub struct Request {
     pub hold_secs: f32,
     /// Whether to stand the preview on a photograph of the user's desktop.
     ///
-    /// Off means the flat `background` colour instead. It is a choice worth
+    /// Off means the flat `background` color instead. It is a choice worth
     /// leaving open: the photograph is the whole screen, windows and all,
     /// because there is no way to capture the wallpaper layer on its own, and
     /// whether that reads as useful context or as clutter depends on the
     /// desktop and on the shader.
     pub desktop_backdrop: bool,
-    /// The colour the compositor clears to, as `0xRRGGBB`.
+    /// The color the compositor clears to, as `0xRRGGBB`.
     ///
     /// The pane's own background, so the preview reads as part of the window
     /// rather than as a picture of somewhere else. It comes from the UI and not
@@ -453,7 +453,7 @@ fn spawn_demo_loop(
             // Each client is given a lifetime and closes itself when it runs
             // out. That is not a detail: a window the user closes is how a
             // close animation — and any close shader, which is the whole
-            // reason the cycle exists — actually happens. Signalling the
+            // reason the cycle exists — actually happens. Signaling the
             // terminal instead would be a kill, because that is all
             // `Child::kill` can send, and a killed client is a surface that
             // vanishes rather than a window that closes.
@@ -472,11 +472,11 @@ fn spawn_demo_loop(
             // shoves the first one aside, which is a real move and a real
             // resize with real velocity behind them — the only thing that makes
             // a wobble shader show anything at all.
-            let mut neighbour = (!stop.load(Ordering::SeqCst))
+            let mut neighbor = (!stop.load(Ordering::SeqCst))
                 .then(|| spawn_demo_client(&socket, &card, moving))
                 .flatten();
             sleep_unless_stopped(moving, &stop);
-            reap(neighbour.take());
+            reap(neighbor.take());
 
             // The first window is still up, settling back.
             sleep_unless_stopped(still, &stop);

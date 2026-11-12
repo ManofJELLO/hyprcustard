@@ -142,7 +142,7 @@ pub mod qobject {
         /// Returns at once: a compositor takes a few seconds to come up, so the
         /// work is on a thread and `previewRunning` says when it is ready.
         ///
-        /// `background` is the pane's own colour, as `#rrggbb`: the preview
+        /// `background` is the pane's own color, as `#rrggbb`: the preview
         /// clears to it so the window appears to float on the app rather than
         /// on a desktop of its own. It comes from QML because under the system
         /// theme the real palette is Qt's, not the engine's.
@@ -198,8 +198,8 @@ use serde_json::{json, Value};
 
 /// A `#rrggbb` from QML as a plain 24-bit number.
 ///
-/// Anything unreadable falls back to a dark grey, which is wrong but visible —
-/// the alternative is refusing to preview over a colour.
+/// Anything unreadable falls back to a dark gray, which is wrong but visible —
+/// the alternative is refusing to preview over a color.
 fn parse_hex_rgb(text: &str) -> u32 {
     u32::from_str_radix(text.trim().trim_start_matches('#'), 16)
         .map(|v| v & 0x00ff_ffff)
@@ -231,7 +231,7 @@ pub struct BackendRust {
     hyprpm_busy: bool,
     /// What that operation is called, for the header.
     hyprpm_label: QString,
-    /// The running operation, kept so it can be answered and cancelled.
+    /// The running operation, kept so it can be answered and canceled.
     hyprpm_job: Option<hyprpm::Job>,
 
     /// The preview compositor, if one is up.
@@ -615,7 +615,7 @@ impl qobject::Backend {
         self.as_mut().notify(&m, message.1);
     }
 
-    /// Serialise the session and hand it to QML.
+    /// Serialize the session and hand it to QML.
     fn push_state(mut self: Pin<&mut Self>) {
         let json = match self.as_ref().rust().session.as_ref() {
             Some(session) => session.state().to_string(),

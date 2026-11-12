@@ -39,14 +39,14 @@ Item {
             pane.hasFrame = false
     }
 
-    // Stand the window on the user's own wallpaper, or on the pane's colour.
+    // Stand the window on the user's own wallpaper, or on the pane's color.
     property bool desktopBackdrop: true
 
     implicitWidth: 380
     implicitHeight: 300
 
     function start() {
-        // The pane's own colour, so the frame's empty space and the pane it is
+        // The pane's own color, so the frame's empty space and the pane it is
         // drawn on are the same shade and the seam disappears.
         App.previewStart(pane.shaderPath, pane.captureWidth, pane.captureHeight,
                          Theme.bgAlt, pane.desktopBackdrop)
@@ -135,11 +135,11 @@ Item {
 
             PillButton {
                 compact: true
-                text: pane.desktopBackdrop ? "On your wallpaper" : "On a plain colour"
+                text: pane.desktopBackdrop ? "On your wallpaper" : "On a plain color"
                 tooltip: pane.desktopBackdrop
                          ? "Standing on your own wallpaper, photographed without any of your "
-                           + "windows in the way. Click for a plain colour instead."
-                         : "Standing on the pane's own colour. Click to stand it on your "
+                           + "windows in the way. Click for a plain color instead."
+                         : "Standing on the pane's own color. Click to stand it on your "
                            + "wallpaper instead."
                 onClicked: {
                     pane.desktopBackdrop = !pane.desktopBackdrop

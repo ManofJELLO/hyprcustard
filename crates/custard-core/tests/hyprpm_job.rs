@@ -2,9 +2,9 @@
 //!
 //! The real thing needs a compositor, a network and several minutes, so what
 //! is checked here is the machinery around it: that output arrives a line at a
-//! time with the colour taken out, that sudo's askpass helper is reachable and
+//! time with the color taken out, that sudo's askpass helper is reachable and
 //! is handed the flag that makes this app answer rather than start, that the
-//! exit status is reported, and that cancelling reaches the process the shell
+//! exit status is reported, and that canceling reaches the process the shell
 //! is waiting on rather than only the shell.
 
 use std::io::Write;
@@ -134,7 +134,7 @@ fn a_job_is_driven_from_start_to_finish() {
     sudos_askpass_program_is_this_app_with_the_flag_that_answers();
     a_second_escalation_reuses_the_password();
     a_refused_password_is_asked_for_again();
-    cancelling_stops_what_hyprpm_is_waiting_on();
+    canceling_stops_what_hyprpm_is_waiting_on();
 }
 
 fn output_is_cleaned_up_and_the_exit_status_is_reported() {
@@ -153,7 +153,7 @@ exit 3"#,
     let (lines, ok, message) = (&ran.lines, ran.ok, &ran.message);
     let texts = ran.texts();
 
-    assert!(texts.contains(&"building"), "colour is stripped: {texts:?}");
+    assert!(texts.contains(&"building"), "color is stripped: {texts:?}");
     assert!(texts.contains(&"args:update"), "arguments reach hyprpm: {texts:?}");
     assert!(texts.contains(&"to stderr"), "stderr is part of the log: {texts:?}");
 
@@ -256,7 +256,7 @@ printf 'tried:%s,%s\n' "$a" "$b""#,
     assert!(texts.contains(&"tried:wrong,right"), "both answers got through: {texts:?}");
 }
 
-fn cancelling_stops_what_hyprpm_is_waiting_on() {
+fn canceling_stops_what_hyprpm_is_waiting_on() {
     let _guard = shim("echo started\nsleep 60\necho 'should never get here'");
 
     let (tx, rx) = channel();
@@ -281,5 +281,5 @@ fn cancelling_stops_what_hyprpm_is_waiting_on() {
         }
     };
     assert!(!finished.0);
-    assert!(finished.1.contains("cancelled"), "the message says so: {}", finished.1);
+    assert!(finished.1.contains("canceled"), "the message says so: {}", finished.1);
 }

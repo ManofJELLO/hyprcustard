@@ -208,7 +208,7 @@ Item {
         property var pickFn: null
         property bool picking: false
 
-        title: "Pick a colour"
+        title: "Pick a color"
         options: ColorDialog.ShowAlphaChannel
         onSelectedColorChanged: {
             if (colorDialog.picking && colorDialog.pickFn)
@@ -271,6 +271,47 @@ Item {
                     compact: true
                     tooltip: "Gaps and borders on some workspaces."
                     onClicked: page.add("workspace", { matches: { workspace: "" } })
+                }
+            }
+
+            Dropdown {
+                id: common
+                Layout.fillWidth: true
+
+                // Ready-made rules. Each is an ordinary rule once added, to
+                // change or delete like any other.
+                readonly property var presets: [
+                    { label: "No gaps when there is only one window", add: function () {
+                        var none = [0, 0, 0, 0]
+                        page.add("workspace", { label: "One window: no gaps", matches: { workspace: "w[tv1]" },
+                                                effects: { gaps_out: none, gaps_in: none } })
+                        page.add("workspace", { label: "Fullscreen: no gaps", matches: { workspace: "f[1]" },
+                                                effects: { gaps_out: none, gaps_in: none } })
+                    } },
+                    { label: "No border or rounding when there is only one window", add: function () {
+                        page.add("window", { label: "Alone: no border", matches: { float: false, workspace: "w[tv1]" },
+                                             effects: { border_size: 0, rounding: 0 } })
+                    } },
+                    { label: "No shadow on tiled windows", add: function () {
+                        page.add("window", { label: "Tiled: no shadow", matches: { float: false },
+                                             effects: { no_shadow: true } })
+                    } },
+                    { label: "Blur behind waybar", add: function () {
+                        page.add("layer", { label: "Bar blur", matches: { namespace: "waybar" },
+                                            effects: { blur: true, ignore_alpha: 0.5 } })
+                    } },
+                    { label: "Dim and blur behind rofi", add: function () {
+                        page.add("layer", { label: "Launcher", matches: { namespace: "rofi" },
+                                            effects: { blur: true, dim_around: true, ignore_alpha: 0.5 } })
+                    } }
+                ]
+
+                model: ["Common rules…"].concat(common.presets.map(function (p) { return p.label }))
+                currentIndex: 0
+                onActivated: function (i) {
+                    if (i > 0)
+                        common.presets[i - 1].add()
+                    common.currentIndex = 0
                 }
             }
 
@@ -357,7 +398,7 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: Theme.gapSmall
 
-                                    Text {
+                                    FitText {
                                         Layout.fillWidth: true
                                         text: row.item ? (row.modelData.rule
                                                           ? (row.item.label || row.item.target)
@@ -388,7 +429,7 @@ Item {
                                         tint: row.item && row.item.moving ? Theme.warn : Theme.muted
                                     }
                                 }
-                                Text {
+                                FitText {
                                     Layout.fillWidth: true
                                     text: row.item ? (row.item.summary || (row.modelData.hand
                                                                           ? "Not readable here"
@@ -440,6 +481,15 @@ Item {
                         Text {
                             width: parent.width
                             wrapMode: Text.WordWrap
+                            text: "Add one with the buttons on the left, or pick a ready-made one from "
+                                  + "Common rules. Each is an ordinary rule once added."
+                            color: Theme.fgDim
+                            font.pixelSize: Theme.fontSize
+                        }
+
+                        Text {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
                             visible: page.hand.length > 0
                             text: "Your hyprland.lua already has " + App.plural(page.hand.length, "rule")
                                   + " like this, listed on the left. They keep working as they are; "
@@ -449,29 +499,6 @@ Item {
                         }
                     }
 
-                    Card {
-                        Layout.fillWidth: true
-                        title: "No gaps when there is only one window"
-                        subtitle: "Two workspace rules: no gaps on a workspace with one tiled window, "
-                                  + "or with a window fullscreen. What Hyprland's example config calls "
-                                  + "smart gaps."
-
-                        PillButton {
-                            text: "Add these"
-                            enabled: !page.rules.some(function (r) {
-                                return r.kind === "workspace" && (r.target === "w[tv1]" || r.target === "f[1]")
-                            })
-                            onClicked: {
-                                var none = [0, 0, 0, 0]
-                                page.add("workspace", { label: "One window: no gaps",
-                                                        matches: { workspace: "w[tv1]" },
-                                                        effects: { gaps_out: none, gaps_in: none } })
-                                page.add("workspace", { label: "Fullscreen: no gaps",
-                                                        matches: { workspace: "f[1]" },
-                                                        effects: { gaps_out: none, gaps_in: none } })
-                            }
-                        }
-                    }
                 }
             }
 
@@ -764,7 +791,7 @@ Item {
                                     color: Theme.fgDim
                                     font.pixelSize: Theme.fontSize
                                 }
-                                Text {
+                                FitText {
                                     Layout.fillWidth: true
                                     text: extraRow.modelData.value + "   (kept as written)"
                                     font.family: "monospace"

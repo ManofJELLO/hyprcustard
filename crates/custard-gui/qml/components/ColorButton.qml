@@ -1,12 +1,12 @@
 import QtQuick
 import dev.hyprcustard.gui
 
-// A colour swatch that can be clicked. Transparency shows against a checker,
-// so a half-transparent border colour looks half-transparent here too.
+// A color swatch that can be clicked. Transparency shows against a checker,
+// so a half-transparent border color looks half-transparent here too.
 Rectangle {
     id: swatch
 
-    // `#aarrggbb`, as the backend hands colours out.
+    // `#aarrggbb`, as the backend hands colors out.
     property string value: "#ff000000"
     property string tooltip: ""
     signal clicked()

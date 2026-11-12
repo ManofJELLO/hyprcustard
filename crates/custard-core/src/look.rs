@@ -42,9 +42,9 @@ pub enum Kind {
     Int,
     /// A real number.
     Float,
-    /// One colour.
+    /// One color.
     Color,
-    /// One or more colours and an angle, as a border takes.
+    /// One or more colors and an angle, as a border takes.
     Gradient,
     /// Four whole numbers: top, right, bottom, left.
     Sides,
@@ -66,7 +66,7 @@ pub enum Group {
     Shadow,
     /// Background blur.
     Blur,
-    /// A coloured glow around windows.
+    /// A colored glow around windows.
     Glow,
     /// The desktop behind everything, the splash, and the cursor.
     Desktop,
@@ -123,7 +123,7 @@ pub struct Opt {
     /// Hyprland is not running to ask.
     pub default: &'static str,
     /// For an option that, left unset, takes another's value — the unfocused
-    /// shadow colour is the focused one unless set — that other option's key.
+    /// shadow color is the focused one unless set — that other option's key.
     /// Empty otherwise.
     pub follows: &'static str,
 }
@@ -186,7 +186,7 @@ pub static OPTIONS: &[Opt] = &[
         Kind::Gradient,
         NONE,
         r##"{"colors":["#ffffffff"],"angle":0}"##,
-        "Up to ten colours, blended along the angle.",
+        "Up to ten colors, blended along the angle.",
     ),
     opt(
         "general.col.inactive_border",
@@ -260,7 +260,7 @@ pub static OPTIONS: &[Opt] = &[
     opt(
         "decoration.shadow.color",
         Group::Shadow,
-        "Colour",
+        "Color",
         Kind::Color,
         NONE,
         r##""#ee1a1a1a""##,
@@ -279,7 +279,7 @@ pub static OPTIONS: &[Opt] = &[
         opt(
             "decoration.shadow.color_inactive",
             Group::Shadow,
-            "Unfocused colour",
+            "Unfocused color",
             Kind::Color,
             NONE,
             r##""#ee1a1a1a""##,
@@ -313,7 +313,7 @@ pub static OPTIONS: &[Opt] = &[
         Kind::Bool,
         NONE,
         "false",
-        "A soft coloured light around windows, drawn like a shadow.",
+        "A soft colored light around windows, drawn like a shadow.",
     ),
     opt("decoration.glow.range", Group::Glow, "Size", Kind::Int, (0.0, 100.0, 1.0), "10", ""),
     opt(
@@ -325,12 +325,12 @@ pub static OPTIONS: &[Opt] = &[
         "3",
         "Higher is a harder edge.",
     ),
-    opt("decoration.glow.color", Group::Glow, "Colour", Kind::Color, NONE, r##""#ee33ccff""##, ""),
+    opt("decoration.glow.color", Group::Glow, "Color", Kind::Color, NONE, r##""#ee33ccff""##, ""),
     following(
         opt(
             "decoration.glow.color_inactive",
             Group::Glow,
-            "Unfocused colour",
+            "Unfocused color",
             Kind::Color,
             NONE,
             r##""#ee33ccff""##,
@@ -392,7 +392,7 @@ pub static OPTIONS: &[Opt] = &[
         Kind::Float,
         UNIT,
         "0.1696",
-        "Saturates the brightest colours behind the blur.",
+        "Saturates the brightest colors behind the blur.",
     ),
     opt(
         "decoration.blur.vibrancy_darkness",
@@ -443,7 +443,7 @@ pub static OPTIONS: &[Opt] = &[
     opt(
         "decoration.blur.new_optimizations",
         Group::Blur,
-        "Optimised blur",
+        "Optimized blur",
         Kind::Bool,
         NONE,
         "true",
@@ -462,7 +462,7 @@ pub static OPTIONS: &[Opt] = &[
     opt(
         "misc.background_color",
         Group::Desktop,
-        "Background colour",
+        "Background color",
         Kind::Color,
         NONE,
         r##""#ff111111""##,
@@ -489,7 +489,7 @@ pub static OPTIONS: &[Opt] = &[
     opt(
         "misc.col.splash",
         Group::Desktop,
-        "Splash text colour",
+        "Splash text color",
         Kind::Color,
         NONE,
         r##""#55ffffff""##,
@@ -537,7 +537,7 @@ pub fn require(key: &str) -> Result<&'static Opt> {
 
 /// One option's value.
 ///
-/// Colours are held as `#aarrggbb`, which is what QML reads directly; they are
+/// Colors are held as `#aarrggbb`, which is what QML reads directly; they are
 /// turned into Hyprland's `rgba(rrggbbaa)` only on the way out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -548,11 +548,11 @@ pub enum LookValue {
     Int(i64),
     /// A real number.
     Float(f64),
-    /// One colour.
+    /// One color.
     Color(String),
-    /// Colours blended along an angle in degrees.
+    /// Colors blended along an angle in degrees.
     Gradient {
-        /// One to ten colours.
+        /// One to ten colors.
         colors: Vec<String>,
         /// Degrees.
         angle: f64,
@@ -638,7 +638,7 @@ pub(crate) fn hypr_color(c: &str) -> String {
     }
 }
 
-/// Read a colour in any of the spellings a person or a toolkit might use, and
+/// Read a color in any of the spellings a person or a toolkit might use, and
 /// return it as `#aarrggbb`.
 ///
 /// * `#rgb`, `#rrggbb`, `#aarrggbb` — Qt's order, alpha first.
@@ -648,7 +648,7 @@ pub(crate) fn hypr_color(c: &str) -> String {
 /// * `0xaarrggbb` — how `hl.get_config` reports one.
 pub fn parse_color(text: &str) -> Result<String> {
     let s = text.trim().to_ascii_lowercase();
-    let bad = || Error::other(format!("{text:?} is not a colour"));
+    let bad = || Error::other(format!("{text:?} is not a color"));
     let is_hex = |h: &str| !h.is_empty() && h.chars().all(|c| c.is_ascii_hexdigit());
 
     let (argb, rgba): (Option<String>, Option<String>) = if let Some(h) = s.strip_prefix('#') {
@@ -715,7 +715,7 @@ pub fn parse_as(key: &str, kind: Kind, (min, max): (f64, f64), value: &Value) ->
                 .map(|c| c.as_str().ok_or_else(wrong).and_then(parse_color))
                 .collect::<Result<Vec<_>>>()?;
             if colors.is_empty() || colors.len() > 10 {
-                return Err(Error::other("a border takes between one and ten colours"));
+                return Err(Error::other("a border takes between one and ten colors"));
             }
             let angle = value.get("angle").and_then(Value::as_f64).unwrap_or(0.0).rem_euclid(360.0);
             LookValue::Gradient { colors, angle }
@@ -1168,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_read_in_every_spelling() {
+    fn colors_read_in_every_spelling() {
         assert_eq!(parse_color("#abc").unwrap(), "#ffaabbcc");
         assert_eq!(parse_color("#33ccff").unwrap(), "#ff33ccff");
         assert_eq!(parse_color("#ee33ccff").unwrap(), "#ee33ccff");
@@ -1182,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_go_out_in_hyprlands_order() {
+    fn colors_go_out_in_hyprlands_order() {
         assert_eq!(hypr_color("#ee33ccff"), "rgba(33ccffee)");
     }
 
@@ -1205,7 +1205,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gradient_needs_one_to_ten_colours() {
+    fn a_gradient_needs_one_to_ten_colors() {
         let o = find("general.col.active_border").unwrap();
         assert!(parse(o, &json!({ "colors": [], "angle": 0 })).is_err());
         let v = parse(o, &json!({ "colors": ["#ff33ccff", "00ff99ee"], "angle": 405 })).unwrap();

@@ -2,7 +2,7 @@
 //!
 //! Someone arriving with an existing `hyprland.lua` should not have to retype
 //! their rules. This reads the parts of the file *outside* the managed block
-//! and turns what it recognises into model objects.
+//! and turns what it recognizes into model objects.
 //!
 //! It is deliberately conservative: it understands string literals and
 //! concatenations of literals with `local` variables defined in the same file,
@@ -157,7 +157,7 @@ pub fn scan(source: &str) -> Imported {
         }
 
         let Some(action) = action_from(&call.func, &args) else {
-            out.skipped.push(format!("{}: unrecognised arguments", call.func));
+            out.skipped.push(format!("{}: unrecognized arguments", call.func));
             continue;
         };
 
@@ -453,7 +453,7 @@ pub(crate) fn strip_comments(source: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
-/// Recognise a long bracket — `[[`, `[=[`, `[==[` … — at `at`.
+/// Recognize a long bracket — `[[`, `[=[`, `[==[` … — at `at`.
 ///
 /// Returns its level (the number of `=`) and the offset just past the opening.
 fn long_bracket(src: &[u8], at: usize) -> Option<(usize, usize)> {

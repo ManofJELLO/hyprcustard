@@ -1,6 +1,6 @@
 //! The configuration model.
 //!
-//! This is the single source of truth the GUI edits. It is serialised to JSON
+//! This is the single source of truth the GUI edits. It is serialized to JSON
 //! and embedded in the managed block of `hyprland.lua` so a later run can read
 //! back exactly what it wrote, without having to parse Lua.
 
@@ -102,7 +102,7 @@ pub enum TagGroup {
     State,
     /// One-shot animations.
     Animation,
-    /// Behaviour switches.
+    /// Behavior switches.
     Behavior,
 }
 
@@ -113,7 +113,7 @@ impl TagGroup {
             TagGroup::Persistent => "Always on",
             TagGroup::State => "Depends on state",
             TagGroup::Animation => "Animations",
-            TagGroup::Behavior => "Behaviour",
+            TagGroup::Behavior => "Behavior",
         }
     }
 }
@@ -195,7 +195,7 @@ tag_table! {
         Path, true, true, false, Animation;
     Replace => "shader_replace", "Opt out of stacking",
         "First matching tag wins and the rest are ignored, the pre-stacking \
-         behaviour. Has no _default form.",
+         behavior. Has no _default form.",
         Flag, false, false, false, Behavior;
     FullscreenStack => "shader_fullscreen_stack", "Keep stack fullscreen",
         "Keeps the window's normal shader stack while fullscreen instead of \
@@ -659,7 +659,7 @@ pub struct Config {
     /// Keybinds.
     #[serde(default)]
     pub binds: Vec<Bind>,
-    /// Name or path of the GUI's own colour theme.
+    /// Name or path of the GUI's own color theme.
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -669,7 +669,7 @@ fn default_version() -> u32 {
 }
 
 fn default_theme() -> String {
-    // The desktop's own colours, until someone picks otherwise.
+    // The desktop's own colors, until someone picks otherwise.
     "system".into()
 }
 

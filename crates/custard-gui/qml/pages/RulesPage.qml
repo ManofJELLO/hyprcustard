@@ -141,7 +141,7 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: Theme.gapSmall
 
-                                Text {
+                                FitText {
                                     Layout.fillWidth: true
                                     text: row.modelData.name !== ""
                                           ? row.modelData.name
@@ -159,7 +159,7 @@ Item {
                                 }
                             }
 
-                            Text {
+                            FitText {
                                 Layout.fillWidth: true
                                 text: row.modelData.matchSummary
                                 color: Theme.muted
@@ -427,7 +427,7 @@ Item {
                                             width: parent.width
                                             spacing: Theme.gapSmall
 
-                                            Text {
+                                            FitText {
                                                 Layout.preferredWidth: 150
                                                 text: tagRow.modelData.label
                                                 color: tagRow.isSet ? Theme.fg : Theme.fgDim

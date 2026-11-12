@@ -3,7 +3,7 @@
 //! A terminal showing two lines of text is mostly black, and black is the one
 //! thing a shader cannot be judged against: a dissolve, a tint, a blur and a
 //! saturation curve all look identical on it. So the demo window shows a test
-//! card instead — colour bars, a grey ramp, a hue sweep, a fine checkerboard
+//! card instead — color bars, a gray ramp, a hue sweep, a fine checkerboard
 //! and a line of text — chosen so that every common kind of shader has
 //! something in the window it visibly acts on.
 //!
@@ -31,7 +31,7 @@ const CHROME: u32 = 40;
 const MIN: (usize, usize) = (24, 10);
 const MAX: (usize, usize) = (96, 40);
 
-/// Lines the card spends on everything that is not a colour bar.
+/// Lines the card spends on everything that is not a color bar.
 const FIXED_LINES: usize = 14;
 
 /// Where the card is written.
@@ -45,7 +45,7 @@ pub fn geometry(pane: (u32, u32)) -> (usize, usize) {
     (cells(pane.0, CELL.0).clamp(MIN.0, MAX.0), cells(pane.1, CELL.1).clamp(MIN.1, MAX.1))
 }
 
-/// One row of background colour, as a line.
+/// One row of background color, as a line.
 fn band(cells: impl Iterator<Item = (u8, u8, u8)>) -> String {
     let mut out = String::new();
     for (r, g, b) in cells {
@@ -55,7 +55,7 @@ fn band(cells: impl Iterator<Item = (u8, u8, u8)>) -> String {
     out
 }
 
-/// A fully saturated colour at `hue` degrees.
+/// A fully saturated color at `hue` degrees.
 fn hue(deg: f32) -> (u8, u8, u8) {
     let h = deg.rem_euclid(360.0) / 60.0;
     let x = 255.0 * (1.0 - (h % 2.0 - 1.0).abs());
@@ -73,7 +73,7 @@ fn hue(deg: f32) -> (u8, u8, u8) {
 /// One line of the card, and how readily it is given up.
 ///
 /// A small pane cannot hold every band, and which lines go first is a
-/// judgement: the blank lines separating the bands are worth less than the
+/// judgment: the blank lines separating the bands are worth less than the
 /// bands, and a second row of a band is worth less than its first.
 struct Line {
     text: String,
@@ -93,7 +93,7 @@ fn pick(w: usize, choices: &[&str]) -> String {
 pub fn render(cols: usize, rows: usize) -> String {
     // The broadcast bar order, which is the one that makes a hue shift
     // obvious: primaries and secondaries alternate, so a rotation moves every
-    // bar onto a colour its neighbour just had.
+    // bar onto a color its neighbor just had.
     const BARS: [(u8, u8, u8); 8] = [
         (192, 192, 192),
         (192, 192, 0),
@@ -107,7 +107,7 @@ pub fn render(cols: usize, rows: usize) -> String {
 
     let w = cols.max(MIN.0);
     let rows = rows.max(MIN.1);
-    // Everything left over after the other bands goes to the colour bars, so
+    // Everything left over after the other bands goes to the color bars, so
     // the card fills the window rather than leaving the bottom half black.
     let bar_rows = rows.saturating_sub(FIXED_LINES).max(1);
 
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn the_card_has_something_for_every_kind_of_shader() {
         let card = render(60, 20);
-        assert!(card.contains("\x1b[48;2;192;192;0m"), "no colour bars");
+        assert!(card.contains("\x1b[48;2;192;192;0m"), "no color bars");
         assert!(card.contains("\x1b[48;2;255;255;255m"), "the ramp never reaches white");
         assert!(card.contains("\x1b[48;2;0;0;0m"), "the ramp never reaches black");
         assert!(card.contains('▀'), "no fine detail");

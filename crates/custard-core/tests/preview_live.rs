@@ -30,7 +30,7 @@ fn out_dir() -> PathBuf {
     std::env::var_os("CUSTARD_PREVIEW_OUT").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
 }
 
-/// The colour at `(x, y)` of a captured frame.
+/// The color at `(x, y)` of a captured frame.
 fn pixel(png_bytes: &[u8], (x, y): (usize, usize)) -> [u8; 3] {
     let mut reader = png::Decoder::new(std::io::Cursor::new(png_bytes)).read_info().unwrap();
     let mut buf = vec![0; reader.output_buffer_size()];
@@ -42,7 +42,7 @@ fn pixel(png_bytes: &[u8], (x, y): (usize, usize)) -> [u8; 3] {
 
 /// Plain terminal background, low in the left half of the pane: below the
 /// test card however far it has scrolled, and inside the first window even
-/// while the neighbour has it tiled to half width.
+/// while the neighbor has it tiled to half width.
 const BACKGROUND: (usize, usize) = (100, 400);
 
 const SHADER: &str = r#"#version 320 es
@@ -105,7 +105,7 @@ fn a_preview_runs_and_answers_to_an_edit() {
     let after = std::fs::read(preview.capture().expect("a second frame")).expect("the frame file");
     std::fs::write(out_dir().join("preview-after.png"), &after).unwrap();
 
-    // By colour, not by bytes: the terminal scrolls, so two frames differ
+    // By color, not by bytes: the terminal scrolls, so two frames differ
     // whether or not a shader is on the window at all — which is how a preview
     // drawing no shader whatsoever once passed this test.
     let [r, _, b] = pixel(&before, BACKGROUND);

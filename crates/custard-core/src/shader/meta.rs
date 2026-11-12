@@ -80,7 +80,7 @@ pub enum ParamKind {
     },
     /// A checkbox.
     Bool,
-    /// An RGB or RGBA colour.
+    /// An RGB or RGBA color.
     Color {
         /// True when the underlying type is `vec4`.
         alpha: bool,
@@ -820,7 +820,7 @@ void main() {
     }
 
     #[test]
-    fn a_vec3_named_color_becomes_a_colour_picker() {
+    fn a_vec3_named_color_becomes_a_color_picker() {
         let i = info();
         let p = i.params.iter().find(|p| p.name == "PAPER_COLOR").unwrap();
         assert_eq!(p.kind, ParamKind::Color { alpha: false });

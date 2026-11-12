@@ -123,7 +123,7 @@ pub static TREE: &[Leaf] = &[
     leaf("fadePopupsOut", "fadePopups", "Popup fading out", Family::Plain),
     leaf("fadeDpms", "fade", "Screen turning on and off", Family::Plain),
     leaf("fadeGlow", "fade", "Glow", Family::Plain),
-    leaf("border", "global", "Border colour changing", Family::Plain),
+    leaf("border", "global", "Border color changing", Family::Plain),
     leaf("borderangle", "global", "Border gradient turning", Family::Angle),
     leaf("glowangle", "global", "Glow gradient turning", Family::Angle),
     leaf("shadowangle", "global", "Shadow gradient turning", Family::Angle),

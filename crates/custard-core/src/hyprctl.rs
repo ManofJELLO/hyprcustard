@@ -177,7 +177,7 @@ pub fn reload_config() -> Result<()> {
     run(&["reload"]).map(|_| ())
 }
 
-/// Re-read the config without re-initialising monitors, which is all a
+/// Re-read the config without re-initializing monitors, which is all a
 /// change of look needs and does not blank the screen.
 pub fn reload_config_only() -> Result<()> {
     run(&["reload", "config-only"]).map(|_| ())
@@ -282,7 +282,7 @@ struct RawOption {
     /// A gap-style option, as `"top right bottom left"`.
     #[serde(default)]
     css: Option<String>,
-    /// False when the option name was not recognised at all.
+    /// False when the option name was not recognized at all.
     #[serde(default)]
     set: bool,
 }
