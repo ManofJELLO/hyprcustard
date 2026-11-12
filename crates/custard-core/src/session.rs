@@ -19,6 +19,7 @@ use crate::model::{
 use crate::motion;
 use crate::preset;
 use crate::preview;
+use crate::rules::{self, HandRule, Rule, RuleKind};
 use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
 use crate::shader::{DraftItem, ShaderDraft};
@@ -86,6 +87,11 @@ pub struct Session {
     /// The curves the user's own config defines, read from the file. Only the
     /// file can say this: Hyprland keeps every curve until it restarts.
     config_curves: BTreeMap<String, Option<motion::Points>>,
+    /// The rule calls the user wrote themselves, read from the file.
+    hand_rules: Vec<HandRule>,
+    /// Hand-written rules moved into the look block, as their text: each is
+    /// commented out in the file on the next save.
+    moves: Vec<String>,
     /// Every theme, built in and from the themes folder.
     presets: Vec<preset::Entry>,
     /// Shaders found in the shader directory.
@@ -138,6 +144,7 @@ impl Session {
             themes.iter().find(|t| t.id == config.theme).cloned().unwrap_or_else(theme::system);
 
         let config_curves = read_config_curves(&settings.resolved_config_path());
+        let hand_rules = read_hand_rules(&settings.resolved_config_path());
         let mut session = Session {
             settings,
             saved: config.clone(),
@@ -145,6 +152,8 @@ impl Session {
             saved_look: look.clone(),
             look,
             config_curves,
+            hand_rules,
+            moves: Vec::new(),
             presets: Vec::new(),
             shaders: Vec::new(),
             drafts: BTreeMap::new(),
@@ -201,6 +210,7 @@ impl Session {
                         "options": e.preset.options,
                         "curveCount": e.preset.curves.len(),
                         "animationCount": e.preset.animations.len(),
+                        "lookRuleCount": e.preset.rules.as_ref().map_or(0, Vec::len),
                     })
                 })
                 .collect(),
@@ -374,6 +384,14 @@ impl Session {
         // different version of the emitter wrote. And someone who only uses
         // the Look page should not find an empty shader block appear at all.
         let mut updated = existing.clone();
+        // Rules moved into the look block come out of the user's own code.
+        let mut lost_moves = Vec::new();
+        for text in &self.moves {
+            match rules::comment_out(&updated, text) {
+                Some(next) => updated = next,
+                None => lost_moves.push(text.lines().next().unwrap_or_default().trim().to_string()),
+            }
+        }
         let shade_changed = self.config != self.saved;
         let shade_exists = block::split(&existing)?.is_some();
         if shade_changed && (shade_exists || self.config != Config::default()) {
@@ -391,10 +409,26 @@ impl Session {
         self.saved = self.config.clone();
         self.saved_look = self.look.clone();
         self.config_curves = motion::curves_in_config(&updated);
+        self.hand_rules = rules::in_config(&updated);
+        let moved = std::mem::take(&mut self.moves).len() - lost_moves.len();
 
         let mut msg = format!("Saved to {}", paths::contract(&path));
         if let Some(b) = backup {
             msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
+        }
+        if moved > 0 {
+            msg.push_str(&format!(
+                ". Commented out {moved} rule{} of yours that now live{} in the look block",
+                if moved == 1 { "" } else { "s" },
+                if moved == 1 { "s" } else { "" }
+            ));
+        }
+        if !lost_moves.is_empty() {
+            msg.push_str(&format!(
+                ". Could not find {} in the file any more, so left it alone — the look block \
+                 has its own copy, so remove yours by hand",
+                lost_moves.join(", ")
+            ));
         }
         let orphans = self.orphaned_curves();
         if !orphans.is_empty() {
@@ -443,6 +477,8 @@ impl Session {
         self.look = look.clone();
         self.saved_look = look;
         self.config_curves = read_config_curves(&path);
+        self.hand_rules = read_hand_rules(&path);
+        self.moves.clear();
         // Unsaved look edits are on the desktop as well as in the app.
         if look_was_dirty && self.live.running {
             self.resync_look()?;
@@ -539,6 +575,7 @@ impl Session {
                 .collect::<Vec<_>>(),
             "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
             "presets": self.presets_view(),
+            "lookRules": self.rules_view(),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -976,6 +1013,7 @@ impl Session {
             "curve.remove" => self.remove_curve(payload),
             "look.discard" => {
                 self.look = self.saved_look.clone();
+                self.moves.clear();
                 if self.live.running {
                     self.resync_look()?;
                 }
@@ -987,6 +1025,31 @@ impl Session {
                 }
                 Ok(None)
             }
+
+            // --- look rules ---
+            "rule.addLook" => self.add_look_rule(payload),
+            "rule.setLook" => self.set_look_rule(payload),
+            "rule.removeLook" => {
+                let id = id_of(payload)?.to_string();
+                let at = self.look_rule_index(&id)?;
+                let old = self.look.rules[at].clone();
+                if self.look_is_live() {
+                    look::eval(&rules::live_one(&id, None, &self.theirs(&[&old])))?;
+                }
+                self.look.rules.remove(at);
+                Ok(None)
+            }
+            "rule.moveLook" => {
+                let at = self.look_rule_index(id_of(payload)?)?;
+                let delta = payload.get("delta").and_then(Value::as_i64).unwrap_or(0);
+                move_item(&mut self.look.rules, at, delta);
+                // Later rules win where two set the same thing.
+                if self.look_is_live() {
+                    look::eval(&rules::live_all(&self.look.rules, &self.theirs_all()))?;
+                }
+                Ok(None)
+            }
+            "rule.adopt" => self.adopt_rule(payload),
 
             // --- import ---
             "import.apply" => self.apply_import(),
@@ -1018,6 +1081,13 @@ impl Session {
         if !self.look_is_live() {
             return Ok(());
         }
+        // `rule:<id>:<effect>`: one effect of a look rule, mid-drag.
+        if let Some(rest) = key.strip_prefix("rule:") {
+            let (id, effect) = rest.split_once(':').unwrap_or((rest, ""));
+            let old = &self.look.rules[self.look_rule_index(id)?];
+            let new = rules::edited(old, &json!({ "effects": { effect: value } }))?;
+            return look::eval(&rules::live_one(id, Some(&new), &self.theirs(&[old, &new])));
+        }
         let opt = look::require(key)?;
         let value = look::parse(opt, value)?;
         look::apply_live(&[(key, &value)])
@@ -1031,7 +1101,7 @@ impl Session {
     fn resync_look(&mut self) -> Result<()> {
         hyprctl::reload_config_only()?;
         if self.settings.live_look_edits {
-            look::apply_all_live(&self.look)?;
+            look::apply_all_live(&self.look, &self.theirs_all())?;
         }
         self.refresh_live_look();
         Ok(())
@@ -1496,6 +1566,137 @@ impl Session {
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Look rules
+    // -----------------------------------------------------------------------
+
+    fn look_rule_index(&self, id: &str) -> Result<usize> {
+        self.look
+            .rules
+            .iter()
+            .position(|r| r.id == id)
+            .ok_or_else(|| Error::other(format!("no look rule {id}")))
+    }
+
+    /// The user's own workspace rules for the workspaces these rules are
+    /// for — run again around a live change, see [`crate::rules`].
+    fn theirs(&self, touched: &[&Rule]) -> Vec<String> {
+        let workspaces: Vec<&str> = touched.iter().filter_map(|r| r.workspace()).collect();
+        let live_hand: Vec<HandRule> =
+            self.hand_rules.iter().filter(|h| !self.moves.contains(&h.text)).cloned().collect();
+        rules::theirs_for(&live_hand, &workspaces)
+    }
+
+    /// [`Session::theirs`] for every rule the app has or had on the desktop.
+    fn theirs_all(&self) -> Vec<String> {
+        let all: Vec<&Rule> = self.look.rules.iter().chain(&self.saved_look.rules).collect();
+        self.theirs(&all)
+    }
+
+    fn next_look_rule_id(&self) -> String {
+        let taken =
+            |id: &str| self.look.rules.iter().chain(&self.saved_look.rules).any(|r| r.id == id);
+        (1..).map(|n| format!("lr{n}")).find(|id| !taken(id)).expect("an unused id")
+    }
+
+    /// Refuse a second rule of the app's for one workspace: Hyprland merges
+    /// them into one, so switching either off would switch off both.
+    fn check_workspace_free(&self, rule: &Rule) -> Result<()> {
+        if let Some(w) = rule.workspace().filter(|w| !w.is_empty()) {
+            if self.look.rules.iter().any(|r| r.id != rule.id && r.workspace() == Some(w)) {
+                return Err(Error::other(format!(
+                    "there is already a rule here for workspace {w} — add to that one"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Put a changed rule on the desktop and keep it, or refuse it with
+    /// Hyprland's reason and keep the old one.
+    fn put_look_rule(&mut self, at: Option<usize>, rule: Rule) -> Result<()> {
+        self.check_workspace_free(&rule)?;
+        if self.look_is_live() {
+            let old = at.map(|i| self.look.rules[i].clone());
+            let touched: Vec<&Rule> = old.iter().chain([&rule]).collect();
+            let theirs = self.theirs(&touched);
+            look::eval(&rules::live_one(&rule.id, Some(&rule), &theirs))?;
+        }
+        match at {
+            Some(i) => self.look.rules[i] = rule,
+            None => self.look.rules.push(rule),
+        }
+        Ok(())
+    }
+
+    fn add_look_rule(&mut self, payload: &Value) -> Result<Option<String>> {
+        let kind: RuleKind = from_field(payload, "kind")?;
+        let rule = rules::edited(&Rule::new(self.next_look_rule_id(), kind), payload)?;
+        self.put_look_rule(None, rule)?;
+        Ok(None)
+    }
+
+    fn set_look_rule(&mut self, payload: &Value) -> Result<Option<String>> {
+        let at = self.look_rule_index(id_of(payload)?)?;
+        let rule = rules::edited(&self.look.rules[at], payload)?;
+        if rule != self.look.rules[at] {
+            self.put_look_rule(Some(at), rule)?;
+        }
+        Ok(None)
+    }
+
+    /// Move one of the user's own rules into the look block, to be edited
+    /// here. The original is commented out on the next save.
+    fn adopt_rule(&mut self, payload: &Value) -> Result<Option<String>> {
+        let text = payload.get("text").and_then(Value::as_str).unwrap_or_default();
+        let hand = self
+            .hand_rules
+            .iter()
+            .find(|h| h.text == text)
+            .ok_or_else(|| Error::other("that rule is no longer in the file — reload"))?
+            .clone();
+        if self.moves.contains(&hand.text) {
+            return Ok(None);
+        }
+        let mut rule = match (&hand.rule, hand.alone) {
+            (Some(r), true) => r.clone(),
+            _ => return Err(Error::other("that rule cannot be moved")),
+        };
+        rule.id = self.next_look_rule_id();
+        // Theirs and the moved copy are one rule; they merge as they should.
+        if let Some(w) = rule.workspace().map(str::to_string) {
+            if let Some(i) = self.look.rules.iter().position(|r| r.workspace() == Some(w.as_str()))
+            {
+                let mut merged = self.look.rules[i].clone();
+                for (k, v) in rule.effects {
+                    merged.effects.entry(k).or_insert(v);
+                }
+                merged.extra.extend(rule.extra);
+                self.moves.push(hand.text);
+                self.put_look_rule(Some(i), merged)?;
+                return Ok(Some(format!(
+                    "Added it to the rule for workspace {w} — Save to move it"
+                )));
+            }
+        }
+        self.put_look_rule(None, rule)?;
+        self.moves.push(hand.text);
+        Ok(Some("Moved here — Save comments out your original in hyprland.lua".into()))
+    }
+
+    fn rules_view(&self) -> Value {
+        json!({
+            "rules": self.look.rules.iter().map(Rule::view).collect::<Vec<_>>(),
+            "changed": self.look.rules != self.saved_look.rules || !self.moves.is_empty(),
+            "hand": self.hand_rules
+                .iter()
+                .filter(|h| h.look)
+                .map(|h| h.view(self.moves.contains(&h.text)))
+                .collect::<Vec<_>>(),
+            "catalog": rules::catalog(),
+        })
+    }
+
     fn rule_index(&self, id: &str) -> Result<usize> {
         self.config
             .rules
@@ -1542,6 +1743,11 @@ pub fn probe_live() -> Live {
 /// cannot be read defines none; reading the config proper reports that.
 fn read_config_curves(path: &Path) -> BTreeMap<String, Option<motion::Points>> {
     paths::read_to_string(path).map(|text| motion::curves_in_config(&text)).unwrap_or_default()
+}
+
+/// The rule calls in the file at `path`, outside the app's blocks.
+fn read_hand_rules(path: &Path) -> Vec<HandRule> {
+    paths::read_to_string(path).map(|text| rules::in_config(&text)).unwrap_or_default()
 }
 
 fn read_look(path: &Path) -> Result<Look> {
@@ -1687,6 +1893,8 @@ mod tests {
             look: Look::default(),
             saved_look: Look::default(),
             config_curves: BTreeMap::new(),
+            hand_rules: Vec::new(),
+            moves: Vec::new(),
             presets: preset::builtin()
                 .into_iter()
                 .map(|preset| preset::Entry { preset, path: None })
@@ -1945,6 +2153,127 @@ mod tests {
         let written = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(!written.contains("-- old body"));
         assert!(written.contains("rounding = 12"));
+    }
+
+    fn rule_session(config: &str) -> (tempfile::TempDir, PathBuf, Session) {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_path = dir.path().join("hyprland.lua");
+        std::fs::write(&cfg_path, config).unwrap();
+        let mut s = session();
+        s.settings.config_path = cfg_path.to_string_lossy().into_owned();
+        s.settings.backups_to_keep = 0;
+        s.hand_rules = read_hand_rules(&cfg_path);
+        (dir, cfg_path, s)
+    }
+
+    #[test]
+    fn look_rules_are_added_edited_and_saved_into_the_look_block() {
+        let (_dir, cfg_path, mut s) = rule_session("-- mine\n");
+        s.command("rule.addLook", &json!({ "kind": "window", "matches": { "class": "kitty" } }))
+            .unwrap();
+        let id = s.look.rules[0].id.clone();
+        assert_eq!(s.look.rules[0].incomplete(), Some("It changes nothing yet"));
+        s.command(
+            "rule.setLook",
+            &json!({ "id": id, "label": "Terminal", "effects": { "opacity": [0.95, 0.85] } }),
+        )
+        .unwrap();
+        assert!(s.state()["lookRules"]["changed"].as_bool().unwrap());
+        s.save().unwrap();
+
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.contains("-- Terminal\nhyprcustard_rules[\"lr1\"] = hl.window_rule({"));
+        assert!(written.contains("opacity = \"0.95 override 0.85 override\""));
+        assert_eq!(read_look(&cfg_path).unwrap().rules, s.look.rules);
+        assert!(!s.state()["lookRules"]["changed"].as_bool().unwrap());
+
+        s.command("rule.removeLook", &json!({ "id": id })).unwrap();
+        s.save().unwrap();
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(!written.contains("hl.window_rule"));
+    }
+
+    #[test]
+    fn one_rule_per_workspace() {
+        let (_dir, _p, mut s) = rule_session("");
+        let ws = |w: &str| json!({ "kind": "workspace", "matches": { "workspace": w } });
+        s.command("rule.addLook", &ws("w[tv1]")).unwrap();
+        assert!(s.command("rule.addLook", &ws("w[tv1]")).is_err());
+        s.command("rule.addLook", &ws("f[1]")).unwrap();
+        let second = s.look.rules[1].id.clone();
+        assert!(s
+            .command("rule.setLook", &json!({ "id": second, "matches": { "workspace": "w[tv1]" } }))
+            .is_err());
+        assert_eq!(s.look.rules[1].workspace(), Some("f[1]"));
+    }
+
+    #[test]
+    fn moving_a_hand_written_rule_comments_it_out_on_save() {
+        let config = "hl.window_rule({\n    name      = \"tiled-no-shadow\",\n    \
+                      match     = { float = false },\n    no_shadow = true,\n})\n";
+        let (_dir, cfg_path, mut s) = rule_session(config);
+        let hand = s.state()["lookRules"]["hand"].clone();
+        assert_eq!(hand.as_array().unwrap().len(), 1);
+        assert_eq!(hand[0]["movable"], json!(true));
+        let text = hand[0]["text"].as_str().unwrap().to_string();
+
+        s.command("rule.adopt", &json!({ "text": text })).unwrap();
+        assert_eq!(s.look.rules[0].label, "tiled-no-shadow");
+        assert_eq!(s.state()["lookRules"]["hand"][0]["moving"], json!(true));
+        // Nothing is written until Save.
+        assert_eq!(std::fs::read_to_string(&cfg_path).unwrap(), config);
+
+        let msg = s.save().unwrap();
+        assert!(msg.contains("Commented out 1 rule"), "{msg}");
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(
+            written.starts_with("-- Moved into the HyprCustard look block:\n-- hl.window_rule({")
+        );
+        assert!(written.contains("hyprcustard_rules[\"lr1\"] = hl.window_rule({"));
+        assert!(written.contains("    match = { float = false },\n    no_shadow = true,\n"));
+        assert!(s.state()["lookRules"]["hand"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn discarding_forgets_a_pending_move() {
+        let config = "hl.layer_rule({ match = { namespace = \"waybar\" }, blur = true })\n";
+        let (_dir, cfg_path, mut s) = rule_session(config);
+        let text = s.hand_rules[0].text.clone();
+        s.command("rule.adopt", &json!({ "text": text })).unwrap();
+        s.command("look.discard", &json!({})).unwrap();
+        assert!(s.look.rules.is_empty());
+        s.save().unwrap();
+        assert!(std::fs::read_to_string(&cfg_path).unwrap().starts_with(config));
+    }
+
+    #[test]
+    fn themes_carry_look_rules_and_leave_them_alone_when_they_have_none() {
+        let (_dir, _p, mut s) = rule_session("");
+        s.command(
+            "rule.addLook",
+            &json!({ "kind": "layer", "matches": { "namespace": "waybar" }, "effects": { "blur": true } }),
+        )
+        .unwrap();
+        s.command("preset.apply", &json!({ "name": "Soft glass" })).unwrap();
+        assert_eq!(s.look.rules.len(), 1, "a theme without rules keeps the user's");
+
+        let p = preset::snapshot(
+            "mine",
+            "",
+            &s.look,
+            &BTreeMap::new(),
+            &Default::default(),
+            &BTreeMap::new(),
+        );
+        assert_eq!(p.rules.as_ref().map(Vec::len), Some(1));
+        let back: preset::Preset =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.rules, p.rules);
+
+        s.look.rules.clear();
+        let (applied, problems) = preset::to_look(&p, &s.look, &Default::default());
+        assert!(problems.is_empty());
+        assert_eq!(applied.rules.len(), 1);
     }
 
     #[test]

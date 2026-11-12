@@ -79,6 +79,7 @@ QtObject {
     }
 
     readonly property var look: state.look || ({ options: [], groups: [] })
+    readonly property var lookRules: state.lookRules || ({ rules: [], hand: [], catalog: ({}) })
 
     // Live-only: puts a value on the desktop mid-drag without storing it.
     function lookTry(key, value) {
@@ -195,6 +196,51 @@ QtObject {
             app.confirmDialog.ask(heading, body, acceptText, danger, onAccept)
         else
             onAccept()
+    }
+
+    // --- colours ------------------------------------------------------------
+    // Shared by the Look page and the look rules' editor.
+
+    // A QML colour as `#aarrggbb`, the form the backend deals in.
+    function argb(c) {
+        function h(x) {
+            var s = Math.round(x * 255).toString(16)
+            return s.length < 2 ? "0" + s : s
+        }
+        return "#" + h(c.a) + h(c.r) + h(c.g) + h(c.b)
+    }
+
+    // `#aarrggbb` the way Hyprland writes it, `rrggbbaa` — which is what the
+    // text fields show, so a value can be copied in from a config.
+    function hyprHex(value) {
+        var s = String(value || "")
+        return s.length === 9 ? s.substr(3) + s.substr(1, 2) : s.replace("#", "")
+    }
+
+    // `ebdbb2ff 595959aa 45deg`, as a border gradient is written in a
+    // hyprland.conf, into what the backend takes.
+    function parseGradient(text) {
+        var colors = []
+        var angle = 0
+        var parts = String(text).trim().split(/\s+/)
+        for (var i = 0; i < parts.length; ++i) {
+            if (parts[i] === "")
+                continue
+            if (/deg$/.test(parts[i]))
+                angle = parseFloat(parts[i])
+            else
+                colors.push(parts[i])
+        }
+        return { colors: colors, angle: isNaN(angle) ? 0 : angle }
+    }
+
+    function gradientText(value) {
+        if (!value || !value.colors)
+            return ""
+        var bits = []
+        for (var i = 0; i < value.colors.length; ++i)
+            bits.push(app.hyprHex(value.colors[i]))
+        return bits.join(" ") + " " + Math.round(value.angle || 0) + "deg"
     }
 
     // --- lookups ------------------------------------------------------------

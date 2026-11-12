@@ -168,10 +168,10 @@ fn match_fields(rule: &WindowRule) -> String {
         parts.push(format!("title = {}", lua_quote(v)));
     }
     if let Some(v) = &m.initial_class {
-        parts.push(format!("initialClass = {}", lua_quote(v)));
+        parts.push(format!("initial_class = {}", lua_quote(v)));
     }
     if let Some(v) = &m.initial_title {
-        parts.push(format!("initialTitle = {}", lua_quote(v)));
+        parts.push(format!("initial_title = {}", lua_quote(v)));
     }
     if parts.is_empty() {
         // An empty match table would match nothing useful; `.*` is the

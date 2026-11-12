@@ -50,6 +50,8 @@ pub enum Kind {
     Sides,
     /// An x, y pair.
     Vec2,
+    /// A line of text. Only rules use it, for an animation style.
+    Text,
 }
 
 /// The sections of the Look page, in the order it shows them.
@@ -559,6 +561,8 @@ pub enum LookValue {
     Sides([i64; 4]),
     /// x, y.
     Vec2([f64; 2]),
+    /// A line of text.
+    Text(String),
 }
 
 impl LookValue {
@@ -573,6 +577,7 @@ impl LookValue {
             LookValue::Gradient { colors, angle } => json!({ "colors": colors, "angle": angle }),
             LookValue::Sides(s) => json!(s),
             LookValue::Vec2(v) => json!(v),
+            LookValue::Text(t) => json!(t),
         }
     }
 
@@ -591,6 +596,7 @@ impl LookValue {
                 format!("{{ top = {t}, right = {r}, bottom = {b}, left = {l} }}")
             }
             LookValue::Vec2([x, y]) => format!("{{ {}, {} }}", lua_number(*x), lua_number(*y)),
+            LookValue::Text(t) => lua_quote(t),
         }
     }
 
@@ -613,7 +619,7 @@ impl LookValue {
 }
 
 /// A float as Lua, without the noise of `0.30000001`.
-fn lua_number(v: f64) -> String {
+pub(crate) fn lua_number(v: f64) -> String {
     let rounded = (v * 10_000.0).round() / 10_000.0;
     if rounded == rounded.trunc() && rounded.abs() < 1e15 {
         format!("{}", rounded as i64)
@@ -623,7 +629,7 @@ fn lua_number(v: f64) -> String {
 }
 
 /// `#aarrggbb` as Hyprland's `rgba(rrggbbaa)`.
-fn hypr_color(c: &str) -> String {
+pub(crate) fn hypr_color(c: &str) -> String {
     let hex = c.trim_start_matches('#');
     if hex.len() == 8 {
         format!("rgba({}{})", &hex[2..], &hex[..2])
@@ -685,11 +691,17 @@ pub fn parse_color(text: &str) -> Result<String> {
 /// Read a value from the UI (or from an option's default) for `opt`,
 /// checking it fits and clamping numbers into the option's range.
 pub fn parse(opt: &Opt, value: &Value) -> Result<LookValue> {
-    let wrong = || Error::other(format!("{} cannot be set to {value}", opt.key));
-    let clamp = |v: f64| if opt.max > opt.min { v.clamp(opt.min, opt.max) } else { v };
+    parse_as(opt.key, opt.kind, (opt.min, opt.max), value)
+}
+
+/// [`parse`] for anything with a key, a kind and a range — a rule's fields
+/// as well as the page's options.
+pub fn parse_as(key: &str, kind: Kind, (min, max): (f64, f64), value: &Value) -> Result<LookValue> {
+    let wrong = || Error::other(format!("{key} cannot be set to {value}"));
+    let clamp = |v: f64| if max > min { v.clamp(min, max) } else { v };
     let int = |v: &Value| v.as_f64().map(|f| clamp(f.round()) as i64).ok_or_else(wrong);
 
-    Ok(match opt.kind {
+    Ok(match kind {
         Kind::Bool => LookValue::Bool(value.as_bool().ok_or_else(wrong)?),
         Kind::Int => LookValue::Int(int(value)?),
         Kind::Float => LookValue::Float(clamp(value.as_f64().ok_or_else(wrong)?)),
@@ -728,6 +740,13 @@ pub fn parse(opt: &Opt, value: &Value) -> Result<LookValue> {
             let y = a[1].as_f64().ok_or_else(wrong)?;
             LookValue::Vec2([clamp(x), clamp(y)])
         }
+        Kind::Text => {
+            let t = value.as_str().map(str::trim).ok_or_else(wrong)?;
+            if t.is_empty() || t.contains(['\n', '\r']) {
+                return Err(wrong());
+            }
+            LookValue::Text(t.to_string())
+        }
     })
 }
 
@@ -757,6 +776,9 @@ pub struct Look {
     /// Animation leaves set here, by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub animations: BTreeMap<String, crate::motion::AnimSetting>,
+    /// Window, layer and workspace rules, in the order they are written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<crate::rules::Rule>,
 }
 
 fn one() -> u32 {
@@ -770,6 +792,7 @@ impl Default for Look {
             values: BTreeMap::new(),
             curves: BTreeMap::new(),
             animations: BTreeMap::new(),
+            rules: Vec::new(),
         }
     }
 }
@@ -777,17 +800,35 @@ impl Default for Look {
 impl Look {
     /// True when nothing is overridden, so there is no block to write.
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty() && self.curves.is_empty() && self.animations.is_empty()
+        self.values.is_empty()
+            && self.curves.is_empty()
+            && self.animations.is_empty()
+            && self.rules.is_empty()
     }
 
     /// How many things are set here, for the page to count.
     pub fn len(&self) -> usize {
-        self.values.len() + self.curves.len() + self.animations.len()
+        self.values.len() + self.curves.len() + self.animations.len() + self.rules.len()
     }
 
-    /// Everything set here as Lua: the `hl.config` call, then the curves and
-    /// animations. Empty when nothing is set.
+    /// Everything set here as Lua, as it goes into the file: the
+    /// `hl.config` call, the curves and animations, then the rules. Empty
+    /// when nothing is set.
     pub fn lua(&self) -> String {
+        let mut out = self.settings_lua();
+        let rules = crate::rules::block_lua(&self.rules);
+        if !rules.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&rules);
+        }
+        out
+    }
+
+    /// The options, curves and animations as Lua — everything but the rules,
+    /// which go on the desktop differently from how they go into the file.
+    pub fn settings_lua(&self) -> String {
         let mut out = String::new();
         if !self.values.is_empty() {
             out.push_str(&config_call(&self.ordered()));
@@ -942,8 +983,13 @@ pub fn apply_live(values: &[(&str, &LookValue)]) -> Result<()> {
 
 /// Every override at once — what the desktop should look like according to
 /// the app, on top of whatever the files say.
-pub fn apply_all_live(look: &Look) -> Result<()> {
-    eval(look.lua().trim_end())
+///
+/// `theirs` is the user's own workspace rules sharing a workspace with one
+/// of the app's, run again so switching the app's off does not take theirs
+/// with it (see [`crate::rules`]).
+pub fn apply_all_live(look: &Look, theirs: &[String]) -> Result<()> {
+    eval(look.settings_lua().trim_end())?;
+    eval(&crate::rules::live_all(&look.rules, theirs))
 }
 
 /// Run Lua in the compositor. Empty code is a no-op.

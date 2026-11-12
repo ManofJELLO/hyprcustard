@@ -96,7 +96,7 @@ Item {
                 Layout.fillWidth: true
                 title: "Themes"
                 subtitle: "A theme is the whole look: every Look option, the animations and "
-                          + "their curves — and, if you include them, the HyprWindowShade rules, "
+                          + "their curves, your look rules — and, if you include them, the HyprWindowShade rules, "
                           + "layer shaders and the shader files they use. Applying one puts it on the desktop straight away; "
                           + "Save writes it to hyprland.lua. Themes are files in "
                           + page.presetDir + "."
@@ -241,6 +241,9 @@ Item {
                                 wrapMode: Text.WordWrap
                                 text: App.plural(themeCard.modelData.animationCount, "animation")
                                       + " · " + App.plural(themeCard.modelData.curveCount, "curve")
+                                      + (themeCard.modelData.lookRuleCount > 0
+                                         ? " · " + App.plural(themeCard.modelData.lookRuleCount, "look rule")
+                                         : "")
                                       + (themeCard.modelData.hasShaders
                                          ? " · " + App.plural(themeCard.modelData.ruleCount, "rule")
                                            + " · " + App.plural(themeCard.modelData.layerCount, "layer")

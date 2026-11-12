@@ -51,6 +51,10 @@ pub struct Preset {
     /// carries one. A theme without it leaves the shader setup alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shaders: Option<ShaderSetup>,
+    /// Look rules for some windows, layers or workspaces. A theme without
+    /// them leaves the app's rules as they are; one with them replaces them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<Vec<crate::rules::Rule>>,
 }
 
 /// What a path to a shader inside a theme starts with: the shader folder,
@@ -328,6 +332,7 @@ pub fn snapshot(
         curves,
         animations,
         shaders: None,
+        rules: (!current.rules.is_empty()).then(|| current.rules.clone()),
     }
 }
 
@@ -399,6 +404,8 @@ pub fn to_look(preset: &Preset, current: &Look, motion_live: &LiveMotion) -> (Lo
     }
     out.animations.extend(pinned);
 
+    out.rules = preset.rules.clone().unwrap_or_else(|| current.rules.clone());
+
     (out, problems)
 }
 
@@ -417,7 +424,8 @@ pub fn matches(preset: &Preset, current: &Look, config: &Config) -> bool {
         let (rules, layers) = resolve(setup, &paths::expand(&config.shader_dir), &BTreeMap::new());
         rules == config.rules && layers == config.layers
     });
-    options_match && animations_match && shaders_match && !preset.options.is_empty()
+    let rules_match = preset.rules.as_ref().is_none_or(|r| *r == current.rules);
+    options_match && animations_match && shaders_match && rules_match && !preset.options.is_empty()
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +527,7 @@ pub fn builtin() -> Vec<Preset> {
         curves: BTreeMap::new(),
         animations: BTreeMap::new(),
         shaders: None,
+        rules: None,
     };
     for o in look::OPTIONS.iter().filter(|o| themed(o.key) && o.follows.is_empty()) {
         defaults.options.insert(o.key.to_string(), look::default_of(o).to_json());

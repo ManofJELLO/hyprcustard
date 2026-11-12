@@ -120,18 +120,13 @@ Item {
 
     // A QML colour as `#aarrggbb`, the form the backend deals in.
     function argb(c) {
-        function h(x) {
-            var s = Math.round(x * 255).toString(16)
-            return s.length < 2 ? "0" + s : s
-        }
-        return "#" + h(c.a) + h(c.r) + h(c.g) + h(c.b)
+        return App.argb(c)
     }
 
     // `#aarrggbb` the way Hyprland writes it, `rrggbbaa` — which is what the
     // text fields show, so a value can be copied in from a config.
     function hyprHex(value) {
-        var s = String(value || "")
-        return s.length === 9 ? s.substr(3) + s.substr(1, 2) : s.replace("#", "")
+        return App.hyprHex(value)
     }
 
     ColorDialog {
@@ -173,27 +168,11 @@ Item {
     // `ebdbb2ff 595959aa 45deg`, as a border gradient is written in a
     // hyprland.conf, into what the backend takes.
     function parseGradient(text) {
-        var colors = []
-        var angle = 0
-        var parts = String(text).trim().split(/\s+/)
-        for (var i = 0; i < parts.length; ++i) {
-            if (parts[i] === "")
-                continue
-            if (/deg$/.test(parts[i]))
-                angle = parseFloat(parts[i])
-            else
-                colors.push(parts[i])
-        }
-        return { colors: colors, angle: isNaN(angle) ? 0 : angle }
+        return App.parseGradient(text)
     }
 
     function gradientText(value) {
-        if (!value || !value.colors)
-            return ""
-        var bits = []
-        for (var i = 0; i < value.colors.length; ++i)
-            bits.push(page.hyprHex(value.colors[i]))
-        return bits.join(" ") + " " + Math.round(value.angle || 0) + "deg"
+        return App.gradientText(value)
     }
 
     // --- the page ------------------------------------------------------------

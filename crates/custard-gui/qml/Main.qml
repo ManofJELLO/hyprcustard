@@ -45,6 +45,7 @@ ApplicationWindow {
     // the section changes, so the order here is the order on screen.
     readonly property var pages: [
         { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland" },
+        { label: "Look rules", hint: "Per app and workspace", section: "Hyprland" },
         { label: "Animation", hint: "Curves and speeds",   section: "Hyprland" },
         { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
         { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
@@ -397,6 +398,12 @@ ApplicationWindow {
 
             Item {
                 LookPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                LookRulesPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }

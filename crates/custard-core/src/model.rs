@@ -338,10 +338,10 @@ pub struct Match {
     /// `title = "..."`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// `initialClass = "..."`
+    /// `initial_class = "..."`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_class: Option<String>,
-    /// `initialTitle = "..."`
+    /// `initial_title = "..."`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_title: Option<String>,
 }
@@ -365,10 +365,10 @@ impl Match {
             parts.push(format!("title {v}"));
         }
         if let Some(v) = &self.initial_class {
-            parts.push(format!("initialClass {v}"));
+            parts.push(format!("initial class {v}"));
         }
         if let Some(v) = &self.initial_title {
-            parts.push(format!("initialTitle {v}"));
+            parts.push(format!("initial title {v}"));
         }
         if parts.is_empty() {
             "every window".into()

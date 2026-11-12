@@ -28,6 +28,7 @@ fn main() {
         "qml/pages/LayersPage.qml",
         "qml/pages/LookOptionRow.qml",
         "qml/pages/LookPage.qml",
+        "qml/pages/LookRulesPage.qml",
         "qml/pages/ParamEditor.qml",
         "qml/pages/PluginPage.qml",
         "qml/pages/PreviewPage.qml",

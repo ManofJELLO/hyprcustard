@@ -15,6 +15,9 @@ Item {
     // The Look page, for its option table and its live-edit helpers.
     property var host: null
     property string key: ""
+    // Set by a rule's editor: the row's button then takes the effect off the
+    // rule instead of resetting a Look option.
+    property var removeFn: null
     readonly property var opt: (row.host && row.host.byKey[row.key]) || ({ label: "", kind: "", value: null })
     readonly property string parentKey: row.host ? row.host.parentOf(row.key) : ""
     readonly property bool switchedOn: row.parentKey === ""
@@ -54,6 +57,8 @@ Item {
                 return sidesControl
             case "vec2":
                 return vecControl
+            case "text":
+                return textControl
             }
             return null
         }
@@ -64,12 +69,18 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         compact: true
-        text: "Reset"
+        text: row.removeFn ? "Remove" : "Reset"
         enabled: row.opt.overridden === true
         opacity: enabled ? 1 : 0
-        tooltip: "Stop setting this here. Your own config's value applies again "
-                 + "once you save."
-        onClicked: App.run("look.reset", { key: row.key })
+        tooltip: row.removeFn ? "Take this off the rule."
+                              : "Stop setting this here. Your own config's value applies again "
+                                + "once you save."
+        onClicked: {
+            if (row.removeFn)
+                row.removeFn(row.key)
+            else
+                App.run("look.reset", { key: row.key })
+        }
     }
 
     Text {
@@ -374,11 +385,13 @@ Item {
                         id: axis
                         required property int index
                         Layout.fillWidth: true
-                        label: index === 0 ? "Across" : "Down"
+                        label: (row.opt.parts && row.opt.parts.length === 2)
+                               ? row.opt.parts[axis.index]
+                               : (axis.index === 0 ? "Across" : "Down")
                         from: row.opt.min
                         to: row.opt.max
                         stepSize: row.opt.step
-                        integer: true
+                        integer: row.opt.step >= 1
                         Component.onCompleted: axis.value = vec.xy[axis.index]
                         Connections {
                             target: row
@@ -395,6 +408,33 @@ Item {
                         onMoved: function (v) { row.host.tryLive(row.key, axis.pair(v)) }
                         onSettled: function (v) { row.host.set(row.key, axis.pair(v)) }
                     }
+                }
+            }
+        }
+    }
+
+    Component {
+        id: textControl
+
+        RowLayout {
+            spacing: Theme.gap
+            enabled: row.switchedOn
+
+            Text {
+                Layout.preferredWidth: 150
+                text: row.opt.label
+                color: Theme.fgDim
+                font.pixelSize: Theme.fontSize
+            }
+            LineEdit {
+                id: line
+                Layout.fillWidth: true
+                mono: true
+                text: row.opt.value || ""
+                onCommit: function (v) {
+                    line.text = Qt.binding(function () { return row.opt.value || "" })
+                    if (v.trim() !== "" && v.trim() !== row.opt.value)
+                        row.host.set(row.key, v.trim())
                 }
             }
         }

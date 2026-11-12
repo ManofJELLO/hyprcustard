@@ -39,7 +39,7 @@ palette is a small TOML file.
 
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
-- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Animations](#animations) · [Themes](#themes-for-hyprland)
+- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Look rules](#look-rules) · [Animations](#animations) · [Themes](#themes-for-hyprland)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -272,6 +272,56 @@ because Hyprland has no way to unset a single option.
 Colours are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
 `rgba(...)`, `0xaarrggbb` or `#aarrggbb`. A border gradient can be typed the way a
 `hyprland.conf` writes one: `33ccffee 00ff99ee 45deg`.
+
+## Look rules
+
+The Look page sets how everything looks; **Look rules** changes that for some things only — one
+app see-through, no shadow on tiled windows, blur behind the bar, no gaps when a workspace has
+a single window. A rule is for:
+
+* **Windows** — by class or title (regular expressions, as Hyprland takes them), or by being
+  floating, tiled, fullscreen, a dialog, on some workspace, and so on. It can change opacity
+  (focused and unfocused, replacing the global opacity), the border's size and colour,
+  rounding, shadow, glow, blur, dimming, decorations and the animation style.
+* **A layer** — by namespace: `waybar`, `rofi`, `notifications`. Blur behind it, how see-through
+  a pixel can be before blur skips it, dimming behind it, its animation.
+* **Workspaces** — `1`, `name:web`, or a selector such as `w[tv1]` (one tiled window) or `f[1]`
+  (a window fullscreen): gaps inside and at the edges, borders, rounding, shadows. **No gaps
+  when there is only one window** adds the two rules Hyprland's example config calls smart gaps.
+
+Open windows and layers are offered by name, and Hyprland checks every rule as it is made, so
+one it would not take is refused with its reason instead of being saved. With live edits on, a
+change is on the desktop straight away; Save writes the rules into the look block, after the
+animations:
+
+```lua
+hyprcustard_rules = {}
+
+-- Terminal glass
+hyprcustard_rules["lr1"] = hl.window_rule({
+    match = { class = "kitty" },
+    opacity = "0.92 override 0.8 override",
+    no_shadow = true,
+})
+```
+
+Each rule's handle is kept in `hyprcustard_rules` so the app can switch it off and on again
+live. The rules are not given a `name`: Hyprland merges rules of the same name, and a rule
+switched off and added again would bring its old values back with it. The name you give one
+is written as the comment above it instead.
+
+Rules you wrote yourself in `hyprland.lua` are listed under **In your hyprland.lua**, and keep
+working as they are. **Move here** brings one into the app to edit: on the next Save your
+original is commented out, after the usual backup, with a line saying where it went.
+Anything in it that is not about looks — `float`, `size` — moves with it unchanged. A rule
+built from variables, or sharing its line with other code, is listed but cannot be moved.
+
+Hyprland merges every rule for one workspace into one, which is why the app keeps one rule per
+workspace, and why, if your config has its own rule for that workspace, a live edit runs yours
+again first — switching the app's rule off would otherwise take yours with it until a reload.
+
+A theme saved with look rules carries them, and applying it replaces the app's rules with the
+theme's. A theme without any leaves your rules alone.
 
 ## Animations
 

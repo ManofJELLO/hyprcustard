@@ -337,7 +337,7 @@ Item {
 
                         FieldRow {
                             width: parent.width
-                            label: "initialClass"
+                            label: "initial_class"
 
                             LineEdit {
                                 width: parent.width
@@ -353,7 +353,7 @@ Item {
 
                         FieldRow {
                             width: parent.width
-                            label: "initialTitle"
+                            label: "initial_title"
 
                             LineEdit {
                                 width: parent.width

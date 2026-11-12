@@ -252,8 +252,13 @@ fn match_from_table(expr: &str, locals: &HashMap<String, String>) -> Match {
     Match {
         class: field(body, "class").and_then(|e| eval(&e, locals)),
         title: field(body, "title").and_then(|e| eval(&e, locals)),
-        initial_class: field(body, "initialClass").and_then(|e| eval(&e, locals)),
-        initial_title: field(body, "initialTitle").and_then(|e| eval(&e, locals)),
+        // Hyprland 0.57 takes `initial_class`; older configs said `initialClass`.
+        initial_class: field(body, "initial_class")
+            .or_else(|| field(body, "initialClass"))
+            .and_then(|e| eval(&e, locals)),
+        initial_title: field(body, "initial_title")
+            .or_else(|| field(body, "initialTitle"))
+            .and_then(|e| eval(&e, locals)),
     }
 }
 
@@ -397,7 +402,7 @@ fn lua_string(s: &str) -> Option<String> {
 /// the rest of this module computes still lines up with the original source.
 /// Both comment forms are handled — `--` to end of line, and the long form
 /// `--[[ … ]]` / `--[==[ … ]==]` — and `--` inside a string is left alone.
-fn strip_comments(source: &str) -> String {
+pub(crate) fn strip_comments(source: &str) -> String {
     let src = source.as_bytes();
     let mut out = src.to_vec();
     let mut i = 0usize;
@@ -597,6 +602,32 @@ fn find_calls(source: &str, name: &str) -> Vec<(String, usize)> {
         if let Some(close) = match_brace(source, open) {
             out.push((source[open + 1..close].to_string(), at));
             from = close;
+        }
+    }
+    out
+}
+
+/// Where each `name({ ... })` call in `source` starts and ends: from the
+/// start of `name` to just past the closing paren. A call whose table is not
+/// directly followed by `)` is left out.
+pub(crate) fn call_spans(source: &str, name: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for (_, at) in find_calls(source, name) {
+        // Not part of a longer name, such as `myhl.window_rule`.
+        if source[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        {
+            continue;
+        }
+        let Some(open) = source[at..].find('{').map(|i| at + i) else { continue };
+        let Some(close) = match_brace(source, open) else { continue };
+        let rest = &source[close + 1..];
+        let trimmed = rest.trim_start();
+        if trimmed.starts_with(')') {
+            let end = close + 1 + (rest.len() - trimmed.len()) + 1;
+            out.push((at, end));
         }
     }
     out
@@ -829,6 +860,18 @@ hl.window_rule({
             r#"hl.window_rule({ match = { class = "mpv" }, tag = "+shader_fullscreen_stack:1" })"#;
         let got = scan(src);
         assert_eq!(got.rules[0].tags[0].value, TagValue::Flag { on: true });
+    }
+
+    #[test]
+    fn initial_class_reads_in_both_spellings() {
+        for key in ["initial_class", "initialClass"] {
+            let src = format!(
+                r#"hl.window_rule({{ match = {{ {key} = "mpv" }}, tag = "+shader:/p/x.glsl" }})"#
+            );
+            let found = scan(&src);
+            assert_eq!(found.rules[0].match_.initial_class.as_deref(), Some("mpv"), "{key}");
+            assert_eq!(found.rules[0].match_.class, None, "{key}");
+        }
     }
 
     #[test]
