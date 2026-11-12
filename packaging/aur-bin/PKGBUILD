@@ -30,7 +30,7 @@ license=('MIT')
 # belongs in depends rather than being inherited from something else's. They
 # are their own packages now rather than gcc-libs, which still exists and is
 # the wrong answer here.
-depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc')
+depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg')
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
 optdepends=('hyprland: the compositor this configures'
@@ -50,6 +50,7 @@ sha256sums_x86_64=('SKIP')
 package() {
     cd "$_pkgname-$pkgver-$CARCH"
     install -Dm755 "$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+    install -Dm755 custard-watch "$pkgdir/usr/bin/custard-watch"
     install -Dm644 "$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

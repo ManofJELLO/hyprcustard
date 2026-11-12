@@ -126,6 +126,36 @@ pub fn layer_namespaces() -> Result<Vec<String>> {
 /// failure.
 const NOT_A_DISPATCHER: &str = "expected a dispatcher";
 
+/// Whether a fullscreen window is on any monitor's visible workspace,
+/// special workspaces included. Not knowing counts as no.
+pub fn fullscreen_on_screen() -> bool {
+    match (run(&["-j", "monitors"]), run(&["-j", "workspaces"])) {
+        (Ok(m), Ok(w)) => fullscreen_in(&m, &w),
+        _ => false,
+    }
+}
+
+/// [`fullscreen_on_screen`] from `hyprctl -j monitors` and `-j workspaces`.
+pub fn fullscreen_in(monitors: &str, workspaces: &str) -> bool {
+    let (Ok(m), Ok(w)) = (
+        serde_json::from_str::<serde_json::Value>(monitors),
+        serde_json::from_str::<serde_json::Value>(workspaces),
+    ) else {
+        return false;
+    };
+    let shown: Vec<i64> = m
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|mon| [&mon["activeWorkspace"]["id"], &mon["specialWorkspace"]["id"]])
+        .filter_map(|id| id.as_i64())
+        .filter(|id| *id != 0)
+        .collect();
+    w.as_array().into_iter().flatten().any(|ws| {
+        ws["hasfullscreen"] == true && ws["id"].as_i64().is_some_and(|id| shown.contains(&id))
+    })
+}
+
 /// Run a plugin action against the live session.
 ///
 /// `hyprctl dispatch` evaluates its argument as Lua and reports the result on
@@ -467,5 +497,17 @@ mod tests {
             a.to_lua_call("hl.plugin.HyprWindowShade"),
             r#"hl.plugin.HyprWindowShade.togglelayershader("rofi", "/p/blur.glsl")"#
         );
+    }
+
+    #[test]
+    fn fullscreen_counts_only_on_visible_workspaces() {
+        let monitors = r#"[{"activeWorkspace":{"id":2},"specialWorkspace":{"id":0}},
+                           {"activeWorkspace":{"id":5},"specialWorkspace":{"id":-98}}]"#;
+        let ws = |id: i64, fs: bool| format!(r#"{{"id":{id},"hasfullscreen":{fs}}}"#);
+        let list = |items: &[String]| format!("[{}]", items.join(","));
+        assert!(!fullscreen_in(monitors, &list(&[ws(2, false), ws(3, true)])), "3 is hidden");
+        assert!(fullscreen_in(monitors, &list(&[ws(2, false), ws(5, true)])));
+        assert!(fullscreen_in(monitors, &list(&[ws(-98, true)])), "a special workspace on show");
+        assert!(!fullscreen_in("garbage", "[]"));
     }
 }

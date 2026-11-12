@@ -3,6 +3,9 @@ DESTDIR ?=
 CARGO ?= cargo
 
 BIN := hyprcustard
+# Follows the wallpaper for the Colors page; installed beside the app, which
+# looks for it there first.
+WATCH := custard-watch
 QMLLINT ?= qmllint
 QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
@@ -33,10 +36,11 @@ check:
 # build as root leaves root-owned artifacts in target/ that the next ordinary
 # `cargo build` cannot clean. Build first, as yourself, then install.
 install:
-	@test -x target/release/$(BIN) || { \
-		echo 'target/release/$(BIN) is missing - run `make release` first'; \
-		exit 1; }
+	@for b in $(BIN) $(WATCH); do test -x target/release/$$b || { \
+		echo "target/release/$$b is missing - run \`make release\` first"; \
+		exit 1; }; done
 	install -Dm755 target/release/$(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	install -Dm755 target/release/$(WATCH) $(DESTDIR)$(PREFIX)/bin/$(WATCH)
 	install -Dm644 packaging/$(BIN).desktop \
 		$(DESTDIR)$(PREFIX)/share/applications/$(BIN).desktop
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/$(BIN)/LICENSE
@@ -44,6 +48,7 @@ install:
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(WATCH)
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/$(BIN).desktop
 	rm -rf $(DESTDIR)$(PREFIX)/share/licenses/$(BIN)
 	rm -rf $(DESTDIR)$(PREFIX)/share/doc/$(BIN)

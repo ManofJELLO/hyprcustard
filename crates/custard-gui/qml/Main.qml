@@ -40,14 +40,15 @@ ApplicationWindow {
     palette.highlight: Theme.accent
     palette.highlightedText: Theme.onAccent
 
-    // `section` groups the sidebar: Hyprland's own settings, then the
-    // HyprWindowShade plugin's, then the app's. A heading is drawn wherever
+    // `section` groups the sidebar: Hyprland's own settings, the rest of the
+    // desktop, then the HyprWindowShade plugin's, then the app's. A heading is drawn wherever
     // the section changes, so the order here is the order on screen.
     readonly property var pages: [
         { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland" },
         { label: "Look rules", hint: "Per app and workspace", section: "Hyprland" },
         { label: "Animation", hint: "Curves and speeds",   section: "Hyprland" },
         { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
+        { label: "Colors",    hint: "One scheme, every app", section: "Desktop" },
         { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
         { label: "Shaders",   hint: "Files",               section: "HyprWindowShade" },
         { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade" },
@@ -416,6 +417,12 @@ ApplicationWindow {
             }
             Item {
                 ThemesPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                ColorsPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }

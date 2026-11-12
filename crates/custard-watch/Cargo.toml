@@ -1,0 +1,21 @@
+[package]
+name = "custard-watch"
+description = "Keeps the desktop's colors matching the wallpaper, for hyprcustard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "custard-watch"
+path = "src/main.rs"
+
+[dependencies]
+custard-core = { path = "../custard-core" }
+chrono.workspace = true
+# Only the blocking API: no async runtime in something meant to sit idle.
+inotify = { version = "0.11", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+serde_json.workspace = true

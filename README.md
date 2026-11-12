@@ -40,6 +40,7 @@ palette is a small TOML file.
 - [What it looks like](#what-it-looks-like)
 - [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
 - [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Look rules](#look-rules) · [Animations](#animations) · [Themes](#themes-for-hyprland)
+- [Colors for the whole desktop](#colors-for-the-whole-desktop)
 - [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
 - [Themes](#themes)
 - [Importing rules you already wrote](#importing-rules-you-already-wrote)
@@ -85,6 +86,7 @@ own save: the header **Save** writes your Hyprland config, and **Save shader** w
   `qt6-base` and `qt6-declarative`.
 * **HyprWindowShade** itself, and a Lua Hyprland config (`~/.config/hypr/hyprland.lua`).
   Hyprland 0.57 dropped `hyprland.conf` altogether, and so has the plugin.
+* **ffmpeg**, which the Colors page reads wallpapers with — stills and videos alike.
 
 Hyprland does not have to be running. Without it the app still edits your config and your
 shaders; it just cannot offer you the list of open window classes or live layer namespaces,
@@ -101,6 +103,8 @@ the app, and both in the Arch repositories:
 It also opens a terminal as its demo window — kitty, foot, alacritty, ghostty, wezterm or
 xterm, whichever it finds.
 
+
+
 The **Plugin** page needs `hyprpm`, which on Arch is a package of its own rather than part
 of `hyprland`.
 
@@ -109,7 +113,8 @@ of `hyprland`.
 There is no hyprcustard release yet, so for now [build from source](#build-from-source).
 
 Once there is one, every release will have a `hyprcustard-<version>-x86_64.tar.gz`
-holding the binary, the desktop entry, the license and this README, with a
+holding the two binaries (`hyprcustard`, and `custard-watch`, which follows the
+wallpaper), the desktop entry, the license and this README, with a
 `.sha256` beside it, and `packaging/aur-bin` will install it on Arch as
 `hyprcustard-bin`. The binary needs nothing but Qt 6, because the QML is compiled
 into it.
@@ -416,6 +421,82 @@ The shader rules, like any other, take effect when you save.
 
 The app's own colors are a separate thing, under Settings → This app's colors.
 
+## Colors for the whole desktop
+
+The **Colors** page (under *Desktop*) makes one color scheme and writes it for every app you
+turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty and Ghostty. Nothing
+changes until you press **Apply**, and the preview shows the scheme first.
+
+A scheme comes from one of three places:
+
+* **A palette** — Gruvbox dark and light, Catppuccin Mocha and Latte, Nord and Rosé Pine are
+  built in. Any [base16](https://github.com/tinted-theming/schemes) scheme file dropped into
+  `~/.config/hyprcustard/schemes/` (`.yaml`) joins them; both the original and the
+  tinted-theming layouts are read.
+* **The wallpaper** — whatever is on screen now, read from whichever wallpaper program you
+  run: mpvpaper, swaybg, hyprpaper, swww, awww or wpaperd (and waypaper's config as a last
+  resort). For mpvpaper playing a folder, the clip showing right now is read from the files
+  it has open. Videos are sampled at six points across their length; *Use every file in the
+  folder* samples the whole folder instead, for one scheme that suits every clip. With more
+  than one monitor you choose whose wallpaper counts.
+* **A color** — any color you pick, or one of the wallpaper's strongest colors.
+
+The wallpaper and a picked color go through the same Material color library
+[matugen](https://github.com/InioX/matugen) uses, with its styles (tonal spot, vibrant,
+content…), dark or light, and contrast — but matugen does not have to be installed.
+
+### What gets written
+
+Each app gets its own colors file next to its own config, defining one documented set of
+names: every Material role (`primary`, `on_primary`, `surface`, `surface_container`,
+`on_surface`, `outline`, …) and base16 (`base00` to `base0F`, with base08 always a red, base0B
+a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and popup opacity*.
+
+| App | File | What it sets by itself | Loaded by |
+|---|---|---|---|
+| Hyprland | `hypr/hyprcustard-colors.lua` | borders, shadow, and a `hyprcustard_colors` table | `pcall(dofile, "…")` at the end of `hyprland.lua` |
+| Waybar | `waybar/hyprcustard-colors.css` | — (`@define-color`s for your style) | `@import "hyprcustard-colors.css";` at the top of `style.css` |
+| Rofi | `rofi/hyprcustard-colors.rasi` | — (variables, spelled with dashes) | `@import "hyprcustard-colors.rasi"` at the top of `config.rasi` |
+| Dunst | `dunst/dunstrc.d/90-hyprcustard-colors.conf` | backgrounds, text, frames | nothing — a drop-in, read when you have your own `dunstrc` |
+| kitty | `kitty/hyprcustard-colors.conf` | palette, cursor, selection, tabs | `include hyprcustard-colors.conf` at the end of `kitty.conf` |
+| Ghostty | `ghostty/hyprcustard-colors` | palette, cursor, selection | `config-file = ?hyprcustard-colors` at the end of its config |
+
+Your configs are yours, so the page never edits one unless you ask: each app shows whether
+its config loads the file yet, the one line it needs, and an **Add it for me** button, which
+backs the config up first. In Waybar and Rofi a color your own style defines keeps your value
+(it comes after the import) — use the scheme's names, or remove your own, to follow it.
+
+Apply then reloads what is running: Hyprland through `hyprctl eval`, Waybar and Ghostty with
+`SIGUSR2`, kitty with `SIGUSR1`, Dunst with `dunstctl reload`. Rofi reads its colors each time
+it opens.
+
+The Hyprland line is a `pcall`, so a missing colors file never breaks your config. Border
+colors set on the Look page compete with the scheme's — whichever comes later in the file wins,
+and the page says so when both are set. *Use the applied scheme for hyprcustard's own window
+too* makes the app wear the scheme as well.
+
+### Following the wallpaper
+
+**Keep following the wallpaper** (on the Colors page, with the wallpaper chosen) keeps the
+colors matching it as it changes — a slideshow, a shuffled folder, a new clip at each login.
+It is a small separate program, `custard-watch`, installed beside `hyprcustard`:
+
+* **It sleeps until something changes.** Hyprland's event socket wakes it when a wallpaper
+  program starts, stops or restarts, and inotify when a file in the wallpaper's folder is
+  opened — which every wallpaper program has to do to show it. A check every two minutes
+  catches anything else. Waiting, it uses about 5 MB of memory and no CPU.
+* **It waits while anything is fullscreen**, and applies the change once nothing is, so
+  ffmpeg never runs during a game or a film.
+* **At most one change every N minutes** (5 by default) keeps a fast slideshow from making
+  the desktop flicker. A wallpaper that gives the same scheme as before changes nothing.
+* **It follows what you last applied**, not what the page is showing, so trying other colors
+  leaves it alone. Applying a palette or a picked color turns following off.
+
+It starts at each login from a short managed block in `hyprland.lua` (`HyprCustard colors`),
+or — when your session runs under systemd's `graphical-session.target` — as a user service,
+`custard-watch.service`. Turning following off removes either, and the program exits.
+What it is doing shows on the page: running, waiting, or paused for a fullscreen window.
+
 ## Shader parameters
 
 The plugin populates a fixed set of uniforms and offers no channel for custom ones, so a
@@ -705,11 +786,13 @@ README were made, and how the layout is checked without a compositor.
 
 ## How it is put together
 
-Two crates:
+Three crates:
 
 * **`custard-core`** — everything that decides anything. The config model, the Lua emitter, the
   managed-block reader and writer, the GLSL parser and patcher, the importer, themes, and the
   `hyprctl` calls. No Qt, no UI, and covered by unit tests: `cargo test -p custard-core`.
+* **`custard-watch`** — the program that follows the wallpaper. It uses the core's color code,
+  so it builds exactly the scheme the Colors page would; it adds only the waiting.
 * **`custard-gui`** — the Qt layer. One `Backend` singleton with a JSON state property, a `run`
   method and a `query` method. The QML reads state and sends commands; it holds no
   configuration logic of its own.
@@ -725,6 +808,8 @@ crates/custard-core/src/
     import.rs     hand-written Lua -> model, conservatively
     shader/       scan, parse (@param, @duration, @overlay, uniforms), patch
     theme.rs      the built-ins, and the TOML loader
+    colors/       desktop color schemes: wallpaper readers, ffmpeg sampling,
+                  Material and base16 schemes, and the per-app writers
     hyprctl.rs    clients, layers, dispatch
     session.rs    the facade: one state document, one command entry point
 crates/custard-gui/

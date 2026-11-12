@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 pub mod block;
+pub mod colors;
 pub mod emit;
 pub mod error;
 pub mod hyprctl;

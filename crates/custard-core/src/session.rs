@@ -24,7 +24,7 @@ use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
 use crate::shader::{DraftItem, ShaderDraft};
 use crate::theme::Theme;
-use crate::{block, emit, hyprctl, hyprpm, import, paths, shader, theme};
+use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme};
 
 /// Live information about the running compositor.
 #[derive(Debug, Clone, Default)]
@@ -61,6 +61,8 @@ pub enum Source {
     Themes,
     /// Reading the Hyprland themes folder.
     Presets,
+    /// Reading the color scheme folder.
+    Palettes,
 }
 
 /// A non-fatal problem, and where it came from.
@@ -111,6 +113,18 @@ pub struct Session {
     pub live: Live,
     /// Non-fatal problems worth showing, tagged with what reported them.
     pub problems: Vec<Problem>,
+    /// The named color schemes, built in and from the schemes folder.
+    palettes: Vec<colors::Named>,
+    /// The scheme the Colors page is showing, or why it could not be built.
+    /// `None` until one is built, and again whenever the choices change.
+    colors_built: Option<std::result::Result<colors::Built, String>>,
+    /// True while a build is running elsewhere; the UI sets it.
+    pub colors_building: bool,
+    /// The scheme last applied, as `current.json` has it.
+    colors_applied: Option<colors::Scheme>,
+    /// Whether this session runs under systemd's graphical session target,
+    /// so the watcher could be a user service. Asked once, at start.
+    systemd_session: bool,
 }
 
 impl Session {
@@ -144,6 +158,11 @@ impl Session {
         let theme =
             themes.iter().find(|t| t.id == config.theme).cloned().unwrap_or_else(theme::system);
 
+        let (palettes, palette_problems) = colors::named::load_all();
+        problems.extend(
+            palette_problems.into_iter().map(|text| Problem { source: Source::Palettes, text }),
+        );
+
         let config_curves = read_config_curves(&settings.resolved_config_path());
         let hand_rules = read_hand_rules(&settings.resolved_config_path());
         let mut session = Session {
@@ -162,6 +181,11 @@ impl Session {
             themes,
             live: Live::default(),
             problems,
+            palettes,
+            colors_built: None,
+            colors_building: false,
+            colors_applied: colors::current(),
+            systemd_session: colors::follow::systemd_available(),
         };
         session.rescan_shaders();
         session.refresh_live();
@@ -354,6 +378,15 @@ impl Session {
     /// Store the result of a [`probe_live`] run made elsewhere.
     pub fn set_live(&mut self, live: Live) {
         self.live = live;
+        // The watcher may have changed the colors since; the app's window
+        // follows when it wears the scheme.
+        let current = colors::current();
+        if current != self.colors_applied {
+            self.colors_applied = current;
+            if self.config.theme == "scheme" {
+                self.refresh_theme();
+            }
+        }
     }
 
     /// Re-read the theme list and resolve the configured one.
@@ -588,6 +621,7 @@ impl Session {
             "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
             "presets": self.presets_view(),
             "lookRules": self.rules_view(),
+            "colors": self.colors_view(),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -1079,8 +1113,310 @@ impl Session {
                 Ok(Some(format!("{} themes available", self.themes.len())))
             }
 
+            // --- desktop colors ---
+            "colors.set" => self.set_colors(payload),
+            "colors.apply" => self.apply_colors(),
+            "colors.wire" => self.wire_colors(payload),
+            "colors.follow" => {
+                if payload.get("on").and_then(Value::as_bool).unwrap_or(false) {
+                    self.start_following().map(Some)
+                } else {
+                    self.stop_following()?;
+                    Ok(Some("Stopped following the wallpaper".into()))
+                }
+            }
+            "colors.rebuild" => {
+                // Look again: the wallpaper may have changed underneath.
+                if !self.colors_building {
+                    self.colors_built = None;
+                }
+                Ok(None)
+            }
+            "colors.reloadPalettes" => {
+                let (palettes, problems) = colors::named::load_all();
+                self.forget(Source::Palettes);
+                self.problems.extend(
+                    problems.into_iter().map(|text| Problem { source: Source::Palettes, text }),
+                );
+                self.palettes = palettes;
+                self.colors_built = None;
+                Ok(Some(format!("{} color schemes available", self.palettes.len())))
+            }
+
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Desktop colors
+    // -----------------------------------------------------------------------
+
+    /// What a colors build needs, to run away from the session: building
+    /// from a wallpaper runs ffmpeg, which is too slow for the UI thread.
+    pub fn colors_job(&self) -> (colors::ColorSettings, Vec<colors::Named>) {
+        (self.settings.colors.clone(), self.palettes.clone())
+    }
+
+    /// Whether the page is waiting on a build.
+    pub fn colors_need_build(&self) -> bool {
+        self.colors_built.is_none() && !self.colors_building
+    }
+
+    /// Store a finished build — unless the choices changed while it ran, in
+    /// which case it describes something no longer asked for.
+    pub fn set_colors_built(
+        &mut self,
+        asked: &colors::ColorSettings,
+        result: std::result::Result<colors::Built, String>,
+    ) {
+        self.colors_building = false;
+        if colors_shape(asked) == colors_shape(&self.settings.colors) {
+            self.colors_built = Some(result);
+        }
+    }
+
+    /// Change some of the Colors page's choices. Only the keys given change.
+    fn set_colors(&mut self, payload: &Value) -> Result<Option<String>> {
+        let mut merged = serde_json::to_value(&self.settings.colors)?;
+        let (Some(into), Some(from)) = (merged.as_object_mut(), payload.as_object()) else {
+            return Err(Error::other("colors.set takes an object of choices"));
+        };
+        for (k, v) in from {
+            if !into.contains_key(k) {
+                return Err(Error::other(format!("there is no color choice called `{k}`")));
+            }
+            into.insert(k.clone(), v.clone());
+        }
+        let next: colors::ColorSettings = serde_json::from_value(merged)
+            .map_err(|e| Error::other(format!("not a valid color choice: {e}")))?;
+        let next = next.sanitized();
+        if next == self.settings.colors {
+            return Ok(None);
+        }
+        if colors_shape(&next) != colors_shape(&self.settings.colors) {
+            self.colors_built = None;
+        }
+        let gap_changed = next.min_minutes != self.settings.colors.min_minutes;
+        let how_changed = next.start_with != self.settings.colors.start_with;
+        self.settings.colors = next;
+        self.settings.save()?;
+        // How the watcher runs takes effect at once; what it follows only
+        // changes on Apply.
+        if let Some(mut following) = colors::follow::following() {
+            if gap_changed || how_changed {
+                following.min_minutes = self.settings.colors.min_minutes;
+                following.start_with = self.settings.colors.start_with.clone();
+                colors::follow::write_snapshot(&following)?;
+            }
+            if how_changed {
+                self.install_watcher(&following.start_with)?;
+                return Ok(Some(match following.start_with.as_str() {
+                    "systemd" => "The watcher now runs as a systemd user service".into(),
+                    _ => "The watcher now starts with Hyprland".into(),
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Follow the wallpaper from now on, with the page's choices as they are.
+    fn start_following(&mut self) -> Result<String> {
+        if self.settings.colors.source != "wallpaper" {
+            return Err(Error::other(
+                "following is for the wallpaper — choose The wallpaper first",
+            ));
+        }
+        if colors::follow::binary().is_none() {
+            return Err(Error::other(format!(
+                "{} is not installed beside hyprcustard or on your PATH",
+                colors::follow::PROGRAM
+            )));
+        }
+        colors::follow::write_snapshot(&self.settings.colors)?;
+        let how = self.settings.colors.start_with.clone();
+        self.install_watcher(&how)?;
+        Ok("Following the wallpaper: the colors change with it from now on, and from each login"
+            .into())
+    }
+
+    /// Stop following: the snapshot goes (which a running watcher takes as
+    /// its cue to exit), and so does whatever starts it at login.
+    fn stop_following(&mut self) -> Result<()> {
+        colors::follow::clear_snapshot()?;
+        colors::follow::disable_systemd()?;
+        self.set_watch_block(None)?;
+        colors::follow::stop();
+        Ok(())
+    }
+
+    /// Start the watcher now and at each login, the way `how` says, and
+    /// undo the other way.
+    fn install_watcher(&mut self, how: &str) -> Result<()> {
+        let bin = colors::follow::binary()
+            .ok_or_else(|| Error::other(format!("{} is not installed", colors::follow::PROGRAM)))?;
+        if how == "systemd" {
+            self.set_watch_block(None)?;
+            colors::follow::stop();
+            colors::follow::enable_systemd(&bin)
+        } else {
+            colors::follow::disable_systemd()?;
+            self.set_watch_block(Some(&bin))?;
+            colors::follow::start(&bin)
+        }
+    }
+
+    /// Put the block that starts the watcher into the Hyprland config, or
+    /// take it out. Nothing is written when nothing changes.
+    fn set_watch_block(&mut self, binary: Option<&Path>) -> Result<()> {
+        let path = self.settings.resolved_config_path();
+        let text = if path.exists() { paths::read_to_string(&path)? } else { String::new() };
+        let next = match binary {
+            Some(b) => block::splice_with(
+                &text,
+                &colors::follow::startup_block(b),
+                &colors::follow::MARKERS,
+            )?,
+            None => block::remove_with(&text, &colors::follow::MARKERS)?,
+        };
+        if next != text {
+            paths::backup(&path, self.settings.backups_to_keep)?;
+            paths::write_atomic(&path, &next)?;
+            self.hand_rules = read_hand_rules(&path);
+        }
+        Ok(())
+    }
+
+    /// The apps a scheme can be written for, as the disk has them now.
+    fn color_targets(&self) -> Vec<colors::targets::Target> {
+        colors::targets::all(&paths::apps_config_home(), &self.settings.resolved_config_path())
+    }
+
+    /// Write the scheme on show for every app turned on.
+    fn apply_colors(&mut self) -> Result<Option<String>> {
+        let built = match &self.colors_built {
+            Some(Ok(b)) => b.scheme.clone(),
+            Some(Err(e)) => return Err(Error::other(e.clone())),
+            None => return Err(Error::other("the scheme is still being built")),
+        };
+        let done = colors::apply(&built, &self.settings.colors, &self.color_targets())?;
+        self.colors_applied = Some(built.clone());
+        if self.config.theme == "scheme" {
+            self.refresh_theme();
+        }
+        let mut msg = done.summary(&built.name);
+        // The watcher follows what was last applied: the new choices, or —
+        // after applying something that is not the wallpaper — nothing.
+        if let Some(following) = colors::follow::following() {
+            if self.settings.colors.source == "wallpaper" {
+                colors::follow::write_snapshot(&colors::ColorSettings {
+                    start_with: following.start_with,
+                    ..self.settings.colors.clone()
+                })?;
+            } else {
+                self.stop_following()?;
+                msg.push_str(". Stopped following the wallpaper");
+            }
+        }
+        Ok(Some(msg))
+    }
+
+    /// Make one app's config load its colors file.
+    fn wire_colors(&mut self, payload: &Value) -> Result<Option<String>> {
+        let id = id_of(payload)?;
+        let list = self.color_targets();
+        let t = list.iter().find(|t| t.id == id).ok_or_else(|| {
+            Error::other(format!("there is no app called `{id}` to write colors for"))
+        })?;
+        if t.wired {
+            return Ok(Some(format!("{} already loads its colors", t.name)));
+        }
+        let backup = colors::targets::wire(t, self.settings.backups_to_keep)?;
+        // A scheme already applied is written now, so the line has something
+        // to load rather than waiting for the next Apply.
+        if let Some(s) = &self.colors_applied {
+            if !self.settings.colors.off.iter().any(|o| o == t.id) {
+                colors::targets::write(t, s, self.settings.colors.opacity)?;
+            }
+        }
+        if t.id == "hyprland" {
+            self.hand_rules = read_hand_rules(&self.settings.resolved_config_path());
+        }
+        let mut msg = if t.line.is_empty() {
+            format!("Made {} your own, so {} reads the colors", paths::contract(&t.config), t.name)
+        } else {
+            format!("Added the colors line to {}", paths::contract(&t.config))
+        };
+        if let Some(b) = backup {
+            msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
+        }
+        Ok(Some(msg))
+    }
+
+    fn colors_view(&self) -> Value {
+        let c = &self.settings.colors;
+        let built = match &self.colors_built {
+            None => Value::Null,
+            Some(Err(e)) => json!({ "ok": false, "error": e }),
+            Some(Ok(b)) => json!({
+                "ok": true,
+                "scheme": scheme_view(&b.scheme),
+                "candidates": b.candidates,
+                "from": b.from,
+                "monitors": b.monitors,
+                "wallpaper": b.wallpaper.as_ref().map(|w| json!({
+                    "program": w.program,
+                    "monitor": w.monitor,
+                    "path": paths::contract(&w.path),
+                    "folder": w.folder().is_some(),
+                    "showing": w.showing.as_ref().map(|p| paths::contract(p)),
+                })),
+            }),
+        };
+        let conflicts: Vec<&str> =
+            ["general.col.active_border", "general.col.inactive_border", "decoration.shadow.color"]
+                .into_iter()
+                .filter(|k| self.look.values.contains_key(*k))
+                .filter_map(|k| look::find(k).map(|o| o.label))
+                .collect();
+        json!({
+            "settings": c,
+            "building": self.colors_building,
+            "built": built,
+            "applied": self.colors_applied.as_ref().map(scheme_view),
+            "palettes": self.palettes.iter().map(|n| json!({
+                "id": n.id,
+                "name": n.name,
+                "dark": n.dark,
+                "file": n.file,
+                "swatch": SWATCH.iter().map(|i| n.base16[*i].clone()).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "styles": colors::scheme::STYLES.iter().map(|(id, label, hint)| json!({
+                "id": id, "label": label, "hint": hint,
+            })).collect::<Vec<_>>(),
+            "targets": self.color_targets().iter().map(|t| json!({
+                "id": t.id,
+                "name": t.name,
+                "installed": t.installed,
+                "on": !c.off.iter().any(|o| o == t.id),
+                "wired": t.wired,
+                "config": paths::contract(&t.config),
+                "file": paths::contract(&t.file),
+                "line": t.line,
+                "place": t.place,
+                "usage": t.usage,
+            })).collect::<Vec<_>>(),
+            "hyprlandConflicts": conflicts,
+            "ffmpeg": colors::extract::have_ffmpeg(),
+            "paletteDir": paths::contract(&colors::named::dir()),
+            "appUsesScheme": self.config.theme == "scheme",
+            "follow": {
+                "on": colors::follow::following().is_some(),
+                "running": !colors::follow::running_pids().is_empty(),
+                "status": colors::follow::read_status(),
+                "installed": colors::follow::binary().is_some(),
+                "systemd": self.systemd_session,
+            },
+        })
     }
 
     /// Whether look edits should reach the compositor as they are made.
@@ -1788,6 +2124,33 @@ fn read_config(path: &Path) -> Result<Config> {
     }
 }
 
+/// The base16 slots a palette's swatch shows: background, two grays, then
+/// the accents.
+const SWATCH: [usize; 10] = [0x0, 0x2, 0x5, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE];
+
+/// The choices that decide what a build produces. Opacity, which apps are
+/// on and how the watcher runs only matter later, so changing them keeps
+/// the build.
+fn colors_shape(c: &colors::ColorSettings) -> colors::ColorSettings {
+    colors::ColorSettings {
+        opacity: 1.0,
+        off: Vec::new(),
+        min_minutes: 0,
+        start_with: String::new(),
+        ..c.clone()
+    }
+}
+
+fn scheme_view(s: &colors::Scheme) -> Value {
+    json!({
+        "name": s.name,
+        "dark": s.dark,
+        "source": s.source,
+        "roles": s.roles,
+        "base16": s.base16,
+    })
+}
+
 fn id_of(payload: &Value) -> Result<&str> {
     payload.get("id").and_then(Value::as_str).ok_or_else(|| Error::other("no id given"))
 }
@@ -1925,6 +2288,11 @@ mod tests {
             themes: theme::builtin(),
             live: Live::default(),
             problems: Vec::new(),
+            palettes: colors::named::builtins(),
+            colors_built: None,
+            colors_building: false,
+            colors_applied: None,
+            systemd_session: false,
         }
     }
 
@@ -2708,5 +3076,145 @@ mod tests {
         let p = dir.path().join("hyprland.lua");
         std::fs::write(&p, "monitor = ,preferred,auto,1\n").unwrap();
         assert_eq!(read_config(&p).unwrap().rules.len(), 0);
+    }
+
+    #[test]
+    fn color_choices_merge_and_only_shape_changes_drop_the_build() {
+        let mut s = session();
+        let job = s.colors_job().0;
+        s.set_colors_built(&job, Ok(colors::build(&job, &s.palettes).unwrap()));
+        assert!(!s.colors_need_build());
+
+        // Opacity is only used when applying: the build stays.
+        s.command("colors.set", &json!({ "opacity": 0.8 })).unwrap();
+        assert!(!s.colors_need_build());
+        assert_eq!(s.settings.colors.opacity, 0.8);
+        assert_eq!(s.settings.colors.source, "scheme:gruvbox-dark", "untouched keys stay");
+
+        s.command("colors.set", &json!({ "source": "scheme:nord" })).unwrap();
+        assert!(s.colors_need_build());
+
+        let e = s.command("colors.set", &json!({ "sorce": "x" })).unwrap_err();
+        assert!(e.to_string().contains("sorce"));
+        let e = s.command("colors.set", &json!({ "contrast": "high" })).unwrap_err();
+        assert!(e.to_string().contains("not a valid"), "{e}");
+    }
+
+    #[test]
+    fn a_build_that_finishes_after_the_choices_changed_is_dropped() {
+        let mut s = session();
+        let asked = s.colors_job().0;
+        s.colors_building = true;
+        s.command("colors.set", &json!({ "source": "scheme:nord" })).unwrap();
+        s.set_colors_built(&asked, Ok(colors::build(&asked, &s.palettes).unwrap()));
+        assert!(!s.colors_building);
+        assert!(s.colors_need_build(), "the Gruvbox build must not stand in for Nord");
+    }
+
+    #[test]
+    fn applying_needs_a_build_and_then_writes_and_remembers_it() {
+        let (_dir, _cfg, mut s) = rule_session("-- mine\n");
+        // Apply reads the follow snapshot, which other tests write.
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let e = s.command("colors.apply", &json!({})).unwrap_err();
+        assert!(e.to_string().contains("still being built"));
+        let asked = s.colors_job().0;
+        s.set_colors_built(&asked, Err("no wallpaper".into()));
+        assert!(s
+            .command("colors.apply", &json!({}))
+            .unwrap_err()
+            .to_string()
+            .contains("no wallpaper"));
+
+        s.set_colors_built(&asked, Ok(colors::build(&asked, &s.palettes).unwrap()));
+        let msg = s.command("colors.apply", &json!({})).unwrap().unwrap();
+        assert!(msg.contains("Gruvbox Dark"), "{msg}");
+        assert_eq!(s.colors_applied.as_ref().unwrap().name, "Gruvbox Dark");
+        let view = &s.state()["colors"];
+        assert_eq!(view["applied"]["name"], "Gruvbox Dark");
+        assert_eq!(view["built"]["ok"], true);
+        assert_eq!(view["palettes"][0]["swatch"].as_array().unwrap().len(), 10);
+        assert!(view["targets"].as_array().unwrap().iter().any(|t| t["id"] == "hyprland"));
+    }
+
+    #[test]
+    fn wiring_hyprland_appends_its_line_and_keeps_the_file() {
+        let (_dir, cfg, mut s) =
+            rule_session("-- mine\nhl.config({ general = { gaps_in = 3 } })\n");
+        s.command("colors.wire", &json!({ "id": "hyprland" })).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.starts_with("-- mine\nhl.config("), "{text}");
+        assert!(text.trim_end().ends_with("-- hyprcustard colors"), "{text}");
+        let again = s.command("colors.wire", &json!({ "id": "hyprland" })).unwrap().unwrap();
+        assert!(again.contains("already"));
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), text);
+        assert!(s.command("colors.wire", &json!({ "id": "emacs" })).is_err());
+    }
+
+    #[test]
+    fn border_colors_set_on_the_look_page_are_flagged() {
+        let mut s = session();
+        assert!(s.state()["colors"]["hyprlandConflicts"].as_array().unwrap().is_empty());
+        s.look.values.insert(
+            "general.col.inactive_border".into(),
+            LookValue::Gradient { colors: vec!["#ff000000".into()], angle: 0.0 },
+        );
+        assert_eq!(s.state()["colors"]["hyprlandConflicts"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn following_is_only_for_the_wallpaper_and_needs_the_watcher() {
+        let mut s = session();
+        let e = s.command("colors.follow", &json!({ "on": true })).unwrap_err();
+        assert!(e.to_string().contains("choose The wallpaper"), "{e}");
+        s.settings.colors.source = "wallpaper".into();
+        // Tests have no custard-watch beside them or on PATH.
+        if colors::follow::binary().is_none() {
+            let e = s.command("colors.follow", &json!({ "on": true })).unwrap_err();
+            assert!(e.to_string().contains("not installed"), "{e}");
+        }
+    }
+
+    #[test]
+    fn the_startup_block_goes_in_and_comes_out_cleanly() {
+        let mine = "-- mine\nhl.config({ general = { gaps_in = 3 } })\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.set_watch_block(Some(Path::new("/opt/bin/custard-watch"))).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.starts_with(mine));
+        assert!(text.contains("hl.exec_cmd(\"/opt/bin/custard-watch\")"), "{text}");
+        // Again: replaced in place, not added twice.
+        s.set_watch_block(Some(Path::new("/usr/bin/custard-watch"))).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert_eq!(text.matches("hyprland.start").count(), 1);
+        assert!(text.contains("/usr/bin/custard-watch"));
+
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        s.command("colors.follow", &json!({ "on": false })).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+        assert!(colors::follow::following().is_none());
+    }
+
+    #[test]
+    fn applying_something_else_stops_following_and_applying_the_wallpaper_updates_it() {
+        let (_dir, cfg, mut s) = rule_session("-- mine\n");
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let follow = colors::ColorSettings { source: "wallpaper".into(), ..Default::default() };
+        colors::follow::write_snapshot(&follow).unwrap();
+        s.set_watch_block(Some(Path::new("/x/custard-watch"))).unwrap();
+
+        // Changing the gap reaches the watcher at once; the page's other
+        // choices do not.
+        s.command("colors.set", &json!({ "min_minutes": 20, "style": "vibrant" })).unwrap();
+        let now = colors::follow::following().unwrap();
+        assert_eq!(now.min_minutes, 20);
+        assert_eq!(now.style, "tonal-spot");
+
+        let asked = s.colors_job().0;
+        s.set_colors_built(&asked, Ok(colors::build(&asked, &s.palettes).unwrap()));
+        let msg = s.command("colors.apply", &json!({})).unwrap().unwrap();
+        assert!(msg.ends_with("Stopped following the wallpaper"), "{msg}");
+        assert!(colors::follow::following().is_none());
+        assert!(!std::fs::read_to_string(&cfg).unwrap().contains("custard-watch"));
     }
 }

@@ -49,7 +49,7 @@ jobs:
           [ -n "$version" ] || version=$(git rev-parse --short HEAD)
           dir="hyprcustard-$version-x86_64"
           mkdir "$dir"
-          cp target/release/hyprcustard "$dir/"
+          cp target/release/hyprcustard target/release/custard-watch "$dir/"
           cp packaging/hyprcustard.desktop LICENSE README.md "$dir/"
           tar -czf "$dir.tar.gz" "$dir"
           sha256sum "$dir.tar.gz" | tee "$dir.tar.gz.sha256"

@@ -144,9 +144,51 @@ pub fn system() -> Theme {
     }
 }
 
+/// The color scheme last applied from the Colors page, so the app's own
+/// window can match the rest of the desktop. Until one has been applied it
+/// wears Gruvbox dark.
+pub fn color_scheme() -> Theme {
+    let mut theme = match crate::colors::current() {
+        Some(s) => from_scheme(&s),
+        None => gruvbox_dark(),
+    };
+    theme.id = "scheme".into();
+    theme.name = "Color scheme".into();
+    theme
+}
+
+/// The app's colors out of a desktop color scheme.
+pub fn from_scheme(s: &crate::colors::Scheme) -> Theme {
+    let r = |name: &str| s.role(name).to_string();
+    Theme {
+        id: "scheme".into(),
+        name: s.name.clone(),
+        dark: s.dark,
+        opacity: 1.0,
+        system: false,
+        colors: Palette {
+            bg: r("surface"),
+            bg_alt: r("surface_container_lowest"),
+            surface: r("surface_container"),
+            surface_hi: r("surface_container_high"),
+            border: r("outline_variant"),
+            fg: r("on_surface"),
+            fg_dim: r("on_surface_variant"),
+            muted: r("outline"),
+            accent: r("primary"),
+            accent_alt: r("tertiary"),
+            ok: s.base(0xB).to_string(),
+            warn: s.base(0xA).to_string(),
+            error: r("error"),
+            selection: r("secondary_container"),
+            on_accent: r("on_primary"),
+        },
+    }
+}
+
 /// The themes that ship with the app, the system one first.
 pub fn builtin() -> Vec<Theme> {
-    vec![system(), gruvbox_dark(), gruvbox_light()]
+    vec![system(), color_scheme(), gruvbox_dark(), gruvbox_light()]
 }
 
 // ---------------------------------------------------------------------------
@@ -375,12 +417,23 @@ mod tests {
     fn builtins_are_distinct_and_named() {
         let b = builtin();
         let ids: Vec<&str> = b.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids, vec!["system", "gruvbox-dark", "gruvbox-light"]);
+        assert_eq!(ids, vec!["system", "scheme", "gruvbox-dark", "gruvbox-light"]);
         assert!(b.iter().all(|t| !t.name.is_empty()));
         // The two Gruvboxes are a dark/light pair and must not look alike.
-        assert!(b[1].dark);
-        assert!(!b[2].dark);
-        assert_ne!(b[1].colors.bg, b[2].colors.bg);
+        assert!(b[2].dark);
+        assert!(!b[3].dark);
+        assert_ne!(b[2].colors.bg, b[3].colors.bg);
+    }
+
+    #[test]
+    fn a_color_scheme_maps_onto_the_app_roles() {
+        let s = crate::colors::named::builtins()[0].scheme();
+        let t = from_scheme(&s);
+        assert_eq!(t.colors.bg, "#282828");
+        assert_eq!(t.colors.accent, "#83a598");
+        assert_eq!(t.colors.ok, "#b8bb26");
+        assert!(t.dark && !t.system);
+        assert!(t.colors.on_accent.starts_with('#'));
     }
 
     #[test]

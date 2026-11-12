@@ -100,6 +100,13 @@ pub mod qobject {
         #[cxx_name = "refreshLive"]
         fn refresh_live(self: Pin<&mut Backend>);
 
+        /// Build the Colors page's scheme on a background thread, if it
+        /// needs building. Reading a wallpaper runs ffmpeg, which takes a
+        /// moment; the state says `building` meanwhile.
+        #[qinvokable]
+        #[cxx_name = "colorsBuild"]
+        fn colors_build(self: Pin<&mut Backend>);
+
         /// Start a hyprpm operation: `add`, `remove`, `enable`, `disable`,
         /// `update` or `reload`. `argument` is the URL or plugin name the
         /// first four need, and is ignored by the others.
@@ -281,6 +288,11 @@ impl qobject::Backend {
 
         self.as_mut().push_state();
 
+        // A change of color choices leaves the page's scheme out of date.
+        if command.starts_with("colors.") {
+            self.as_mut().colors_build();
+        }
+
         match outcome {
             Ok(Some(message)) => {
                 let m = QString::from(&message);
@@ -375,6 +387,37 @@ impl qobject::Backend {
                     session.set_live(live);
                 }
                 backend.push_state();
+            });
+        });
+    }
+
+    /// Build the Colors page's scheme away from the Qt thread.
+    pub fn colors_build(mut self: Pin<&mut Self>) {
+        let job = {
+            let mut rust = self.as_mut().rust_mut();
+            match rust.session.as_mut() {
+                Some(session) if session.colors_need_build() => {
+                    session.colors_building = true;
+                    Some(session.colors_job())
+                }
+                _ => None,
+            }
+        };
+        let Some((settings, palettes)) = job else { return };
+        self.as_mut().push_state();
+
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let result =
+                custard_core::colors::build(&settings, &palettes).map_err(|e| e.to_string());
+            let _ = thread.queue(move |mut backend| {
+                if let Some(session) = backend.as_mut().rust_mut().session.as_mut() {
+                    session.set_colors_built(&settings, result);
+                }
+                backend.as_mut().push_state();
+                // The choices changed while it ran, so it was dropped: go
+                // again for what is asked for now.
+                backend.colors_build();
             });
         });
     }

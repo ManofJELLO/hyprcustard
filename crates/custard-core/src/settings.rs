@@ -31,6 +31,8 @@ pub struct Settings {
     pub plugin_repo_url: String,
     /// The plugin's name in hyprpm, which `enable` and `disable` take.
     pub plugin_name: String,
+    /// The Colors page's choices.
+    pub colors: crate::colors::ColorSettings,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -50,6 +52,7 @@ impl Default for Settings {
             live_look_edits: true,
             plugin_repo_url: DEFAULT_PLUGIN_REPO.to_string(),
             plugin_name: DEFAULT_PLUGIN_NAME.to_string(),
+            colors: crate::colors::ColorSettings::default(),
         }
     }
 }
@@ -100,6 +103,7 @@ impl Settings {
         if self.plugin_name.trim().is_empty() {
             self.plugin_name = DEFAULT_PLUGIN_NAME.to_string();
         }
+        self.colors = self.colors.sanitized();
         self
     }
 

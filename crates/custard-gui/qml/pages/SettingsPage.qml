@@ -201,8 +201,8 @@ Item {
                     width: parent.width
                     label: "App colors"
                     hint: "System follows your Qt colors, so the app matches the rest of your " +
-                          "desktop and changes with it. The Gruvboxes ignore it and look the " +
-                          "same everywhere."
+                          "desktop and changes with it. Color scheme wears the scheme last applied " +
+                          "on the Colors page. The Gruvboxes look the same everywhere."
 
                     Dropdown {
                         width: parent.width

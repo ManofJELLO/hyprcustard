@@ -11,6 +11,19 @@ pub fn config_home() -> PathBuf {
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".config"))
 }
 
+/// Where other apps' configs are looked for — `$XDG_CONFIG_HOME` — for the
+/// Colors page, which writes beside them.
+///
+/// A unit test gets a throwaway directory instead, for the same reason as
+/// [`app_config_dir`]: a test must never write into someone's real waybar or
+/// kitty config.
+pub fn apps_config_home() -> PathBuf {
+    if cfg!(test) {
+        return app_config_dir().join("xdg");
+    }
+    config_home()
+}
+
 /// `~/.config/hypr`.
 pub fn hypr_dir() -> PathBuf {
     config_home().join("hypr")
