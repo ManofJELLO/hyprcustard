@@ -11,8 +11,8 @@
 # This file is usable as it stands: `makepkg -si` here installs the release
 # it names, checksum and all. `make aur-bin` copies it to target/aur-bin,
 # re-derives the checksum from what is actually published — which is how the
-# one below is checked rather than trusted — and writes the .SRCINFO the AUR
-# requires beside it.
+# one below is checked rather than trusted — writes the .SRCINFO the AUR
+# requires, and puts both back beside each other here, ready to push.
 pkgname=hyprcustard-bin
 _pkgname=hyprcustard
 _reponame=hyprcustard
@@ -46,8 +46,8 @@ optdepends=('hyprland: the compositor this configures'
 # debug package from.
 options=('!strip' '!debug')
 source_x86_64=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$_pkgname-$pkgver-$CARCH.tar.gz")
-# No hyprcustard release exists yet; `make aur-bin` fills this in from the
-# published asset once one does.
+# Filled in by `make aur-bin VERSION=<version>`, from the asset the release
+# workflow published, once that release exists.
 sha256sums_x86_64=('SKIP')
 
 package() {

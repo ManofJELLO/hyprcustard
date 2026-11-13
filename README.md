@@ -113,14 +113,19 @@ of `hyprland`.
 
 ## Install
 
-There is no hyprcustard release yet, so for now [build from source](#build-from-source).
+Every [release](https://github.com/ManofJELLO/hyprcustard/releases) has a
+`hyprcustard-<version>-x86_64.tar.gz` holding the two binaries (`hyprcustard`, and
+`custard-watch`, which follows the wallpaper), the desktop entry, the license and this
+README, with a `.sha256` beside it. The binaries need nothing but Qt 6 and ffmpeg, because
+the QML is compiled into them.
 
-Once there is one, every release will have a `hyprcustard-<version>-x86_64.tar.gz`
-holding the two binaries (`hyprcustard`, and `custard-watch`, which follows the
-wallpaper), the desktop entry, the license and this README, with a
-`.sha256` beside it, and `packaging/aur-bin` will install it on Arch as
-`hyprcustard-bin`. The binary needs nothing but Qt 6, because the QML is compiled
-into it.
+On Arch, the package for it is `hyprcustard-bin`. Until it is on the AUR, build it from
+this repository — it downloads the release and checks it against the checksum in the
+PKGBUILD:
+
+```sh
+cd packaging/aur-bin && makepkg -si
+```
 
 ### Coming from hyprwindowshade-gui
 

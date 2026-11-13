@@ -59,7 +59,8 @@ shots: build
 	CUSTARD_SHOT_DIR=$(PWD)/shots QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 		./target/debug/$(BIN) || true
 
-# Stage the AUR package, ready to copy into the AUR clone and push.
+# Make the AUR package ready to push: PKGBUILD and .SRCINFO, written back
+# into packaging/aur-bin so the repository holds what the AUR gets.
 #
 # The checksum can only be filled in once the release it names exists, so
 # this downloads the published artifact and hashes it rather than trusting
@@ -73,11 +74,14 @@ aur-bin:
 	cp packaging/aur-bin/PKGBUILD target/aur-bin/PKGBUILD
 	@test -z "$(VERSION)" || sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' target/aur-bin/PKGBUILD
 	cd target/aur-bin && updpkgsums && makepkg --printsrcinfo > .SRCINFO
+	@! command -v namcap >/dev/null 2>&1 || namcap target/aur-bin/PKGBUILD
+	cp target/aur-bin/PKGBUILD target/aur-bin/.SRCINFO packaging/aur-bin/
 	@echo
-	@echo 'target/aur-bin holds PKGBUILD and .SRCINFO. To publish:'
+	@echo 'packaging/aur-bin holds the PKGBUILD and .SRCINFO, checksummed against'
+	@echo 'the release. Commit them, then to publish:'
 	@echo '  git clone ssh://aur@aur.archlinux.org/hyprcustard-bin.git'
-	@echo '  cp target/aur-bin/PKGBUILD target/aur-bin/.SRCINFO <clone>/'
-	@echo '  cd <clone> && git commit -am "..." && git push'
+	@echo '  cp packaging/aur-bin/PKGBUILD packaging/aur-bin/.SRCINFO hyprcustard-bin/'
+	@echo '  cd hyprcustard-bin && git add PKGBUILD .SRCINFO && git commit -m "..." && git push'
 
 clean:
 	$(CARGO) clean

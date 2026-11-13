@@ -22,6 +22,10 @@ optdepends=('hyprland: the compositor this configures'
             'hyprpaper: a wallpaper program the Wallpaper page drives'
             'mpvpaper: video wallpapers and whole folders on the Wallpaper page'
             'kitty: a terminal for the preview window and "Run in a terminal" (foot, alacritty, ghostty, wezterm, konsole or xterm will do as well)')
+# makepkg's link-time optimization compiles the Qt bridge's C++ into GCC's
+# own intermediate form, which the linker cargo uses cannot read: the build
+# fails with every cxx-qt symbol undefined.
+options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 

@@ -2,10 +2,10 @@
 Type=Application
 Name=HyprCustard
 GenericName=Hyprland theming
-Comment=Theme Hyprland: window and layer shaders, rules and keybinds
+Comment=Theme Hyprland: its look, colors, wallpaper, animations and shaders
 Exec=hyprcustard
 Icon=preferences-desktop-theme
 Terminal=false
 Categories=Settings;DesktopSettings;
-Keywords=hyprland;theme;shader;glsl;wayland;
+Keywords=hyprland;theme;colors;wallpaper;animation;shader;wayland;
 StartupNotify=true
