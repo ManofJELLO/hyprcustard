@@ -72,6 +72,8 @@ struct Desk {
     login_managed: bool,
     login_lines: Vec<walls::startup::Line>,
     login_moved: Vec<walls::startup::Line>,
+    /// The managed wallpaper block: the line it starts on, and its text.
+    login_block: Option<(usize, String)>,
 }
 
 /// Which part of the app noticed a problem.
@@ -785,6 +787,7 @@ impl Session {
             login_managed: walls::startup::managed(&text),
             login_lines: walls::startup::user_lines(&text),
             login_moved: walls::startup::moved_lines(&text),
+            login_block: walls::startup::block_text(&text),
         };
     }
 
@@ -3359,6 +3362,74 @@ mod tests {
         }
     }
 
+    /// The page shows the on-screen preview straight from disk when it is
+    /// there, rather than waiting for one to be made again.
+    #[test]
+    fn the_wallpaper_on_screen_says_whether_its_preview_is_made() {
+        let mut s = session();
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("on-screen.png");
+        std::fs::write(&png, b"x").unwrap();
+        s.set_wall_scan(swaybg_scan(&png.to_string_lossy()));
+        let shown = |s: &Session| s.state()["wallpaper"]["monitors"][0]["wallpaper"].clone();
+        assert_eq!(shown(&s)["file"], json!(png));
+        assert_eq!(shown(&s)["ready"], false);
+
+        let thumb = walls::thumbs::path_for(&png).unwrap();
+        assert_eq!(shown(&s)["thumb"], json!(thumb));
+        std::fs::create_dir_all(thumb.parent().unwrap()).unwrap();
+        std::fs::write(&thumb, b"jpg").unwrap();
+        assert_eq!(shown(&s)["ready"], true);
+        std::fs::remove_file(&thumb).unwrap();
+    }
+
+    /// Seen once, the user's mpvpaper options outlast another program
+    /// taking over; one hyprcustard started with its own does not replace
+    /// them.
+    #[test]
+    fn the_users_mpvpaper_is_remembered() {
+        let mut s = session();
+        let theirs = argv("mpvpaper -p -a FULL -o no-audio ALL /w/clips/");
+        let scan_of = |argv: Vec<String>| walls::Scan {
+            procs: vec![(4, argv)],
+            running: vec!["mpvpaper"],
+            ..swaybg_scan("/cur.png")
+        };
+        s.set_wall_scan(scan_of(theirs.clone()));
+        assert_eq!(s.settings.wallpaper.mpvpaper, theirs);
+
+        let ours: Vec<String> =
+            ["mpvpaper", "-p", "-o", "no-audio loop panscan=1.0", "ALL", "/a.png"]
+                .map(String::from)
+                .to_vec();
+        s.set_wall_scan(scan_of(ours));
+        assert_eq!(s.settings.wallpaper.mpvpaper, theirs, "not replaced by hyprcustard's own");
+        s.set_wall_scan(swaybg_scan("/cur.png"));
+        assert_eq!(s.settings.wallpaper.mpvpaper, theirs, "kept while swaybg runs");
+    }
+
+    /// Turning the recolor switch on reads the wallpaper already up, with
+    /// nothing put up again and the login line left alone.
+    #[test]
+    fn colors_alone_are_read_from_the_wallpaper_on_screen() {
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = session();
+        s.set_wall_scan(swaybg_scan("/cur.png"));
+        let job = s.wall_job(&json!({ "colorsOnly": true })).unwrap();
+        assert!(job.steps.is_empty());
+        assert_eq!(job.program, "swaybg");
+        assert_eq!(job.recolor.as_ref().unwrap().source, "wallpaper");
+        assert!(s.wall_job(&json!({ "colorsOnly": true })).is_err(), "one at a time");
+        let out = WallOutcome {
+            result: Ok(()),
+            scan: swaybg_scan("/cur.png"),
+            colors: Some(Err("no frame".into())),
+        };
+        let e = s.wall_done(&job, out).unwrap_err().to_string();
+        assert!(e.contains("not changed") && e.contains("no frame"), "{e}");
+        assert!(!s.state()["wallpaper"]["busy"].as_bool().unwrap());
+    }
+
     #[test]
     fn wallpaper_choices_merge_and_folders_are_added_and_hidden() {
         let mut s = session();
@@ -3366,6 +3437,14 @@ mod tests {
         assert_eq!(s.settings.wallpaper.fit, "fit");
         assert_eq!(s.state()["wallpaper"]["using"]["id"], "swaybg");
         assert!(s.command("wallpaper.set", &json!({ "folders": [] })).is_err());
+
+        // mpvpaper's timer and shuffle merge, and the page sees them.
+        assert_eq!(s.state()["wallpaper"]["mpv"]["changeEvery"], 0);
+        s.command("wallpaper.set", &json!({ "mpv": { "change_every": 90 } })).unwrap();
+        s.command("wallpaper.set", &json!({ "mpv": { "shuffle": true } })).unwrap();
+        assert_eq!(s.settings.wallpaper.mpv.change_every, Some(90));
+        assert_eq!(s.state()["wallpaper"]["mpv"], json!({ "changeEvery": 90, "shuffle": true }));
+        assert!(s.command("wallpaper.set", &json!({ "mpv": { "change_every": -1 } })).is_err());
 
         let dir = tempfile::tempdir().unwrap();
         let found = dir.path().join("found");
@@ -3385,9 +3464,19 @@ mod tests {
                 .collect()
         };
         let url = format!("file://{}", added.display());
-        s.command("wallpaper.addFolder", &json!({ "path": url })).unwrap();
+        let msg = s.command("wallpaper.addFolder", &json!({ "path": url })).unwrap().unwrap();
+        assert!(msg.contains("no images or videos yet"), "{msg}");
         assert_eq!(listed(&s).len(), 2);
         assert!(listed(&s)[0].1 && !listed(&s)[1].1);
+
+        // One already on the list, or inside one, says so and adds nothing.
+        let msg = s.command("wallpaper.addFolder", &json!({ "path": added })).unwrap().unwrap();
+        assert!(msg.contains("already on the list"), "{msg}");
+        let inner = found.join("large");
+        std::fs::create_dir_all(&inner).unwrap();
+        let msg = s.command("wallpaper.addFolder", &json!({ "path": inner })).unwrap().unwrap();
+        assert!(msg.contains("is inside") && msg.contains("so its wallpapers show there"), "{msg}");
+        assert_eq!(s.settings.wallpaper.folders.len(), 1);
 
         s.command("wallpaper.removeFolder", &json!({ "path": added })).unwrap();
         s.command("wallpaper.removeFolder", &json!({ "path": found })).unwrap();

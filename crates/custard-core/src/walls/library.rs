@@ -143,6 +143,11 @@ pub fn video(path: &Path) -> bool {
     is_video(path)
 }
 
+/// Whether a file is a GIF, which not every program can read.
+pub fn gif(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

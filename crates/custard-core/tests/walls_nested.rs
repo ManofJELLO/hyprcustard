@@ -83,6 +83,8 @@ fn put(program: &str, path: &Path, monitor: Option<&str>, conf: &Path) {
         fit: "fill".into(),
         monitors: vec!["HEADLESS-2".into()],
         hyprpaper_conf: conf.to_path_buf(),
+        mpvpaper: Vec::new(),
+        mpv: Default::default(),
     };
     let start = Instant::now();
     let steps = setter::plan(&req, &session_processes(true)).unwrap();
@@ -221,6 +223,8 @@ fn every_program_puts_a_wallpaper_up_and_hands_over_cleanly() {
             fit: "fill".into(),
             monitors: names.clone(),
             hyprpaper_conf: conf.clone(),
+            mpvpaper: Vec::new(),
+            mpv: Default::default(),
         };
         assert!(setter::plan(&req, &session_processes(true)).is_err());
         assert_eq!(running(), vec!["swaybg"]);

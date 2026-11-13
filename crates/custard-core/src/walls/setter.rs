@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::MpvChoices;
 use crate::colors::wallpaper::{mpvpaper_args, mpvpaper_positions, program, resolve, swaybg_args};
 use crate::error::{Error, Result};
 
@@ -30,27 +31,54 @@ pub struct Program {
     pub videos: bool,
     /// Whether it plays a whole folder.
     pub folders: bool,
+    /// Whether it reads GIFs, animated or as a still.
+    pub gifs: bool,
 }
 
 /// Every program this can drive, in the order one is picked when the user
 /// has none running: the light, image-only ones first.
 pub const PROGRAMS: [Program; 5] = [
-    Program { id: "awww", binary: "awww", process: "awww-daemon", videos: false, folders: false },
-    Program { id: "swww", binary: "swww", process: "swww-daemon", videos: false, folders: false },
+    Program {
+        id: "awww",
+        binary: "awww",
+        process: "awww-daemon",
+        videos: false,
+        folders: false,
+        gifs: true,
+    },
+    Program {
+        id: "swww",
+        binary: "swww",
+        process: "swww-daemon",
+        videos: false,
+        folders: false,
+        gifs: true,
+    },
+    // Its image library has no GIF reader.
     Program {
         id: "hyprpaper",
         binary: "hyprpaper",
         process: "hyprpaper",
         videos: false,
         folders: false,
+        gifs: false,
     },
-    Program { id: "swaybg", binary: "swaybg", process: "swaybg", videos: false, folders: false },
+    // gdk-pixbuf shows a GIF's first frame.
+    Program {
+        id: "swaybg",
+        binary: "swaybg",
+        process: "swaybg",
+        videos: false,
+        folders: false,
+        gifs: true,
+    },
     Program {
         id: "mpvpaper",
         binary: "mpvpaper",
         process: "mpvpaper",
         videos: true,
         folders: true,
+        gifs: true,
     },
 ];
 
@@ -127,6 +155,22 @@ pub struct Request {
     pub monitors: Vec<String>,
     /// hyprcustard's own hyprpaper config, used when it starts hyprpaper.
     pub hyprpaper_conf: PathBuf,
+    /// The user's own mpvpaper command, seen running earlier or read from
+    /// their login line, for when no mpvpaper is running to copy it from.
+    /// Empty when there is none.
+    pub mpvpaper: Vec<String>,
+    /// The page's choices for mpvpaper, laid over the command it uses.
+    pub mpv: MpvChoices,
+}
+
+/// The user's own mpvpaper command among `procs`: the first that is not one
+/// hyprcustard started with its own options.
+pub fn users_mpvpaper(procs: &[(u32, Vec<String>)]) -> Option<Vec<String>> {
+    procs
+        .iter()
+        .map(|(_, argv)| argv)
+        .find(|argv| program(argv) == "mpvpaper" && mpvpaper_args(argv).is_some() && !ours(argv))
+        .cloned()
 }
 
 /// One thing to do.
@@ -161,6 +205,11 @@ pub fn plan(req: &Request, procs: &[(u32, Vec<String>)]) -> Result<Vec<Step>> {
     if req.path.is_dir() && !p.folders {
         return Err(Error::other(format!(
             "{name} shows one file at a time; only mpvpaper plays a whole folder"
+        )));
+    }
+    if super::library::gif(&req.path) && !p.gifs {
+        return Err(Error::other(format!(
+            "{name} cannot read GIFs. Choose another program under \"Show it with\""
         )));
     }
     if super::library::video(&req.path) && !p.videos {
@@ -273,7 +322,14 @@ pub fn plan(req: &Request, procs: &[(u32, Vec<String>)]) -> Result<Vec<Step>> {
                 // Options hyprcustard chose itself are chosen again for this
                 // pick: a file's `loop` would keep a folder on its first clip.
                 .filter(|a| !ours(a))
+                // Another program showing wallpapers since does not lose
+                // the user's options.
+                .or_else(|| {
+                    let theirs = &req.mpvpaper;
+                    (mpvpaper_args(theirs).is_some() && !ours(theirs)).then(|| theirs.clone())
+                })
                 .unwrap_or_else(|| mpvpaper_default(&req.fit, req.path.is_dir()));
+            let template = with_choices(&template, &req.mpv, req.path.is_dir());
             let mut s = Vec::new();
             let mut stop = Vec::new();
             match &monitor {
@@ -386,12 +442,143 @@ fn mpvpaper_default(fit: &str, folder: bool) -> Vec<String> {
 
 /// Whether an mpvpaper command line has the options [`mpvpaper_default`]
 /// gives, for any fit and either kind of pick.
+/// The page's own choices ([`with_choices`]) are left out of the
+/// comparison, so one started with them is still hyprcustard's.
 fn ours(argv: &[String]) -> bool {
+    let argv = with_shuffle(&without_slideshow(argv), false);
     ["fill", "fit", "stretch"].iter().any(|fit| {
         [false, true].iter().any(|folder| {
             let d = mpvpaper_default(fit, *folder);
             argv.len() == d.len() && argv[1..4] == d[1..4]
         })
+    })
+}
+
+/// The command mpvpaper would be started with for a folder now: the
+/// user's own running, else the one remembered, else hyprcustard's — with
+/// the page's choices laid over it. For the page to show.
+pub fn mpvpaper_for_folder(
+    procs: &[(u32, Vec<String>)],
+    remembered: &[String],
+    fit: &str,
+    choices: &MpvChoices,
+) -> Vec<String> {
+    let template = users_mpvpaper(procs)
+        .or_else(|| {
+            (mpvpaper_args(remembered).is_some() && !ours(remembered)).then(|| remembered.to_vec())
+        })
+        .unwrap_or_else(|| mpvpaper_default(fit, true));
+    with_choices(&template, choices, true)
+}
+
+/// The page's choices laid over an mpvpaper command: the slideshow timer
+/// and shuffling, which only mean anything for a folder.
+pub fn with_choices(argv: &[String], c: &MpvChoices, folder: bool) -> Vec<String> {
+    let mut out = argv.to_vec();
+    if !folder {
+        return out;
+    }
+    if let Some(secs) = c.change_every {
+        out = without_slideshow(&out);
+        if secs > 0 {
+            if let Some(&at) = mpvpaper_positions(&out).first() {
+                out.splice(at..at, ["-n".to_string(), secs.to_string()]);
+            }
+        }
+    }
+    if let Some(on) = c.shuffle {
+        out = with_shuffle(&out, on);
+    }
+    out
+}
+
+/// The seconds mpvpaper's slideshow moves on after, if it has one.
+pub fn slideshow(argv: &[String]) -> Option<u32> {
+    let pos = mpvpaper_positions(argv);
+    let mut i = 1;
+    while i < argv.len() {
+        let a = argv[i].as_str();
+        if !pos.contains(&i) {
+            if let Some(v) = a.strip_prefix("--slideshow=") {
+                return v.parse().ok();
+            }
+            if a == "--slideshow"
+                || (!a.starts_with("--") && a.starts_with('-') && a.ends_with('n'))
+            {
+                return argv.get(i + 1).and_then(|v| v.parse().ok());
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Whether mpv is asked to shuffle.
+pub fn shuffled(argv: &[String]) -> bool {
+    mpv_options_at(argv)
+        .map(|i| argv[i].split_whitespace().any(|t| is_shuffle(t) && !t.ends_with("=no")))
+        .unwrap_or(false)
+}
+
+/// The command without its slideshow option, every other argument kept.
+fn without_slideshow(argv: &[String]) -> Vec<String> {
+    let pos = mpvpaper_positions(argv);
+    let mut out = vec![argv[0].clone()];
+    let mut i = 1;
+    while i < argv.len() {
+        let a = &argv[i];
+        if pos.contains(&i) {
+            out.push(a.clone());
+        } else if a == "-n" || a == "--slideshow" {
+            i += 1;
+        } else if a.starts_with("--slideshow=") {
+        } else if !a.starts_with("--") && a.len() > 2 && a.starts_with('-') && a.ends_with('n') {
+            // `-pn 30`: the rest of the bundle stays.
+            out.push(a[..a.len() - 1].to_string());
+            i += 1;
+        } else {
+            out.push(a.clone());
+        }
+        i += 1;
+    }
+    out
+}
+
+/// The command with mpv's `shuffle` added to or taken out of its options.
+fn with_shuffle(argv: &[String], on: bool) -> Vec<String> {
+    let mut out = argv.to_vec();
+    match mpv_options_at(&out) {
+        Some(i) => {
+            let mut tokens: Vec<&str> =
+                out[i].split_whitespace().filter(|t| !is_shuffle(t)).collect();
+            if on {
+                tokens.push("shuffle");
+            }
+            out[i] = tokens.join(" ");
+        }
+        None if on => {
+            if let Some(&at) = mpvpaper_positions(&out).first() {
+                out.splice(at..at, ["-o".to_string(), "shuffle".to_string()]);
+            }
+        }
+        None => {}
+    }
+    out
+}
+
+fn is_shuffle(token: &str) -> bool {
+    let t = token.trim_start_matches('-');
+    t == "shuffle" || t.starts_with("shuffle=")
+}
+
+/// The index of the string mpvpaper passes on to mpv (`-o "..."`).
+fn mpv_options_at(argv: &[String]) -> Option<usize> {
+    let pos = mpvpaper_positions(argv);
+    (1..argv.len()).find_map(|i| {
+        let a = argv[i].as_str();
+        let takes = a == "--mpv-options"
+            || (!a.starts_with("--") && a.starts_with('-') && a.ends_with('o'));
+        (!pos.contains(&i) && takes && i + 1 < argv.len()).then_some(i + 1)
     })
 }
 
@@ -541,7 +728,7 @@ pub fn can_show(p: &Program, path: &Path) -> bool {
     if path.is_dir() {
         p.folders
     } else {
-        p.videos || !super::library::video(path)
+        (p.videos || !super::library::video(path)) && (p.gifs || !super::library::gif(path))
     }
 }
 
@@ -561,6 +748,8 @@ mod tests {
             fit: "fill".into(),
             monitors: vec!["DP-1".into(), "HDMI-A-1".into()],
             hyprpaper_conf: PathBuf::from("/cfg/hyprpaper.conf"),
+            mpvpaper: Vec::new(),
+            mpv: MpvChoices::default(),
         }
     }
 
@@ -704,6 +893,87 @@ mod tests {
         let steps = plan(&req("mpvpaper", None, dir.path()), &running).unwrap();
         let Step::Start(a) = &steps[0] else { panic!() };
         assert_eq!(a[5], "no-audio --loop-file shuffle");
+
+        // With another program showing wallpapers now, the options
+        // remembered from before are used, not hyprcustard's.
+        assert_eq!(users_mpvpaper(&running), Some(theirs.clone()));
+        assert_eq!(users_mpvpaper(&ours_running), None);
+        let hyprpaper = vec![(9, argv("hyprpaper -c /cfg/hyprpaper.conf"))];
+        let mut asked = req("mpvpaper", None, dir.path());
+        asked.mpvpaper = theirs.clone();
+        let steps = plan(&asked, &hyprpaper).unwrap();
+        let Step::Start(a) = &steps[0] else { panic!() };
+        assert_eq!(&a[..6], &theirs[..6]);
+        assert_eq!(&a[6..], &["ALL".to_string(), d.clone()]);
+        assert_eq!(steps.last(), Some(&Step::Stop(vec![9])));
+        // Remembered options that are hyprcustard's own are not kept.
+        asked.mpvpaper = mpvpaper_with(&mpvpaper_default("fill", false), "ALL", &p);
+        let steps = plan(&asked, &hyprpaper).unwrap();
+        let Step::Start(a) = &steps[0] else { panic!() };
+        assert_eq!(a[3], folder_opts);
+    }
+
+    #[test]
+    fn the_timer_and_shuffle_are_laid_over_any_command() {
+        let v = |s: &[&str]| s.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let theirs = v(&[
+            "mpvpaper",
+            "-p",
+            "-a",
+            "FULL",
+            "-o",
+            "no-audio --loop-file shuffle --video-zoom=.45",
+            "ALL",
+            "/w/1920",
+        ]);
+        assert_eq!(slideshow(&theirs), None);
+        assert!(shuffled(&theirs));
+
+        // Five minutes, in order: the timer goes in before the output,
+        // shuffle comes out, and the rest is theirs.
+        let c = MpvChoices { change_every: Some(300), shuffle: Some(false) };
+        let got = with_choices(&theirs, &c, true);
+        assert_eq!(
+            got,
+            v(&[
+                "mpvpaper",
+                "-p",
+                "-a",
+                "FULL",
+                "-o",
+                "no-audio --loop-file --video-zoom=.45",
+                "-n",
+                "300",
+                "ALL",
+                "/w/1920"
+            ])
+        );
+        assert_eq!(slideshow(&got), Some(300));
+        assert!(!shuffled(&got));
+        assert_eq!(with_choices(&got, &c, true), got, "laid over twice, the same");
+        // Off takes the timer out; None leaves the command alone.
+        let off = with_choices(&got, &MpvChoices { change_every: Some(0), shuffle: None }, true);
+        assert_eq!(slideshow(&off), None);
+        assert_eq!(with_choices(&theirs, &MpvChoices::default(), true), theirs);
+        // A single file is not a slideshow.
+        assert_eq!(with_choices(&theirs, &c, false), theirs);
+
+        // Bundled and long forms are read and taken out.
+        let bundled = v(&["mpvpaper", "-pn", "45", "ALL", "/w"]);
+        assert_eq!(slideshow(&bundled), Some(45));
+        assert_eq!(without_slideshow(&bundled), v(&["mpvpaper", "-p", "ALL", "/w"]));
+        let long = v(&["mpvpaper", "--slideshow=90", "ALL", "/w"]);
+        assert_eq!(slideshow(&long), Some(90));
+        assert_eq!(without_slideshow(&long), v(&["mpvpaper", "ALL", "/w"]));
+        // No mpv options yet: shuffle brings its own.
+        let bare = v(&["mpvpaper", "ALL", "/w"]);
+        assert_eq!(with_shuffle(&bare, true), v(&["mpvpaper", "-o", "shuffle", "ALL", "/w"]));
+
+        // hyprcustard's own stay its own with the choices laid over them.
+        let mine = with_choices(&mpvpaper_default("fill", true), &c, true);
+        let mine = with_choices(&mine, &MpvChoices { shuffle: Some(true), ..c }, true);
+        assert!(ours(&mine));
+        assert!(!ours(&got));
     }
 
     #[test]
@@ -732,5 +1002,14 @@ mod tests {
         let bg = get("swaybg").unwrap();
         assert!(can_show(&mpv, &mp4) && can_show(&mpv, dir.path()) && can_show(&mpv, &png));
         assert!(can_show(&bg, &png) && !can_show(&bg, &mp4) && !can_show(&bg, dir.path()));
+
+        // hyprpaper has no GIF reader; the others show one.
+        let gif = dir.path().join("loop.GIF");
+        std::fs::write(&gif, b"GIF89a").unwrap();
+        let hp = get("hyprpaper").unwrap();
+        assert!(!can_show(&hp, &gif) && can_show(&hp, &png));
+        assert!(can_show(&bg, &gif) && can_show(&get("awww").unwrap(), &gif));
+        let e = plan(&req("hyprpaper", None, &gif), &[]).unwrap_err().to_string();
+        assert!(e.contains("cannot read GIFs"), "{e}");
     }
 }

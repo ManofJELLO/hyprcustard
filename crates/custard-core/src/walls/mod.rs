@@ -29,6 +29,27 @@ pub struct WallSettings {
     pub fit: String,
     /// Rebuild the desktop's colors from each wallpaper picked.
     pub recolor: bool,
+    /// The user's own mpvpaper command, as last seen running, so their
+    /// options are kept after another program has shown wallpapers.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mpvpaper: Vec<String>,
+    /// Choices for mpvpaper made on the page.
+    pub mpv: MpvChoices,
+}
+
+/// Choices for mpvpaper made on the page, laid over whatever command it is
+/// started with — the user's own or hyprcustard's — so the rest of it stays
+/// as they wrote it. `None` leaves that part of the command alone.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MpvChoices {
+    /// Seconds before the next file of a folder (mpvpaper's slideshow), or
+    /// 0 for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_every: Option<u32>,
+    /// Play a folder in a random order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shuffle: Option<bool>,
 }
 
 impl Default for WallSettings {
@@ -39,6 +60,8 @@ impl Default for WallSettings {
             program: String::new(),
             fit: "fill".into(),
             recolor: false,
+            mpvpaper: Vec::new(),
+            mpv: MpvChoices::default(),
         }
     }
 }

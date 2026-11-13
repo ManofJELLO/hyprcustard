@@ -43,8 +43,12 @@ impl WallJob {
         let scan = if cfg!(test) { walls::Scan::default() } else { walls::scan() };
         let colors = match (&self.recolor, &result) {
             (Some(settings), Ok(())) => {
-                let found =
-                    walls::with_set(&scan.found, self.program, self.monitor.as_deref(), &self.path);
+                // Nothing put up: the colors come from what is on screen.
+                let found = if self.steps.is_empty() {
+                    scan.found.clone()
+                } else {
+                    walls::with_set(&scan.found, self.program, self.monitor.as_deref(), &self.path)
+                };
                 Some(colors::build_from(settings, &found).map_err(|e| e.to_string()))
             }
             _ => None,
@@ -81,16 +85,33 @@ impl Session {
                         paths::contract(&path)
                     )));
                 }
+                let shown = paths::contract(&path);
+                // A folder on the list already lists everything inside it.
+                if let Some(outer) =
+                    self.wall_folders().into_iter().find(|f| path.starts_with(&f.path))
+                {
+                    let outer = paths::contract(&outer.path);
+                    return Ok(Some(if outer == shown {
+                        format!("{shown} is already on the list")
+                    } else {
+                        format!(
+                            "{shown} is inside {outer}, which is already on the list, \
+                             so its wallpapers show there"
+                        )
+                    }));
+                }
                 let w = &mut self.settings.wallpaper;
                 let before = w.hidden.len();
                 w.hidden.retain(|h| paths::expand(h) != path);
-                if w.hidden.len() == before {
-                    let shown = paths::contract(&path);
-                    if !w.folders.contains(&shown) {
-                        w.folders.push(shown);
-                    }
+                if w.hidden.len() == before && !w.folders.contains(&shown) {
+                    w.folders.push(shown.clone());
                 }
                 self.settings.save()?;
+                if library::scan(std::slice::from_ref(&path)).is_empty() {
+                    return Ok(Some(format!(
+                        "Added {shown}. It has no images or videos yet; Look again once it does"
+                    )));
+                }
                 Ok(None)
             }
             "wallpaper.removeFolder" => {
@@ -125,10 +146,21 @@ impl Session {
             return Err(Error::other("wallpaper.set takes an object of choices"));
         };
         for (k, v) in from {
-            if !["program", "fit", "recolor"].contains(&k.as_str()) {
-                return Err(Error::other(format!("there is no wallpaper choice called `{k}`")));
+            match (k.as_str(), v.as_object(), into.get_mut("mpv").and_then(Value::as_object_mut)) {
+                // mpvpaper's choices merge too: `{"mpv": {"shuffle": true}}`
+                // keeps the timer.
+                ("mpv", Some(changes), Some(mpv)) => {
+                    for (mk, mv) in changes {
+                        mpv.insert(mk.clone(), mv.clone());
+                    }
+                }
+                ("program" | "fit" | "recolor", _, _) => {
+                    into.insert(k.clone(), v.clone());
+                }
+                _ => {
+                    return Err(Error::other(format!("there is no wallpaper choice called `{k}`")))
+                }
             }
-            into.insert(k.clone(), v.clone());
         }
         let next: walls::WallSettings = serde_json::from_value(merged)
             .map_err(|e| Error::other(format!("not a valid wallpaper choice: {e}")))?;
@@ -143,8 +175,23 @@ impl Session {
     /// Take a scan made away from the UI thread.
     pub fn set_wall_scan(&mut self, scan: walls::Scan) {
         self.wall_scan = Some(scan);
+        self.remember_mpvpaper();
         // The found folders come from it.
         self.refresh_desk();
+    }
+
+    /// Keep the user's own mpvpaper command when the scan shows one running,
+    /// for a pick made after another program has taken over.
+    fn remember_mpvpaper(&mut self) {
+        let Some(seen) = self.wall_scan.as_ref().and_then(|s| setter::users_mpvpaper(&s.procs))
+        else {
+            return;
+        };
+        if seen != self.settings.wallpaper.mpvpaper {
+            self.settings.wallpaper.mpvpaper = seen;
+            // Losing it only loses a convenience; the pick still works.
+            let _ = self.settings.save();
+        }
     }
 
     /// Work out how to put up the wallpaper `payload` names
@@ -152,6 +199,26 @@ impl Session {
     pub fn wall_job(&mut self, payload: &Value) -> Result<WallJob> {
         if self.wall_busy {
             return Err(Error::other("still putting up the last one"));
+        }
+        // Only the colors, read from what is on screen now: for the
+        // recolor switch turned on, with no new pick to wait for.
+        if payload.get("colorsOnly").and_then(Value::as_bool) == Some(true) {
+            let running = self.wall_scan.as_ref().map(|s| s.running.clone()).unwrap_or_default();
+            let program = walls::pick_program(&self.settings.wallpaper.program, &running)
+                .map(|p| p.id)
+                .unwrap_or_default();
+            let recolor = colors::follow::following().unwrap_or_else(|| colors::ColorSettings {
+                source: "wallpaper".into(),
+                ..self.settings.colors.clone()
+            });
+            self.wall_busy = true;
+            return Ok(WallJob {
+                steps: Vec::new(),
+                program,
+                path: PathBuf::new(),
+                monitor: None,
+                recolor: Some(recolor),
+            });
         }
         let path = payload
             .get("path")
@@ -182,6 +249,15 @@ impl Session {
                 .map(|ms| ms.into_iter().map(|m| m.name).collect())
                 .unwrap_or_default(),
         };
+        // The user's options when no mpvpaper is running to copy them from:
+        // as last seen running, else from the line that starts it at login.
+        let mpvpaper = Some(self.settings.wallpaper.mpvpaper.clone())
+            .filter(|a| !a.is_empty())
+            .or_else(|| {
+                let text = std::fs::read_to_string(self.settings.resolved_config_path()).ok()?;
+                startup::users_mpvpaper(&text)
+            })
+            .unwrap_or_default();
         let request = setter::Request {
             program,
             monitor: monitor.clone(),
@@ -189,6 +265,8 @@ impl Session {
             fit: self.settings.wallpaper.fit.clone(),
             monitors,
             hyprpaper_conf: walls::hyprpaper_conf(),
+            mpvpaper,
+            mpv: self.settings.wallpaper.mpv.clone(),
         };
         let steps = setter::plan(&request, &procs)?;
 
@@ -218,8 +296,22 @@ impl Session {
     fn finish_wall(&mut self, job: &WallJob, outcome: WallOutcome) -> Result<Option<String>> {
         self.wall_busy = false;
         self.wall_scan = Some(outcome.scan);
+        self.remember_mpvpaper();
         if let Err(e) = outcome.result {
             return Err(Error::other(e));
+        }
+        if job.steps.is_empty() {
+            let (Some(asked), Some(built)) = (&job.recolor, outcome.colors) else {
+                return Ok(None);
+            };
+            let applied =
+                built.map_err(Error::other).and_then(|b| self.apply_scheme(&b.scheme, asked));
+            if self.settings.colors.source == "wallpaper" && !self.colors_building {
+                self.colors_built = None;
+            }
+            return applied
+                .map(|a| Some(format!("Colors read from the wallpaper on screen. {a}")))
+                .map_err(|e| Error::other(format!("The colors were not changed: {e}")));
         }
         let what =
             job.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -365,6 +457,7 @@ impl Session {
                             "name": m,
                             "wallpaper": shown.map(|x| {
                                 let file = x.file().map(Path::to_path_buf);
+                                let thumb = file.as_deref().and_then(thumbs::path_for);
                                 json!({
                                     "program": x.program,
                                     // As the library lists folders: no
@@ -376,7 +469,8 @@ impl Session {
                                     "fileName": file.as_ref()
                                         .and_then(|f| f.file_name())
                                         .map(|n| n.to_string_lossy().into_owned()),
-                                    "thumb": file.as_deref().and_then(thumbs::path_for),
+                                    "ready": thumb.as_ref().is_some_and(|t| t.exists()),
+                                    "thumb": thumb,
                                 })
                             }),
                         })
@@ -388,6 +482,18 @@ impl Session {
         let desk = &self.desk;
         let line =
             |l: &startup::Line| json!({ "number": l.number, "text": l.text, "movable": l.movable });
+        // What mpvpaper would play a folder with now, for the page's
+        // timer and shuffle switches.
+        let mpv_argv = setter::mpvpaper_for_folder(
+            scan.map(|s| s.procs.as_slice()).unwrap_or_default(),
+            &w.mpvpaper,
+            &w.fit,
+            &w.mpv,
+        );
+        let mpv = json!({
+            "changeEvery": setter::slideshow(&mpv_argv).unwrap_or(0),
+            "shuffle": setter::shuffled(&mpv_argv),
+        });
         json!({
             "settings": w,
             "busy": self.wall_busy,
@@ -398,8 +504,12 @@ impl Session {
                 "running": running.contains(&p.id),
                 "videos": p.videos,
                 "folders": p.folders,
+                "gifs": p.gifs,
             })).collect::<Vec<_>>(),
-            "using": using.map(|p| json!({ "id": p.id, "videos": p.videos, "folders": p.folders })),
+            "mpv": mpv,
+            "using": using.map(|p| {
+                json!({ "id": p.id, "videos": p.videos, "folders": p.folders, "gifs": p.gifs })
+            }),
             "monitors": monitors,
             "unreadable": scan.map(|s| s.found.unreadable.clone()).unwrap_or_default(),
             "folders": desk.folders.iter().map(|f| json!({
@@ -412,6 +522,10 @@ impl Session {
                 "managed": desk.login_managed,
                 "lines": desk.login_lines.iter().map(line).collect::<Vec<_>>(),
                 "moved": desk.login_moved.iter().map(line).collect::<Vec<_>>(),
+                "block": desk.login_block.as_ref().map(|(number, text)| json!({
+                    "number": number,
+                    "text": text,
+                })),
                 "services": scan.map(|s| s.services.clone()).unwrap_or_default(),
             },
             "colorsFollow": desk.following.is_some(),
@@ -428,6 +542,7 @@ fn file_view(f: &Path) -> Value {
         "path": f,
         "name": f.file_name().map(|n| n.to_string_lossy().into_owned()),
         "video": library::video(f),
+        "gif": library::gif(f),
         "thumb": thumb,
         "ready": thumb.as_ref().is_some_and(|t| t.exists()),
     })

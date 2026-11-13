@@ -88,6 +88,113 @@ pub fn moved_lines(text: &str) -> Vec<Line> {
         .collect()
 }
 
+/// The mpvpaper command the user's config starts at login, from their own
+/// line or one handed over to hyprcustard, as arguments.
+pub fn users_mpvpaper(text: &str) -> Option<Vec<String>> {
+    user_lines(text)
+        .into_iter()
+        .chain(moved_lines(text))
+        .filter_map(|l| command_of(&l.text))
+        .find(|argv| program(argv) == "mpvpaper")
+}
+
+/// The command a start line runs, split as `sh` would: the string in
+/// `hl.exec_cmd("...")`, or what follows `exec-once =`. `None` for any
+/// other shape, or one this cannot read for certain.
+pub fn command_of(line: &str) -> Option<Vec<String>> {
+    let t = line.trim();
+    let cmd = if let Some(rest) = t.strip_prefix("hl.exec_cmd(") {
+        lua_string(rest.trim_start())?
+    } else {
+        let rest = t.strip_prefix("exec-once").or_else(|| t.strip_prefix("exec"))?;
+        rest.trim_start().strip_prefix('=')?.trim().to_string()
+    };
+    shell_split(&cmd).filter(|a| !a.is_empty())
+}
+
+/// The Lua string literal `s` starts with, unescaped.
+fn lua_string(s: &str) -> Option<String> {
+    let mut chars = s.chars();
+    let quote = chars.next().filter(|q| *q == '"' || *q == '\'')?;
+    let mut out = String::new();
+    while let Some(c) = chars.next() {
+        match c {
+            c if c == quote => return Some(out),
+            '\\' => match chars.next()? {
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                'r' => out.push('\r'),
+                c @ ('"' | '\'' | '\\') => out.push(c),
+                // Anything rarer is not a start line worth guessing at.
+                _ => return None,
+            },
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+/// Split a command line as `sh` would, for the quoting a start line uses:
+/// single and double quotes and backslashes. `None` for anything that needs
+/// a shell to read: an unclosed quote, a variable, a pipe or a `;`.
+fn shell_split(s: &str) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut in_word = false;
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            ' ' | '\t' => {
+                if in_word {
+                    out.push(std::mem::take(&mut word));
+                    in_word = false;
+                }
+            }
+            '\'' => {
+                in_word = true;
+                loop {
+                    match chars.next()? {
+                        '\'' => break,
+                        c => word.push(c),
+                    }
+                }
+            }
+            '"' => {
+                in_word = true;
+                loop {
+                    match chars.next()? {
+                        '"' => break,
+                        '\\' => word.push(chars.next()?),
+                        '$' | '`' => return None,
+                        c => word.push(c),
+                    }
+                }
+            }
+            '\\' => {
+                in_word = true;
+                word.push(chars.next()?);
+            }
+            '$' | '`' | '|' | ';' | '&' | '<' | '>' | '(' | ')' => return None,
+            c => {
+                in_word = true;
+                word.push(c);
+            }
+        }
+    }
+    if in_word {
+        out.push(word);
+    }
+    Some(out)
+}
+
+/// The managed block as it is in the config: the line its opening marker
+/// is on (1-based) and what is between the markers, for the page to show.
+pub fn block_text(text: &str) -> Option<(usize, String)> {
+    let split = block::split_with(text, &MARKERS).ok()??;
+    let line = split.before.lines().count() + 1;
+    Some((line, split.inner.trim_end().to_string()))
+}
+
 /// Whether the managed block is there.
 pub fn managed(text: &str) -> bool {
     matches!(block::split_with(text, &MARKERS), Ok(Some(_)))
@@ -249,6 +356,49 @@ fn split_keep(text: &str) -> Vec<&str> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_start_line_is_read_as_its_arguments() {
+        let v = |s: &[&str]| s.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let lua = r#"hl.exec_cmd("mpvpaper -p -a FULL -o 'no-audio --loop-file shuffle --video-zoom=.45' ALL ~/wallpaper/1920/")"#;
+        assert_eq!(
+            command_of(lua),
+            Some(v(&[
+                "mpvpaper",
+                "-p",
+                "-a",
+                "FULL",
+                "-o",
+                "no-audio --loop-file shuffle --video-zoom=.45",
+                "ALL",
+                "~/wallpaper/1920/"
+            ]))
+        );
+        let escaped = r#"hl.exec_cmd("mpvpaper -o \"no-audio loop\" DP-1 /w/a\\ b.mp4") -- mine"#;
+        assert_eq!(
+            command_of(escaped),
+            Some(v(&["mpvpaper", "-o", "no-audio loop", "DP-1", "/w/a b.mp4"]))
+        );
+        assert_eq!(
+            command_of("exec-once = swaybg -i ~/a.png -m fill"),
+            Some(v(&["swaybg", "-i", "~/a.png", "-m", "fill"]))
+        );
+        // Anything that needs a shell is not guessed at.
+        assert_eq!(command_of(r#"hl.exec_cmd("mpvpaper ALL $WALL")"#), None);
+        assert_eq!(command_of("exec-once = sleep 1; mpvpaper ALL ~/w"), None);
+        assert_eq!(command_of(r#"hl.exec_cmd("mpvpaper -o 'open ALL ~/w")"#), None);
+        assert_eq!(command_of("hl.exec_cmd(cmd)"), None);
+    }
+
+    #[test]
+    fn the_users_mpvpaper_comes_from_their_line_or_the_one_handed_over() {
+        let mine = "hl.exec_cmd(\"waybar\")\nhl.exec_cmd(\"mpvpaper -o 'no-audio' ALL ~/w/\")\n";
+        let argv = users_mpvpaper(mine).unwrap();
+        assert_eq!(argv[2], "no-audio");
+        let moved = format!("    {MOVED}hl.exec_cmd(\"mpvpaper -p ALL ~/w/\")\n");
+        assert_eq!(users_mpvpaper(&moved).unwrap()[1], "-p");
+        assert_eq!(users_mpvpaper("hl.exec_cmd(\"swaybg -i ~/a.png\")\n"), None);
+    }
+
     const CONFIG: &str = "\
 hl.on(\"hyprland.start\", function()
     hl.exec_cmd(\"waybar\")
@@ -307,6 +457,10 @@ hl.exec_cmd(\"swaybg\")
         assert!(moved[0].text.contains("mpvpaper"));
         assert!(taken.contains(&format!("    {MOVED}hl.exec_cmd(\"mpvpaper")));
         assert!(taken.contains("hl.exec_cmd(\"swaybg -o '*' -i /new.png -m fill\")"));
+        let (line, text) = block_text(&taken).unwrap();
+        assert_eq!(taken.lines().nth(line - 1), Some(MARKERS.begin));
+        assert!(text.contains("swaybg -o '*' -i /new.png") && !text.contains(MARKERS.end));
+        assert_eq!(block_text(CONFIG), None);
 
         let updated = update(&taken, &self::body(&["awww-daemon".into()])).unwrap();
         assert!(updated.contains("awww-daemon") && !updated.contains("/new.png"));
