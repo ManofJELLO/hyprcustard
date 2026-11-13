@@ -51,6 +51,7 @@ jobs:
           mkdir "$dir"
           cp target/release/hyprcustard target/release/custard-watch "$dir/"
           cp packaging/hyprcustard.desktop LICENSE README.md "$dir/"
+          cp crates/custard-gui/icons/hyprcustard.svg "$dir/"
           tar -czf "$dir.tar.gz" "$dir"
           sha256sum "$dir.tar.gz" | tee "$dir.tar.gz.sha256"
           # The line the AUR package needs, where the maintainer can find it.

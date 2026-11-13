@@ -58,6 +58,10 @@ package() {
     install -Dm755 "$_pkgname" "$pkgdir/usr/bin/$_pkgname"
     install -Dm755 custard-watch "$pkgdir/usr/bin/custard-watch"
     install -Dm644 "$_pkgname.desktop" "$pkgdir/usr/share/applications/$_pkgname.desktop"
+    # Releases before the icon was added have none to install.
+    if [ -f "$_pkgname.svg" ]; then
+        install -Dm644 "$_pkgname.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_pkgname.svg"
+    fi
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

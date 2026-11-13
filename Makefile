@@ -9,7 +9,7 @@ WATCH := custard-watch
 QMLLINT ?= qmllint
 QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
-.PHONY: all build release test check install uninstall clean shots aur-bin
+.PHONY: all build release test check install uninstall clean shots aur-bin icons
 
 all: release
 
@@ -43,6 +43,8 @@ install:
 	install -Dm755 target/release/$(WATCH) $(DESTDIR)$(PREFIX)/bin/$(WATCH)
 	install -Dm644 packaging/$(BIN).desktop \
 		$(DESTDIR)$(PREFIX)/share/applications/$(BIN).desktop
+	install -Dm644 crates/custard-gui/icons/$(BIN).svg \
+		$(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/$(BIN).svg
 	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/$(BIN)/LICENSE
 	install -Dm644 README.md $(DESTDIR)$(PREFIX)/share/doc/$(BIN)/README.md
 
@@ -50,8 +52,18 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(WATCH)
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/$(BIN).desktop
+	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/$(BIN).svg
 	rm -rf $(DESTDIR)$(PREFIX)/share/licenses/$(BIN)
 	rm -rf $(DESTDIR)$(PREFIX)/share/doc/$(BIN)
+
+# The PNGs the app shows its icon with, rendered from the SVGs. Qt reads a
+# PNG without the qt6-svg package, which the app does not otherwise need.
+# Committed, so building does not need rsvg-convert; run this after
+# changing an SVG.
+ICONS := crates/custard-gui/icons
+icons:
+	rsvg-convert -w 64 -h 64 $(ICONS)/hyprcustard-tray.svg -o $(ICONS)/hyprcustard-tray.png
+	rsvg-convert -w 128 -h 128 $(ICONS)/hyprcustard.svg -o $(ICONS)/hyprcustard.png
 
 # Render every page to a PNG without a compositor.
 shots: build
