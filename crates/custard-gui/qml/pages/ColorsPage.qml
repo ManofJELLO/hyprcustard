@@ -718,9 +718,18 @@ Item {
                                 width: parent.width
                                 spacing: Theme.gap
                                 Toggle {
+                                    id: targetSwitch
                                     text: row.t.name
                                     checked: row.t.on
                                     onToggled: page.setTarget(row.t.id, checked)
+
+                                    Tip {
+                                        visible: targetSwitch.hovered
+                                        delay: 400
+                                        text: "On: applying a scheme writes " + row.t.name + "'s colors file. "
+                                              + "Whether " + row.t.name + " uses it is the badge beside this, "
+                                              + "which follows its own config."
+                                    }
                                 }
                                 Badge {
                                     visible: row.t.on
