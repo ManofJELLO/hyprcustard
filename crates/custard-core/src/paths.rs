@@ -238,9 +238,15 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
     }
+    // A name of its own for every write: two writers saving the same file at
+    // once — two threads, or the app and custard-watch — must not share a
+    // temp file, or one renames the other's away and the second rename fails.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = path.with_extension(format!(
-        "{}.custard-tmp",
-        path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default()
+        "{}.{}-{n}.custard-tmp",
+        path.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_default(),
+        std::process::id()
     ));
 
     {
@@ -412,5 +418,26 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains("custard-tmp"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn writers_racing_on_one_file_all_succeed() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("settings.toml");
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let p = p.clone();
+                std::thread::spawn(move || {
+                    for j in 0..50 {
+                        write_atomic(&p, &format!("{i}-{j}")).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let left: Vec<_> = std::fs::read_dir(dir.path()).unwrap().filter_map(|e| e.ok()).collect();
+        assert_eq!(left.len(), 1, "only the file itself is left");
     }
 }
