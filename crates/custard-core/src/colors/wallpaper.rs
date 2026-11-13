@@ -88,11 +88,15 @@ pub fn detect() -> Found {
         match program(argv) {
             "mpvpaper" => {
                 if let Some(mut w) = mpvpaper_args(argv) {
+                    w.path = resolve(&w.path, &proc_dir(*pid));
                     w.showing = open_media(*pid, &w.path);
                     found.wallpapers.push(w);
                 }
             }
-            "swaybg" => found.wallpapers.extend(swaybg_args(argv)),
+            "swaybg" => found.wallpapers.extend(swaybg_args(argv).into_iter().map(|mut w| {
+                w.path = resolve(&w.path, &proc_dir(*pid));
+                w
+            })),
             _ => {}
         }
     }
@@ -169,6 +173,23 @@ fn background_namespaces() -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+fn proc_dir(pid: u32) -> PathBuf {
+    PathBuf::from(format!("/proc/{pid}"))
+}
+
+/// A path from a process's command line made absolute the way that process
+/// sees it: relative to the folder it was started in, which is not
+/// necessarily this one's. `proc` is its `/proc/<pid>` folder.
+pub fn resolve(path: &Path, proc: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    match std::fs::read_link(proc.join("cwd")) {
+        Ok(cwd) => cwd.join(path),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 /// This session's processes and their command lines.
@@ -583,6 +604,15 @@ mod tests {
         let everywhere = Found { wallpapers: vec![w(None, "/all")], ..found.clone() };
         assert_eq!(everywhere.for_monitor("DP-1").unwrap().path, PathBuf::from("/all"));
         assert!(Found::default().for_monitor("").is_none());
+    }
+
+    #[test]
+    fn a_relative_path_is_read_from_where_the_program_started() {
+        let me = PathBuf::from(format!("/proc/{}", std::process::id()));
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(resolve(Path::new("wall.png"), &me), cwd.join("wall.png"));
+        assert_eq!(resolve(Path::new("/w/a.png"), &me), PathBuf::from("/w/a.png"));
+        assert_eq!(resolve(Path::new("a.png"), Path::new("/proc/0")), PathBuf::from("a.png"));
     }
 
     #[test]

@@ -102,11 +102,14 @@ pub fn all(config_home: &Path, hypr_config: &Path) -> Vec<Target> {
             config: config_home.join("rofi").join("config.rasi"),
             file: config_home.join("rofi").join("hyprcustard-colors.rasi"),
             line: "@import \"hyprcustard-colors.rasi\"".into(),
-            place: "at the top of",
+            // Rofi drops whatever came before an `@theme`, so the import
+            // goes after one.
+            place: "at the top (after any @theme line) of",
             wired: false,
             usage: "Use the names in your theme: @primary, @on-surface, @base0D \
-                    (rofi spells them with dashes). A color your theme defines itself \
-                    keeps your value.",
+                    (rofi spells them with dashes). The import comes after your @theme \
+                    line, so where your theme defines the same name (background, for \
+                    one), the scheme's color is used.",
         },
         Target {
             id: "dunst",
@@ -147,6 +150,11 @@ pub fn all(config_home: &Path, hypr_config: &Path) -> Vec<Target> {
         if !t.line.is_empty() {
             t.wired = loads(&t.config, &t.file);
         }
+        // An import before rofi's `@theme` is thrown away by it.
+        if t.id == "rofi" && t.wired {
+            let text = std::fs::read_to_string(&t.config).unwrap_or_default();
+            t.wired = !imports_before_theme(&text, &t.file);
+        }
     }
     list
 }
@@ -159,6 +167,20 @@ fn loads(config: &Path, file: &Path) -> bool {
         let t = l.trim_start();
         let comment = ["#", "//", "--", "/*"].iter().any(|c| t.starts_with(c));
         !comment && t.contains(name)
+    })
+}
+
+/// Whether every line of a rofi config naming `file` comes before its last
+/// `@theme`, which discards what was defined before it.
+fn imports_before_theme(text: &str, file: &Path) -> bool {
+    let Some(name) = file.file_name().and_then(|n| n.to_str()) else { return false };
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(theme) = lines.iter().rposition(|l| l.trim_start().starts_with("@theme")) else {
+        return false;
+    };
+    !lines[theme..].iter().any(|l| {
+        let t = l.trim_start();
+        !t.starts_with("//") && !t.starts_with("/*") && t.contains(name)
     })
 }
 
@@ -336,7 +358,9 @@ pub fn wire(target: &Target, keep: usize) -> Result<Option<PathBuf>> {
     }
     let backup = crate::paths::backup(&target.config, keep)?;
     let text = std::fs::read_to_string(&target.config).unwrap_or_default();
-    let wired = if target.place == "at the top of" {
+    let wired = if target.id == "rofi" {
+        after_theme(&text, &target.line)
+    } else if target.place == "at the top of" {
         format!("{}\n{text}", target.line)
     } else {
         let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
@@ -344,6 +368,25 @@ pub fn wire(target: &Target, keep: usize) -> Result<Option<PathBuf>> {
     };
     crate::paths::write_atomic(&target.config, &wired)?;
     Ok(backup)
+}
+
+/// `line` put after the last `@theme` line of a rofi config, or at the top
+/// when there is none.
+fn after_theme(text: &str, line: &str) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match lines.iter().rposition(|l| l.trim_start().starts_with("@theme")) {
+        None => format!("{line}\n{text}"),
+        Some(i) => {
+            let mut out: String = lines[..=i].concat();
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(line);
+            out.push('\n');
+            out.push_str(&lines[i + 1..].concat());
+            out
+        }
+    }
 }
 
 /// Tell a running app to pick its new colors up.
@@ -384,12 +427,7 @@ pub fn reload(target: &Target) -> Option<String> {
 
 /// The ids of this user's processes running `name`.
 fn pids(name: &str) -> Vec<String> {
-    let Ok(rd) = std::fs::read_dir("/proc") else { return Vec::new() };
-    rd.filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_str().is_some_and(|s| s.chars().all(|c| c.is_ascii_digit())))
-        .filter(|e| std::fs::read_to_string(e.path().join("comm")).is_ok_and(|c| c.trim() == name))
-        .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .collect()
+    crate::procs::named(name).iter().map(u32::to_string).collect()
 }
 
 fn running(name: &str) -> bool {
@@ -485,6 +523,36 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&kitty.config).unwrap(),
             "font_size 11\n\ninclude hyprcustard-colors.conf\n"
+        );
+    }
+
+    #[test]
+    fn rofi_imports_after_its_theme_line() {
+        let (_dir, list) = setup();
+        let rofi = target(&list, "rofi");
+        std::fs::create_dir_all(rofi.config.parent().unwrap()).unwrap();
+        let line = "@import \"hyprcustard-colors.rasi\"";
+        // No @theme: the top.
+        std::fs::write(&rofi.config, "configuration { modi: \"drun\"; }\n").unwrap();
+        wire(rofi, 0).unwrap();
+        assert!(std::fs::read_to_string(&rofi.config).unwrap().starts_with(line));
+
+        // An import above the @theme, as the first version wrote it, does not
+        // count: the theme line discards it.
+        let theirs = format!(
+            "{line}\nconfiguration {{ modi: \"drun\"; }}\n@theme \"~/.config/rofi/mine.rasi\"\n"
+        );
+        std::fs::write(&rofi.config, &theirs).unwrap();
+        let again = all_again(&list, "rofi");
+        assert!(!again.wired);
+        wire(&again, 0).unwrap();
+        let text = std::fs::read_to_string(&rofi.config).unwrap();
+        assert_eq!(text, format!("{theirs}{line}\n"));
+        assert!(all_again(&list, "rofi").wired);
+
+        assert_eq!(
+            after_theme("@theme \"x\"\nelement { }", line),
+            format!("@theme \"x\"\n{line}\nelement {{ }}")
         );
     }
 

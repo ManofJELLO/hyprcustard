@@ -34,6 +34,7 @@ pub mod motion;
 pub mod paths;
 pub mod preset;
 pub mod preview;
+pub mod procs;
 pub mod rules;
 pub mod session;
 pub mod settings;

@@ -314,15 +314,7 @@ fn image_in(argv: &[String]) -> Option<&str> {
 
 /// Make a path from a command line absolute, the way that process would.
 fn resolve(path: &str, proc: &Path) -> PathBuf {
-    let path = Path::new(path);
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    // Relative to wherever it was started, which is not where this app was.
-    match std::fs::read_link(proc.join("cwd")) {
-        Ok(cwd) => cwd.join(path),
-        Err(_) => path.to_path_buf(),
-    }
+    crate::colors::wallpaper::resolve(Path::new(path), proc)
 }
 
 /// The photograph, taken at most once for the life of the app.

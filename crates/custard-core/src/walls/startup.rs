@@ -32,6 +32,9 @@ pub struct Line {
     pub number: usize,
     /// The line, trimmed.
     pub text: String,
+    /// Whether the line is one start command and nothing else, so that
+    /// commenting it out cannot break the code around it.
+    pub movable: bool,
 }
 
 /// Lines that start a wallpaper program at login, outside any managed block
@@ -47,8 +50,31 @@ pub fn user_lines(text: &str) -> Vec<Line> {
                 && !t.contains("bind")
                 && WORDS.iter().any(|w| has_word(t, w))
         })
-        .map(|(number, l)| Line { number, text: l.trim().to_string() })
+        .map(|(number, l)| Line { number, text: l.trim().to_string(), movable: movable(l) })
         .collect()
+}
+
+/// Whether a line is a single start command: `hl.exec_cmd("...")`, perhaps
+/// with a trailing comment, or a hyprlang `exec-once = ...`. Anything sharing
+/// the line — a `function()` opening, an `end)`, a second call, a table —
+/// would be commented out with it.
+fn movable(line: &str) -> bool {
+    let t = line.trim();
+    if t.starts_with("exec-once") || t.starts_with("exec ") || t.starts_with("exec=") {
+        return true;
+    }
+    // A trailing comment, when it comes after the call's last parenthesis.
+    let t = match (t.rfind(')'), t.rfind("--")) {
+        (Some(close), Some(dash)) if dash > close => t[..dash].trim_end(),
+        _ => t,
+    };
+    let opens = t.matches('(').count();
+    t.starts_with("hl.exec_cmd(")
+        && t.ends_with(')')
+        && t.matches("exec_cmd(").count() == 1
+        && opens == t.matches(')').count()
+        && !t.contains(['{', '}', ';'])
+        && !t.contains("function")
 }
 
 /// Lines hyprcustard commented out when it took over.
@@ -57,7 +83,7 @@ pub fn moved_lines(text: &str) -> Vec<Line> {
         .enumerate()
         .filter_map(|(i, l)| {
             let rest = l.trim_start().strip_prefix(MOVED)?;
-            Some(Line { number: i + 1, text: rest.trim().to_string() })
+            Some(Line { number: i + 1, text: rest.trim().to_string(), movable: true })
         })
         .collect()
 }
@@ -68,8 +94,23 @@ pub fn managed(text: &str) -> bool {
 }
 
 /// Comment out the user's lines and put `body` in the managed block.
+///
+/// Refused, with nothing changed, when a line that starts a wallpaper also
+/// holds other code: commenting it out would break the config.
 pub fn hand_over(text: &str, body: &str) -> Result<String> {
-    let numbers: Vec<usize> = user_lines(text).into_iter().map(|l| l.number).collect();
+    let lines = user_lines(text);
+    let stuck: Vec<String> =
+        lines.iter().filter(|l| !l.movable).map(|l| l.number.to_string()).collect();
+    if !stuck.is_empty() {
+        return Err(crate::error::Error::other(format!(
+            "{} {} of hyprland.lua starts the wallpaper alongside other code, so it cannot \
+             be commented out on its own. Put the start command on a line of its own, or \
+             remove it yourself, and try again",
+            if stuck.len() == 1 { "Line" } else { "Lines" },
+            stuck.join(", ")
+        )));
+    }
+    let numbers: Vec<usize> = lines.into_iter().map(|l| l.number).collect();
     let mut out: Vec<String> = Vec::new();
     for (i, l) in split_keep(text).into_iter().enumerate() {
         if numbers.contains(&(i + 1)) {
@@ -230,6 +271,29 @@ hl.exec_cmd(\"swaybg\")
         assert!(lines[0].text.starts_with("hl.exec_cmd(\"mpvpaper"));
         assert!(!has_word("hl.exec_cmd(\"mpvpaper-helper\")", "mpvpaper"));
         assert!(has_word("exec-once = swww-daemon", "swww-daemon"));
+    }
+
+    #[test]
+    fn a_line_with_other_code_on_it_is_never_commented_out() {
+        assert!(movable("    hl.exec_cmd(\"swaybg -i x.png\")"));
+        assert!(movable("hl.exec_cmd(\"mpvpaper ALL /w/\")  -- the clips (shuffled)"));
+        assert!(movable("exec-once = swww-daemon"));
+        for bad in [
+            "hl.on(\"hyprland.start\", function() hl.exec_cmd(\"swaybg -i x.png\")",
+            "hl.exec_cmd(\"swaybg -i x.png\") end)",
+            "hl.exec_cmd(\"swaybg\") hl.exec_cmd(\"waybar\")",
+            "local cmds = { hl.exec_cmd(\"swaybg\") }",
+            "hl.exec_cmd(",
+        ] {
+            assert!(!movable(bad), "{bad}");
+        }
+        let one_line =
+            "hl.on(\"hyprland.start\", function() hl.exec_cmd(\"swaybg -i x.png\")\nend)\n";
+        let lines = user_lines(one_line);
+        assert_eq!(lines.len(), 1);
+        assert!(!lines[0].movable);
+        let e = hand_over(one_line, "x").unwrap_err().to_string();
+        assert!(e.starts_with("Line 1 of hyprland.lua"), "{e}");
     }
 
     #[test]

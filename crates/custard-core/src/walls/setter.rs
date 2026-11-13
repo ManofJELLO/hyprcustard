@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::colors::wallpaper::{mpvpaper_args, mpvpaper_positions, program, swaybg_args};
+use crate::colors::wallpaper::{mpvpaper_args, mpvpaper_positions, program, resolve, swaybg_args};
 use crate::error::{Error, Result};
 
 /// A wallpaper program this can drive.
@@ -66,6 +66,41 @@ pub fn get(id: &str) -> Option<Program> {
 /// Whether `p` is installed.
 pub fn installed(p: &Program) -> bool {
     crate::paths::which(p.binary).is_some() && crate::paths::which(p.process).is_some()
+}
+
+/// Refuse a program too old to drive the way [`plan`] does. Only
+/// hyprpaper has such a line: 0.8 changed its IPC (no more `preload`, a fit
+/// mode in `wallpaper`) and its config (`wallpaper { ... }` blocks).
+pub fn check_version(p: &Program) -> Result<()> {
+    if p.id != "hyprpaper" || cfg!(test) {
+        return Ok(());
+    }
+    let out = Command::new("hyprpaper")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    match parse_version(&out) {
+        Some(v) if v < (0, 8) => Err(Error::other(format!(
+            "hyprcustard drives hyprpaper 0.8 or newer, and this is {}.{}. Update hyprpaper, \
+             or choose another program under \"Show it with\"",
+            v.0, v.1
+        ))),
+        // Unreadable: assume it is new, as every current one is.
+        _ => Ok(()),
+    }
+}
+
+/// `(major, minor)` from the first `v1.2.3`-looking word.
+fn parse_version(text: &str) -> Option<(u32, u32)> {
+    text.split_whitespace().find_map(|w| {
+        let mut parts = w.trim_start_matches('v').split('.');
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next()?.parse().ok()?;
+        Some((major, minor))
+    })
 }
 
 /// Which of [`PROGRAMS`] are running, among `procs`.
@@ -201,9 +236,10 @@ pub fn plan(req: &Request, procs: &[(u32, Vec<String>)]) -> Result<Vec<Step>> {
         }
         "swaybg" => {
             let mut entries: Vec<(Option<String>, String)> = Vec::new();
-            for (_, argv) in &mine {
+            for (pid, argv) in &mine {
                 for w in swaybg_args(argv) {
-                    entries.push((w.monitor, w.path.to_string_lossy().into_owned()));
+                    let path = resolve(&w.path, &PathBuf::from(format!("/proc/{pid}")));
+                    entries.push((w.monitor, path.to_string_lossy().into_owned()));
                 }
             }
             let entries = per_monitor(entries, monitor.as_deref(), &path, &req.monitors);
@@ -234,7 +270,10 @@ pub fn plan(req: &Request, procs: &[(u32, Vec<String>)]) -> Result<Vec<Step>> {
                 })
                 .or(mine.first())
                 .map(|(_, a)| (*a).clone())
-                .unwrap_or_else(|| mpvpaper_default(&req.fit));
+                // Options hyprcustard chose itself are chosen again for this
+                // pick: a file's `loop` would keep a folder on its first clip.
+                .filter(|a| !ours(a))
+                .unwrap_or_else(|| mpvpaper_default(&req.fit, req.path.is_dir()));
             let mut s = Vec::new();
             let mut stop = Vec::new();
             match &monitor {
@@ -251,7 +290,8 @@ pub fn plan(req: &Request, procs: &[(u32, Vec<String>)]) -> Result<Vec<Step>> {
                             // One process on every monitor: the others keep
                             // what it plays, each in a process of its own.
                             None => {
-                                let old = w.path.to_string_lossy().into_owned();
+                                let old = resolve(&w.path, &PathBuf::from(format!("/proc/{pid}")));
+                                let old = old.to_string_lossy().into_owned();
                                 for other in req.monitors.iter().filter(|o| *o != m) {
                                     s.push(Step::Start(mpvpaper_with(argv, other, &old)));
                                 }
@@ -327,15 +367,32 @@ pub fn mpvpaper_with(argv: &[String], output: &str, path: &str) -> Vec<String> {
 }
 
 /// mpvpaper's command for someone who has not run it before: paused while a
-/// window covers it, silent, looping, and filling the screen as asked.
-fn mpvpaper_default(fit: &str) -> Vec<String> {
-    let mut opts = String::from("no-audio loop");
+/// window covers it, silent, and filling the screen as asked. A file loops;
+/// a folder plays through and starts again, each image staying five
+/// minutes (mpv's default is one second).
+fn mpvpaper_default(fit: &str, folder: bool) -> Vec<String> {
+    let mut opts = String::from(if folder {
+        "no-audio loop-playlist image-display-duration=300"
+    } else {
+        "no-audio loop"
+    });
     match fit {
         "fit" => {}
         "stretch" => opts.push_str(" keepaspect=no"),
         _ => opts.push_str(" panscan=1.0"),
     }
     ["mpvpaper", "-p", "-o", &opts, "ALL", ""].map(String::from).to_vec()
+}
+
+/// Whether an mpvpaper command line has the options [`mpvpaper_default`]
+/// gives, for any fit and either kind of pick.
+fn ours(argv: &[String]) -> bool {
+    ["fill", "fit", "stretch"].iter().any(|fit| {
+        [false, true].iter().any(|folder| {
+            let d = mpvpaper_default(fit, *folder);
+            argv.len() == d.len() && argv[1..4] == d[1..4]
+        })
+    })
 }
 
 fn hyprpaper_fit(fit: &str) -> &'static str {
@@ -633,6 +690,20 @@ mod tests {
         let Step::Start(a) = &steps[0] else { panic!() };
         assert_eq!(a.join(" "), format!("mpvpaper -p -o no-audio loop panscan=1.0 ALL {p}"));
         assert_eq!(steps.len(), 1);
+        // A folder plays through rather than repeating its first file —
+        // also after a file hyprcustard started with its own options.
+        let steps = plan(&req("mpvpaper", None, dir.path()), &[]).unwrap();
+        let Step::Start(a) = &steps[0] else { panic!() };
+        let folder_opts = "no-audio loop-playlist image-display-duration=300 panscan=1.0";
+        assert_eq!(a[3], folder_opts);
+        let ours_running = vec![(8, mpvpaper_with(&mpvpaper_default("fill", false), "ALL", &p))];
+        let steps = plan(&req("mpvpaper", None, dir.path()), &ours_running).unwrap();
+        let Step::Start(a) = &steps[0] else { panic!() };
+        assert_eq!(a[3], folder_opts);
+        // The user's own are kept, whatever they are.
+        let steps = plan(&req("mpvpaper", None, dir.path()), &running).unwrap();
+        let Step::Start(a) = &steps[0] else { panic!() };
+        assert_eq!(a[5], "no-audio --loop-file shuffle");
     }
 
     #[test]
@@ -644,6 +715,14 @@ mod tests {
         assert!(!cmd.contains(&"-o".to_string()), "every monitor: {cmd:?}");
         assert_eq!(steps[3], Step::Settle(400));
         assert_eq!(steps[4], Step::Stop(vec![5, 6]));
+    }
+
+    #[test]
+    fn hyprpaper_versions() {
+        assert_eq!(parse_version("hyprpaper v0.8.5\n"), Some((0, 8)));
+        assert_eq!(parse_version("hyprpaper v0.7.6"), Some((0, 7)));
+        assert_eq!(parse_version("hyprpaper 1.0"), Some((1, 0)));
+        assert_eq!(parse_version("no idea"), None);
     }
 
     #[test]

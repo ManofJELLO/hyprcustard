@@ -45,6 +45,33 @@ pub struct Live {
     pub look: BTreeMap<String, LookValue>,
     /// The animation leaves and curves the compositor is running with.
     pub motion: motion::LiveMotion,
+    /// Whether custard-watch is running.
+    pub watch_running: bool,
+    /// What custard-watch last reported.
+    pub watch_status: Option<colors::follow::Status>,
+}
+
+/// Facts about the desktop the Colors and Wallpaper pages show, read once
+/// and kept: which apps and programs are installed, what loads the colors
+/// files, the folder list, the login lines.
+///
+/// Reading them means `which` on a dozen names, several configs and a scan
+/// of candidate folders — too much for every state push, which the
+/// five-second live probe makes whichever page is open. They change when
+/// the user does something, so they are read again after every command and
+/// scan, and on Refresh.
+#[derive(Debug, Clone, Default)]
+struct Desk {
+    targets: Vec<colors::targets::Target>,
+    ffmpeg: bool,
+    watch_installed: bool,
+    following: Option<colors::ColorSettings>,
+    /// Ids of the installed wallpaper programs.
+    programs: Vec<&'static str>,
+    folders: Vec<walls::library::Folder>,
+    login_managed: bool,
+    login_lines: Vec<walls::startup::Line>,
+    login_moved: Vec<walls::startup::Line>,
 }
 
 /// Which part of the app noticed a problem.
@@ -132,6 +159,8 @@ pub struct Session {
     wall_scan: Option<walls::Scan>,
     /// True while a wallpaper is going up.
     wall_busy: bool,
+    /// See [`Desk`].
+    desk: Desk,
 }
 
 impl Session {
@@ -195,10 +224,12 @@ impl Session {
             systemd_session: colors::follow::systemd_available(),
             wall_scan: None,
             wall_busy: false,
+            desk: Desk::default(),
         };
         session.rescan_shaders();
         session.refresh_live();
         session.rescan_presets();
+        session.refresh_desk();
         session
     }
 
@@ -388,7 +419,8 @@ impl Session {
     pub fn set_live(&mut self, live: Live) {
         self.live = live;
         // The watcher may have changed the colors since; the app's window
-        // follows when it wears the scheme.
+        // follows when it wears the scheme. Read here rather than in the
+        // probe, which may have started before an Apply that just happened.
         let current = colors::current();
         if current != self.colors_applied {
             self.colors_applied = current;
@@ -729,6 +761,34 @@ impl Session {
     /// Returns a message for the status bar, or `None` when the change speaks
     /// for itself.
     pub fn command(&mut self, name: &str, payload: &Value) -> Result<Option<String>> {
+        let result = self.run_command(name, payload);
+        // Whatever it did may have changed what the desktop pages show.
+        self.refresh_desk();
+        result
+    }
+
+    /// Read the [`Desk`] facts again.
+    pub fn refresh_desk(&mut self) {
+        let config = self.settings.resolved_config_path();
+        let text = std::fs::read_to_string(&config).unwrap_or_default();
+        self.desk = Desk {
+            targets: self.color_targets(),
+            ffmpeg: colors::extract::have_ffmpeg(),
+            watch_installed: colors::follow::binary().is_some(),
+            following: colors::follow::following(),
+            programs: walls::setter::PROGRAMS
+                .iter()
+                .filter(|p| cfg!(test) || walls::setter::installed(p))
+                .map(|p| p.id)
+                .collect(),
+            folders: self.wall_folders(),
+            login_managed: walls::startup::managed(&text),
+            login_lines: walls::startup::user_lines(&text),
+            login_moved: walls::startup::moved_lines(&text),
+        };
+    }
+
+    fn run_command(&mut self, name: &str, payload: &Value) -> Result<Option<String>> {
         match name {
             // --- rules ---
             "rule.add" => {
@@ -1311,12 +1371,7 @@ impl Session {
             Some(Err(e)) => return Err(Error::other(e.clone())),
             None => return Err(Error::other("the scheme is still being built")),
         };
-        let done = colors::apply(&built, &self.settings.colors, &self.color_targets())?;
-        self.colors_applied = Some(built.clone());
-        if self.config.theme == "scheme" {
-            self.refresh_theme();
-        }
-        let mut msg = done.summary(&built.name);
+        let mut msg = self.apply_scheme(&built, &self.settings.colors.clone())?;
         // The watcher follows what was last applied: the new choices, or —
         // after applying something that is not the wallpaper — nothing.
         if let Some(following) = colors::follow::following() {
@@ -1331,6 +1386,21 @@ impl Session {
             }
         }
         Ok(Some(msg))
+    }
+
+    /// Write `scheme` for the apps `choices` turn on, and reload them. The
+    /// message says what happened.
+    fn apply_scheme(
+        &mut self,
+        scheme: &colors::Scheme,
+        choices: &colors::ColorSettings,
+    ) -> Result<String> {
+        let done = colors::apply(scheme, choices, &self.color_targets())?;
+        self.colors_applied = Some(scheme.clone());
+        if self.config.theme == "scheme" {
+            self.refresh_theme();
+        }
+        Ok(done.summary(&scheme.name))
     }
 
     /// Make one app's config load its colors file.
@@ -1406,7 +1476,7 @@ impl Session {
             "styles": colors::scheme::STYLES.iter().map(|(id, label, hint)| json!({
                 "id": id, "label": label, "hint": hint,
             })).collect::<Vec<_>>(),
-            "targets": self.color_targets().iter().map(|t| json!({
+            "targets": self.desk.targets.iter().map(|t| json!({
                 "id": t.id,
                 "name": t.name,
                 "installed": t.installed,
@@ -1419,14 +1489,14 @@ impl Session {
                 "usage": t.usage,
             })).collect::<Vec<_>>(),
             "hyprlandConflicts": conflicts,
-            "ffmpeg": colors::extract::have_ffmpeg(),
+            "ffmpeg": self.desk.ffmpeg,
             "paletteDir": paths::contract(&colors::named::dir()),
             "appUsesScheme": self.config.theme == "scheme",
             "follow": {
-                "on": colors::follow::following().is_some(),
-                "running": !colors::follow::running_pids().is_empty(),
-                "status": colors::follow::read_status(),
-                "installed": colors::follow::binary().is_some(),
+                "on": self.desk.following.is_some(),
+                "running": self.live.watch_running,
+                "status": self.live.watch_status,
+                "installed": self.desk.watch_installed,
                 "systemd": self.systemd_session,
             },
         })
@@ -2105,6 +2175,8 @@ pub fn probe_live() -> Live {
         },
         look: if running { look::read_live().unwrap_or_default() } else { BTreeMap::new() },
         motion: if running { motion::read_live().unwrap_or_default() } else { Default::default() },
+        watch_running: !colors::follow::running_pids().is_empty(),
+        watch_status: colors::follow::read_status(),
     }
 }
 
@@ -2282,7 +2354,7 @@ mod tests {
     use super::*;
 
     fn session() -> Session {
-        Session {
+        let mut s = Session {
             settings: Settings::default(),
             config: Config::default(),
             saved: Config::default(),
@@ -2308,7 +2380,10 @@ mod tests {
             systemd_session: false,
             wall_scan: None,
             wall_busy: false,
-        }
+            desk: Desk::default(),
+        };
+        s.refresh_desk();
+        s
     }
 
     #[test]
@@ -3347,7 +3422,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pick_can_recolor_the_desktop() {
+    fn a_pick_recolors_without_touching_the_colors_page_or_what_is_followed() {
         let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = colors::follow::clear_snapshot();
         let (dir, _cfg, mut s) = rule_session("-- mine\n");
@@ -3355,20 +3430,50 @@ mod tests {
         std::fs::write(&png, b"x").unwrap();
         s.set_wall_scan(swaybg_scan("/cur.png"));
         s.settings.wallpaper.program = "swaybg".into();
-        s.settings.wallpaper.recolor = true;
         s.settings.colors.source = "scheme:nord".into();
+        s.settings.colors.style = "vibrant".into();
 
+        // Not asked for: nothing to read.
         let job = s.wall_job(&json!({ "path": png })).unwrap();
-        assert_eq!(s.settings.colors.source, "wallpaper", "reading colors from it now");
-        assert!(s.colors_building);
+        assert!(job.recolor.is_none());
+        s.wall_done(&job, WallOutcome { result: Ok(()), scan: swaybg_scan("/x"), colors: None })
+            .unwrap();
+
+        // Asked for here: the page's choices, read from the wallpaper.
+        s.settings.wallpaper.recolor = true;
+        let job = s.wall_job(&json!({ "path": png })).unwrap();
         let asked = job.recolor.clone().unwrap();
+        assert_eq!((asked.source.as_str(), asked.style.as_str()), ("wallpaper", "vibrant"));
         let seed = colors::ColorSettings { source: "color:#88d0ec".into(), ..asked.clone() };
         let built = colors::build(&seed, &s.palettes).unwrap();
         let out =
             WallOutcome { result: Ok(()), scan: swaybg_scan("/cur.png"), colors: Some(Ok(built)) };
         let msg = s.wall_done(&job, out).unwrap().unwrap();
-        assert!(!s.colors_building);
         assert!(msg.contains("is up") && msg.contains("#88d0ec"), "{msg}");
         assert_eq!(colors::current().unwrap().name, "#88d0ec");
+        assert_eq!(s.settings.colors.source, "scheme:nord", "the page is left alone");
+
+        // Following: the followed choices win over the page's untried ones,
+        // and the snapshot is not rewritten.
+        let followed = colors::ColorSettings {
+            source: "wallpaper".into(),
+            style: "tonal-spot".into(),
+            ..Default::default()
+        };
+        colors::follow::write_snapshot(&followed).unwrap();
+        let job = s.wall_job(&json!({ "path": png })).unwrap();
+        assert_eq!(job.recolor.as_ref().unwrap().style, "tonal-spot");
+        let built = colors::build(
+            &colors::ColorSettings { source: "color:#c02020".into(), ..followed.clone() },
+            &s.palettes,
+        )
+        .unwrap();
+        let out =
+            WallOutcome { result: Ok(()), scan: swaybg_scan("/cur.png"), colors: Some(Ok(built)) };
+        s.wall_done(&job, out).unwrap();
+        assert_eq!(colors::current().unwrap().name, "#c02020");
+        assert_eq!(colors::follow::following().unwrap(), followed);
+        assert_eq!(s.settings.colors.style, "vibrant");
+        colors::follow::clear_snapshot().unwrap();
     }
 }

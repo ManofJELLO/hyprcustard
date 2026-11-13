@@ -143,6 +143,8 @@ impl Session {
     /// Take a scan made away from the UI thread.
     pub fn set_wall_scan(&mut self, scan: walls::Scan) {
         self.wall_scan = Some(scan);
+        // The found folders come from it.
+        self.refresh_desk();
     }
 
     /// Work out how to put up the wallpaper `payload` names
@@ -173,6 +175,7 @@ impl Session {
         if !setter::installed(&program) && !cfg!(test) {
             return Err(Error::other(format!("{} is not installed", program.id)));
         }
+        setter::check_version(&program)?;
         let monitors = match &self.wall_scan {
             Some(s) if !s.found.monitors.is_empty() => s.found.monitors.clone(),
             _ => hyprctl::monitors()
@@ -189,21 +192,17 @@ impl Session {
         };
         let steps = setter::plan(&request, &procs)?;
 
-        // Colors follow it when the user asked for that here, or turned on
-        // following on the Colors page — which would otherwise wait out its
-        // minimum gap before catching up with a change asked for by hand.
-        let recolor = self.settings.wallpaper.recolor || colors::follow::following().is_some();
-        let recolor = if recolor {
-            if self.settings.colors.source != "wallpaper" {
-                self.settings.colors.source = "wallpaper".into();
-                self.settings.save()?;
-            }
-            self.colors_built = None;
-            self.colors_building = true;
-            Some(self.settings.colors.clone())
-        } else {
-            None
-        };
+        // Colors follow it when following is on — with the choices being
+        // followed, not whatever the Colors page is trying out, and at once
+        // rather than after the watcher's minimum gap — or when the user
+        // asked for that here, with the Colors page's choices read from this
+        // wallpaper. Neither changes the page or what is followed.
+        let recolor = colors::follow::following().or_else(|| {
+            self.settings.wallpaper.recolor.then(|| colors::ColorSettings {
+                source: "wallpaper".into(),
+                ..self.settings.colors.clone()
+            })
+        });
         self.wall_busy = true;
         Ok(WallJob { steps, program: program.id, path, monitor, recolor })
     }
@@ -211,12 +210,15 @@ impl Session {
     /// Take back a finished [`WallJob`]: keep the login block in step with
     /// what is on screen, and apply the colors read from it.
     pub fn wall_done(&mut self, job: &WallJob, outcome: WallOutcome) -> Result<Option<String>> {
+        let result = self.finish_wall(job, outcome);
+        self.refresh_desk();
+        result
+    }
+
+    fn finish_wall(&mut self, job: &WallJob, outcome: WallOutcome) -> Result<Option<String>> {
         self.wall_busy = false;
         self.wall_scan = Some(outcome.scan);
         if let Err(e) = outcome.result {
-            if job.recolor.is_some() {
-                self.colors_building = false;
-            }
             return Err(Error::other(e));
         }
         let what =
@@ -234,16 +236,13 @@ impl Session {
         }
 
         if let (Some(asked), Some(built)) = (&job.recolor, outcome.colors) {
-            let ok = built.is_ok();
-            self.set_colors_built(asked, built);
-            if ok {
-                match self.apply_colors() {
-                    Ok(Some(applied)) => msg.push_str(&format!(". {applied}")),
-                    Ok(None) => {}
-                    Err(e) => msg.push_str(&format!(". The colors were not changed: {e}")),
-                }
-            } else if let Some(Err(e)) = &self.colors_built {
-                msg.push_str(&format!(". The colors were not changed: {e}"));
+            match built.map_err(Error::other).and_then(|b| self.apply_scheme(&b.scheme, asked)) {
+                Ok(applied) => msg.push_str(&format!(". {applied}")),
+                Err(e) => msg.push_str(&format!(". The colors were not changed: {e}")),
+            }
+            // A Colors page reading the wallpaper is showing the old one.
+            if self.settings.colors.source == "wallpaper" && !self.colors_building {
+                self.colors_built = None;
             }
         }
         Ok(Some(msg))
@@ -386,15 +385,16 @@ impl Session {
             })
             .unwrap_or_default();
         let config = self.settings.resolved_config_path();
-        let text = std::fs::read_to_string(&config).unwrap_or_default();
-        let line = |l: &startup::Line| json!({ "number": l.number, "text": l.text });
+        let desk = &self.desk;
+        let line =
+            |l: &startup::Line| json!({ "number": l.number, "text": l.text, "movable": l.movable });
         json!({
             "settings": w,
             "busy": self.wall_busy,
             "scanned": scan.is_some(),
             "programs": setter::PROGRAMS.iter().map(|p| json!({
                 "id": p.id,
-                "installed": cfg!(test) || setter::installed(p),
+                "installed": desk.programs.contains(&p.id),
                 "running": running.contains(&p.id),
                 "videos": p.videos,
                 "folders": p.folders,
@@ -402,21 +402,21 @@ impl Session {
             "using": using.map(|p| json!({ "id": p.id, "videos": p.videos, "folders": p.folders })),
             "monitors": monitors,
             "unreadable": scan.map(|s| s.found.unreadable.clone()).unwrap_or_default(),
-            "folders": self.wall_folders().iter().map(|f| json!({
+            "folders": desk.folders.iter().map(|f| json!({
                 "path": f.path,
                 "display": paths::contract(&f.path),
                 "found": f.found,
             })).collect::<Vec<_>>(),
             "startup": {
                 "config": paths::contract(&config),
-                "managed": startup::managed(&text),
-                "lines": startup::user_lines(&text).iter().map(line).collect::<Vec<_>>(),
-                "moved": startup::moved_lines(&text).iter().map(line).collect::<Vec<_>>(),
+                "managed": desk.login_managed,
+                "lines": desk.login_lines.iter().map(line).collect::<Vec<_>>(),
+                "moved": desk.login_moved.iter().map(line).collect::<Vec<_>>(),
                 "services": scan.map(|s| s.services.clone()).unwrap_or_default(),
             },
-            "colorsFollow": colors::follow::following().is_some(),
+            "colorsFollow": desk.following.is_some(),
             "colorsSource": self.settings.colors.source,
-            "ffmpeg": colors::extract::have_ffmpeg(),
+            "ffmpeg": desk.ffmpeg,
         })
     }
 }

@@ -21,6 +21,8 @@ Item {
     readonly property var startup: wall.startup || ({})
     readonly property var programs: (wall.programs || []).filter(function (p) { return p.installed })
     readonly property bool busy: wall.busy === true
+    // A start line sharing its line with other code cannot be handed over.
+    readonly property bool stuckLines: (startup.lines || []).some(function (l) { return !l.movable })
     // Folders as text, so the library is read again only when they change.
     readonly property string foldersKey: JSON.stringify(wall.folders || [])
 
@@ -310,8 +312,8 @@ Item {
 
                 Toggle {
                     text: page.wall.colorsFollow
-                          ? "Colors follow the wallpaper (Colors page), so each pick recolors the desktop"
-                          : "Recolor the desktop to match each pick"
+                          ? "Colors follow the wallpaper (Colors page), so each pick recolors the desktop at once"
+                          : "Recolor the desktop to match each pick, with the Colors page's style and apps"
                     enabled: !page.wall.colorsFollow
                     checked: page.wall.colorsFollow === true || page.choice.recolor === true
                     onToggled: page.set({ recolor: checked })
@@ -344,7 +346,7 @@ Item {
                         required property var modelData
                         width: parent ? parent.width : 0
                         text: (page.startup.managed ? "commented out, line " : "line ") + modelData.number + ":  " + modelData.text
-                        color: page.startup.managed ? Theme.muted : Theme.fg
+                        color: page.startup.managed ? Theme.muted : modelData.movable === false ? Theme.warn : Theme.fg
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.fontSizeSmall
                         elide: Text.ElideRight
@@ -362,12 +364,22 @@ Item {
                     font.pixelSize: Theme.fontSizeSmall
                 }
 
+                Text {
+                    visible: !page.startup.managed && page.stuckLines
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "The line in yellow has other code on it, so hyprcustard will not comment "
+                          + "it out. Put the start command on a line of its own to hand it over."
+                    color: Theme.warn
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+
                 RowLayout {
                     spacing: Theme.gapSmall
                     PillButton {
                         visible: !page.startup.managed
                         text: (page.startup.lines || []).length > 0 ? "Start what is on screen instead" : "Start it at login"
-                        enabled: (page.wall.programs || []).some(function (p) { return p.running })
+                        enabled: !page.stuckLines && (page.wall.programs || []).some(function (p) { return p.running })
                         tooltip: (page.startup.lines || []).length > 0
                                  ? "Comment out the line above (marked, so Give it back restores it) and add a "
                                    + "block that starts what is on screen now. A backup is made first."

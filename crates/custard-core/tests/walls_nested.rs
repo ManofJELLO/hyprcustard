@@ -157,9 +157,11 @@ fn every_program_puts_a_wallpaper_up_and_hands_over_cleanly() {
     let clips = dir.path().join("clips");
     std::fs::create_dir_all(&clips).unwrap();
     let clip = clips.join("bars.mp4");
+    let second = clips.join("dots.mp4");
     media(&red, "color=c=red:s=320x200", false);
     media(&green, "color=c=green:s=320x200", false);
     media(&clip, "testsrc=s=320x200:d=2", true);
+    media(&second, "testsrc2=s=320x200:d=2", true);
     let conf = dir.path().join("hyprcustard-hyprpaper.conf");
 
     let have = |p: &str| setter::installed(&setter::get(p).unwrap());
@@ -186,6 +188,23 @@ fn every_program_puts_a_wallpaper_up_and_hands_over_cleanly() {
     assert!(!order.is_empty(), "no wallpaper program is installed");
     for (program, path) in &order {
         put(program, path, None, &conf);
+        // A folder plays through: within a few seconds mpv moves from the
+        // first two-second clip to the second.
+        if *program == "mpvpaper" && path.is_dir() {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            let mut seen = Vec::new();
+            while Instant::now() < deadline && seen.len() < 2 {
+                let now = wallpaper::detect().wallpapers.into_iter().find_map(|w| w.showing);
+                if let Some(f) = now {
+                    if !seen.contains(&f) {
+                        seen.push(f);
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            assert_eq!(seen.len(), 2, "the folder stayed on {seen:?}");
+            println!("mpvpaper  moved on from one clip to the next");
+        }
     }
     if have("hyprpaper") {
         let text = std::fs::read_to_string(&conf).unwrap();

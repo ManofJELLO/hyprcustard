@@ -227,15 +227,7 @@ pub fn binary() -> Option<PathBuf> {
 
 /// Ids of running watchers, other than this process.
 pub fn running_pids() -> Vec<u32> {
-    let me = std::process::id();
-    let Ok(rd) = std::fs::read_dir("/proc") else { return Vec::new() };
-    rd.filter_map(|e| e.ok())
-        .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
-        .filter(|pid| *pid != me)
-        .filter(|pid| {
-            std::fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|c| c.trim() == PROGRAM)
-        })
-        .collect()
+    crate::procs::named(PROGRAM)
 }
 
 /// Start the watcher now, in the background. It outlives the app.
@@ -272,6 +264,13 @@ pub fn stop() {
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .status();
+    // Wait for them to go, up to two seconds: a watcher started straight
+    // after, by systemd say, would otherwise find this one still there and
+    // leave, taking itself for a second copy.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !running_pids().is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
 }
 
 /// The Hyprland block that starts the watcher at login.

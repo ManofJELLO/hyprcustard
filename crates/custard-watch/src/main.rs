@@ -106,8 +106,26 @@ fn main() {
     let mut status =
         Status { pid: std::process::id(), state: "watching".into(), ..Status::default() };
     let mut look = true;
+    // Set when follow.toml changed: read it again before anything else. A
+    // wake that says so is never dropped, whichever wait it arrives in.
+    let mut reread = false;
 
     loop {
+        if reread {
+            reread = false;
+            match follow::following() {
+                Some(s) => {
+                    follower.min_gap = minutes(s.min_minutes);
+                    snap = s;
+                    look = true;
+                }
+                None => {
+                    eprintln!("no longer following the wallpaper; exiting");
+                    let _ = std::fs::remove_file(follow::status_path());
+                    return;
+                }
+            }
+        }
         if look {
             let found = wallpaper::detect();
             let w = found.for_monitor(&snap.monitor);
@@ -137,14 +155,13 @@ fn main() {
                 let changed = apply(&snap, &mut status);
                 follower.done(Instant::now(), changed);
                 // ffmpeg just opened the wallpaper itself; those opens are
-                // not news.
-                while let Ok(m) = rx.try_recv() {
-                    match m {
-                        Wake::Opened | Wake::Screen | Wake::Wallpaper => {}
-                        Wake::Snapshot => look = true,
-                        Wake::Gone => return,
-                    }
+                // not news. Anything else that came in meanwhile still is.
+                let d = drain(rx.try_iter());
+                if d.gone {
+                    return quit();
                 }
+                look |= d.wallpaper;
+                reread |= d.snapshot;
                 continue;
             }
             Next::Paused => {
@@ -173,32 +190,47 @@ fn main() {
                 // A program opening a file tends to come in bursts: let it
                 // settle, then look once.
                 std::thread::sleep(Duration::from_millis(500));
-                while let Ok(m) = rx.try_recv() {
-                    if let Wake::Gone = m {
-                        return;
-                    }
+                let d = drain(rx.try_iter());
+                if d.gone {
+                    return quit();
                 }
+                reread |= d.snapshot;
                 look = true;
             }
-            Ok(Wake::Snapshot) => match follow::following() {
-                Some(s) => {
-                    follower.min_gap = minutes(s.min_minutes);
-                    snap = s;
-                    look = true;
-                }
-                None => {
-                    eprintln!("no longer following the wallpaper; exiting");
-                    let _ = std::fs::remove_file(follow::status_path());
-                    return;
-                }
-            },
-            Ok(Wake::Gone) | Err(RecvTimeoutError::Disconnected) => {
-                let _ = std::fs::remove_file(follow::status_path());
-                return;
-            }
+            Ok(Wake::Snapshot) => reread = true,
+            Ok(Wake::Gone) | Err(RecvTimeoutError::Disconnected) => return quit(),
             Err(RecvTimeoutError::Timeout) => look = true,
         }
     }
+}
+
+/// What a burst of wakes, taken all at once, comes to. File opens and
+/// screen changes are dropped — the caller is about to look anyway — but a
+/// changed snapshot or an exit never is.
+#[derive(Debug, Default, PartialEq)]
+struct Drained {
+    wallpaper: bool,
+    snapshot: bool,
+    gone: bool,
+}
+
+fn drain(wakes: impl Iterator<Item = Wake>) -> Drained {
+    let mut d = Drained::default();
+    for w in wakes {
+        match w {
+            Wake::Opened | Wake::Screen => {}
+            Wake::Wallpaper => d.wallpaper = true,
+            Wake::Snapshot => d.snapshot = true,
+            Wake::Gone => d.gone = true,
+        }
+    }
+    d
+}
+
+/// Leave, taking the status file along: it describes a watcher that is no
+/// longer there.
+fn quit() {
+    let _ = std::fs::remove_file(follow::status_path());
 }
 
 /// Build the scheme for the wallpaper as it is now and apply it. Returns
@@ -349,4 +381,18 @@ fn span(d: Duration) -> String {
 fn fail(msg: &str) -> ! {
     eprintln!("custard-watch: {msg}");
     std::process::exit(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_burst_keeps_a_changed_snapshot_and_an_exit() {
+        let d = drain([Wake::Opened, Wake::Snapshot, Wake::Opened, Wake::Screen].into_iter());
+        assert_eq!(d, Drained { snapshot: true, ..Drained::default() });
+        let d = drain([Wake::Wallpaper, Wake::Gone].into_iter());
+        assert!(d.wallpaper && d.gone);
+        assert_eq!(drain([Wake::Opened].into_iter()), Drained::default());
+    }
 }

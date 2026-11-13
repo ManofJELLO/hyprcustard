@@ -396,6 +396,7 @@ impl qobject::Backend {
     pub fn refresh(mut self: Pin<&mut Self>) {
         if let Some(session) = self.as_mut().rust_mut().session.as_mut() {
             session.rescan_shaders();
+            session.refresh_desk();
         }
         self.as_mut().push_state();
         self.refresh_live();

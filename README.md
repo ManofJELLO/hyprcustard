@@ -450,8 +450,9 @@ run, and keeps your own options for it.
   A restarted program's new copy is up before the old one is stopped, so a file it cannot
   open leaves your wallpaper as it was, and the page says why.
 * **Colors.** *Recolor the desktop to match each pick* builds a scheme from the new wallpaper
-  and applies it, as the Colors page's Apply would. When colors follow the wallpaper, each
-  pick recolors at once, without waiting for `custard-watch`'s minimum gap.
+  with the Colors page's style, contrast and apps, and applies it. The Colors page itself is
+  left as it was. When colors follow the wallpaper, each pick recolors at once with the
+  choices being followed, without waiting for `custard-watch`'s minimum gap.
 
 ### At login
 
@@ -502,15 +503,17 @@ a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and 
 |---|---|---|---|
 | Hyprland | `hypr/hyprcustard-colors.lua` | borders, shadow, and a `hyprcustard_colors` table | `pcall(dofile, "…")` at the end of `hyprland.lua` |
 | Waybar | `waybar/hyprcustard-colors.css` | — (`@define-color`s for your style) | `@import "hyprcustard-colors.css";` at the top of `style.css` |
-| Rofi | `rofi/hyprcustard-colors.rasi` | — (variables, spelled with dashes) | `@import "hyprcustard-colors.rasi"` at the top of `config.rasi` |
+| Rofi | `rofi/hyprcustard-colors.rasi` | — (variables, spelled with dashes) | `@import "hyprcustard-colors.rasi"` at the top of `config.rasi`, or after its `@theme` line (which discards anything before it) |
 | Dunst | `dunst/dunstrc.d/90-hyprcustard-colors.conf` | backgrounds, text, frames | nothing — a drop-in, read when you have your own `dunstrc` |
 | kitty | `kitty/hyprcustard-colors.conf` | palette, cursor, selection, tabs | `include hyprcustard-colors.conf` at the end of `kitty.conf` |
 | Ghostty | `ghostty/hyprcustard-colors` | palette, cursor, selection | `config-file = ?hyprcustard-colors` at the end of its config |
 
 Your configs are yours, so the page never edits one unless you ask: each app shows whether
 its config loads the file yet, the one line it needs, and an **Add it for me** button, which
-backs the config up first. In Waybar and Rofi a color your own style defines keeps your value
-(it comes after the import) — use the scheme's names, or remove your own, to follow it.
+backs the config up first. In Waybar a color your own style defines keeps your value (it
+comes after the import) — use the scheme's names, or remove your own, to follow it. In Rofi
+the import has to come after your `@theme` line, so where your theme defines one of the same
+names (`background`, say), the scheme's color is the one used.
 
 Apply then reloads what is running: Hyprland through `hyprctl eval`, Waybar and Ghostty with
 `SIGUSR2`, kitty with `SIGUSR1`, Dunst with `dunstctl reload`. Rofi reads its colors each time
