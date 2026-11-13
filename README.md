@@ -821,6 +821,7 @@ reported and ignored, never silently overwritten.
 hyprcustard                 # the app
 hyprcustard --print-state   # the whole state document as JSON
 hyprcustard --print-block   # the Lua that would be written
+hyprcustard --version       # the version (--help lists these)
 hyprcustard --askpass       # sudo's askpass helper, for the Plugin page
 ```
 

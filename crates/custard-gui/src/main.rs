@@ -6,6 +6,20 @@ pub mod bridge;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
+const HELP: &str = "\
+hyprcustard - a theming GUI for Hyprland
+
+Usage:
+  hyprcustard                 open the app
+  hyprcustard --print-state   print the whole state document as JSON
+  hyprcustard --print-block   print the Lua that would be written
+  hyprcustard --version       print the version
+  hyprcustard --help          print this
+
+custard-watch, installed beside it, keeps the desktop's colors matching the
+wallpaper; it is started from the Colors page.
+";
+
 fn main() {
     // sudo re-runs this program with `--askpass` when a hyprpm operation needs
     // a password: it asks the window that started the operation, prints the
@@ -24,6 +38,29 @@ fn main() {
             None => args.get(1).map(String::as_str),
         };
         std::process::exit(custard_core::hyprpm::askpass(prompt.unwrap_or("Password:")));
+    }
+
+    // Answered without opening a window, as a packaged binary should: a
+    // `--version` that put the interface on screen would be a surprise. An
+    // option this does not know is refused for the same reason; Qt's own
+    // (`-platform`, `-style`) take one dash and pass through.
+    for a in args.iter().skip(1) {
+        match a.as_str() {
+            "--version" | "-V" => {
+                println!("hyprcustard {}", custard_core::VERSION);
+                return;
+            }
+            "--help" | "-h" => {
+                print!("{HELP}");
+                return;
+            }
+            "--print-state" | "--print-block" => {}
+            other if other.starts_with("--") => {
+                eprintln!("hyprcustard: unknown option {other}; see --help");
+                std::process::exit(2);
+            }
+            _ => {}
+        }
     }
 
     // Someone coming from hyprwindowshade-gui keeps their settings and themes.
