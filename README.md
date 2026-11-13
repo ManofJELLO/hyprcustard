@@ -450,15 +450,20 @@ run, and keeps your own options for it.
   | Program | How a wallpaper goes up | Videos | Whole folders |
   |---|---|---|---|
   | awww / swww | `awww img`, starting `awww-daemon` if needed | — (GIFs play) | — |
-  | hyprpaper | `hyprctl hyprpaper wallpaper` | — | — |
-  | swaybg | started again with the new image; other monitors keep theirs | — | — |
+  | hyprpaper | `hyprctl hyprpaper wallpaper` | — (no GIFs either) | — |
+  | swaybg | started again with the new image; other monitors keep theirs | — (a GIF's first frame) | — |
   | mpvpaper | started again with the new file, with every option you gave it | yes | yes, *Play the whole folder* |
 
   A restarted program's new copy is up before the old one is stopped, so a file it cannot
-  open leaves your wallpaper as it was, and the page says why.
-* **Colors.** *Recolor the desktop to match each pick* builds a scheme from the new wallpaper
+  open leaves your wallpaper as it was, and the page says why. Changing *Show it with* or
+  *Fit* puts what is on screen up again with the new choice straight away.
+* **mpvpaper's options.** The ones you started it with are kept, and remembered: after
+  another program has shown wallpapers, the next mpvpaper pick still uses yours (or, before
+  hyprcustard has seen it run, the ones on your login line). For a whole folder, *Next file
+  every … minutes* sets mpvpaper's slideshow timer (`-n`; fractions of a minute are fine) and
+  *Shuffle* sets mpv's `shuffle`. Everything else in your command stays as you wrote it.* **Colors.** *Recolor the desktop to match each pick* builds a scheme from the new wallpaper
   with the Colors page's style, contrast and apps, and applies it. The Colors page itself is
-  left as it was. When colors follow the wallpaper, each pick recolors at once with the
+  left as it was. Turning it on recolors from the wallpaper already up. When colors follow the wallpaper, each pick recolors at once with the
   choices being followed, without waiting for `custard-watch`'s minimum gap.
 
 ### At login
@@ -466,8 +471,8 @@ run, and keeps your own options for it.
 Picking a wallpaper changes the screen, not your config, so whatever starts your wallpaper at
 login still runs next time. The page shows the lines in `hyprland.lua` that start one. **Start
 what is on screen instead** comments those lines out, marking them so they can be restored
-exactly, and adds a managed block (`HyprCustard wallpaper`) that starts what is on screen now.
-After that, every pick rewrites the block. A backup is made first. **Give it back** removes the
+exactly, and adds a managed block (`HyprCustard wallpaper`) that starts what is on screen now,
+shown on the page under the lines it replaced. After that, every pick rewrites the block. A backup is made first. **Give it back** removes the
 block and restores your lines.
 
 For hyprpaper, the block starts it with a config of hyprcustard's own,
@@ -844,6 +849,8 @@ route does not apply, a `doas`-only machine for instance, since `doas` has no as
 | Reload shaders after editing one | Runs after **Save shader**. Off by default — the plugin already reloads on mtime change. |
 | Repository | Where **Install** takes the plugin from. Default `https://github.com/ManofJELLO/HyprWindowShade`. |
 | Plugin name | What `hyprpm` calls it, which `enable`, `disable` and `remove` take. Default `HyprWindowShade`. |
+| Keep it in the tray | An icon in your bar's tray (anything that hosts StatusNotifierItems, such as waybar's `tray` module). Closing the window leaves hyprcustard running there; click the icon to open it, right-click it to quit. |
+| Start at login | Adds a managed block (`HyprCustard autostart`) that runs `hyprcustard --tray` when Hyprland starts. Turning it off takes the block out. A backup is made first. |
 
 App settings live in `~/.config/hyprcustard/settings.toml`. A malformed file is
 reported and ignored, never silently overwritten.
@@ -853,12 +860,17 @@ reported and ignored, never silently overwritten.
 ## Command line
 
 ```sh
-hyprcustard                 # the app
+hyprcustard                 # the app, or the window of the one already running
+hyprcustard --tray          # start in the tray, without opening the window
 hyprcustard --print-state   # the whole state document as JSON
 hyprcustard --print-block   # the Lua that would be written
 hyprcustard --version       # the version (--help lists these)
 hyprcustard --askpass       # sudo's askpass helper, for the Plugin page
 ```
+
+Only one copy runs at a time: launching hyprcustard while it sits in the tray opens its window.
+With `--tray` and no tray in the bar after a minute, the window opens after all, so the app is
+never running out of reach.
 
 The two `--print-*` flags do not start Qt, which makes them useful on a machine where the GUI
 will not come up, and in a script. `--askpass` is for sudo to call, not for people: see

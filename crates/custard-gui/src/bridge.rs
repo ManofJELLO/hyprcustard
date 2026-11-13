@@ -31,6 +31,7 @@ pub mod qobject {
         #[qproperty(QString, state_json, cxx_name = "stateJson")]
         #[qproperty(bool, ready)]
         #[qproperty(QString, shot_dir, cxx_name = "shotDir")]
+        #[qproperty(bool, start_in_tray, cxx_name = "startInTray")]
         #[qproperty(bool, hyprpm_busy, cxx_name = "hyprpmBusy")]
         #[qproperty(QString, hyprpm_label, cxx_name = "hyprpmLabel")]
         #[qproperty(bool, preview_busy, cxx_name = "previewBusy")]
@@ -44,6 +45,11 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "notify"]
         fn notify(self: Pin<&mut Backend>, message: &QString, is_error: bool);
+
+        /// A later launch asked for the window.
+        #[qsignal]
+        #[cxx_name = "showRequested"]
+        fn show_requested(self: Pin<&mut Backend>);
 
         /// A wallpaper's preview has been made.
         #[qsignal]
@@ -253,6 +259,8 @@ pub struct BackendRust {
     /// there and quits — a development aid for checking layout without a
     /// compositor, and the only thing in this file that is not about the config.
     shot_dir: QString,
+    /// Started with `--tray`: the window stays hidden until asked for.
+    start_in_tray: bool,
     ready: bool,
     session: Option<Session>,
     /// True while a background probe is out.
@@ -292,6 +300,11 @@ impl cxx_qt::Initialize for qobject::Backend {
     fn initialize(mut self: Pin<&mut Self>) {
         let shot_dir = std::env::var("CUSTARD_SHOT_DIR").unwrap_or_default();
         self.as_mut().set_shot_dir(QString::from(&shot_dir));
+        let tray = std::env::args().any(|a| a == "--tray");
+        self.as_mut().set_start_in_tray(tray);
+
+        let thread = self.qt_thread();
+        crate::instance::serve(move || thread.queue(|backend| backend.show_requested()).is_ok());
 
         let session = Session::load();
         let problems = session.messages();

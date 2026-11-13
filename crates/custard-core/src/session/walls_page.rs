@@ -396,7 +396,7 @@ impl Session {
     }
 
     /// Write the config if it changed, after a backup.
-    fn write_config_text(&mut self, path: &Path, old: &str, new: &str) -> Result<()> {
+    pub(super) fn write_config_text(&mut self, path: &Path, old: &str, new: &str) -> Result<()> {
         if new != old {
             if path.exists() {
                 paths::backup(path, self.settings.backups_to_keep)?;

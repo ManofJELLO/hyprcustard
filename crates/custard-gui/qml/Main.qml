@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import Qt.labs.platform as Platform
 import dev.hyprcustard.gui
 
 ApplicationWindow {
@@ -12,7 +13,8 @@ ApplicationWindow {
     // a small window loses nothing but the amount visible at once.
     minimumWidth: 720
     minimumHeight: 400
-    visible: true
+    // Started with --tray, the window waits for the icon to be clicked.
+    visible: !Backend.startInTray
     title: "HyprCustard"
            + (App.dirty || App.dirtyShaders > 0 ? " — unsaved changes" : "")
     color: Theme.bg
@@ -85,6 +87,11 @@ ApplicationWindow {
             toast.show(message, isError)
         }
 
+        // Launched again while running: show this window instead.
+        function onShowRequested() {
+            window.bringUp()
+        }
+
         // hyprpm escalates by itself and, with no terminal to read from, sudo
         // asks this app for the password. See components/PasswordDialog.qml.
         function onHyprpmPasswordRequested(prompt, retry) {
@@ -120,6 +127,14 @@ ApplicationWindow {
         // but not before the user has watched the window vanish and wondered.
         App.previewStop()
 
+        // With the icon in the tray, closing only hides the window: the app,
+        // and any unsaved work in it, stays. Quit is on the icon's menu.
+        if (window.inTray && !window.quitting) {
+            close.accepted = false
+            window.hide()
+            return
+        }
+
         if (App.hyprpmBusy && !window.hyprpmCloseConfirmed) {
             close.accepted = false
             confirm.ask("Close while hyprpm is working?",
@@ -145,6 +160,84 @@ ApplicationWindow {
     }
 
     property bool quitConfirmed: false
+    // Quit was chosen on the tray icon, so closing really closes.
+    property bool quitting: false
+
+    // ---------------------------------------------------------------
+    // The tray icon: on in Settings, or for this run with --tray.
+    readonly property bool trayWanted: Backend.startInTray || App.settings.tray === true
+    // Whether the bar has a tray to show it in. Known only by asking, and at
+    // login the bar may start after this, so it is asked again for a while.
+    property bool trayFound: false
+    readonly property bool inTray: trayWanted && trayFound
+
+    function bringUp() {
+        window.show()
+        window.raise()
+        window.requestActivate()
+    }
+
+    function quitApp() {
+        window.quitting = true
+        // Unsaved work, or hyprpm still running, are asked about on the way
+        // out, in the window, as when it is closed.
+        if (App.dirty || App.dirtyShaders > 0 || App.hyprpmBusy) {
+            window.bringUp()
+            window.close()
+            return
+        }
+        App.previewStop()
+        Qt.quit()
+    }
+
+    Platform.SystemTrayIcon {
+        id: tray
+        visible: window.inTray
+        icon.source: "qrc:/qt/qml/dev/hyprcustard/gui/icons/hyprcustard-tray.png"
+        tooltip: "HyprCustard"
+        onActivated: function (reason) {
+            if (reason === Platform.SystemTrayIcon.Trigger
+                    || reason === Platform.SystemTrayIcon.DoubleClick)
+                window.visible && window.active ? window.hide() : window.bringUp()
+        }
+        menu: Platform.Menu {
+            Platform.MenuItem {
+                text: "Open HyprCustard"
+                onTriggered: window.bringUp()
+            }
+            Platform.MenuSeparator {}
+            Platform.MenuItem {
+                text: "Quit"
+                onTriggered: window.quitApp()
+            }
+        }
+    }
+
+    // Look for the bar's tray once a second for a minute. Started with
+    // --tray and none turns up, the window is shown after all, so the app is
+    // never running with no way to reach it.
+    Timer {
+        id: trayLook
+        property int tries: 0
+        interval: 1000
+        repeat: true
+        triggeredOnStart: true
+        running: window.trayWanted && !window.trayFound && Backend.shotDir === ""
+        onTriggered: {
+            if (tray.available) {
+                window.trayFound = true
+                return
+            }
+            tries++
+            if (tries >= 60) {
+                stop()
+                if (!window.visible) {
+                    window.bringUp()
+                    toast.show("No tray was found in your bar, so hyprcustard opened its window.", true)
+                }
+            }
+        }
+    }
     property bool hyprpmCloseConfirmed: false
 
     // Two kinds of unsaved work, written by two different buttons to two

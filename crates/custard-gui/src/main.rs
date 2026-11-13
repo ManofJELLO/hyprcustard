@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 
 pub mod bridge;
+pub mod instance;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
@@ -10,7 +11,8 @@ const HELP: &str = "\
 hyprcustard - a theming GUI for Hyprland
 
 Usage:
-  hyprcustard                 open the app
+  hyprcustard                 open the app, or the window of the one running
+  hyprcustard --tray          start in the tray, without opening the window
   hyprcustard --print-state   print the whole state document as JSON
   hyprcustard --print-block   print the Lua that would be written
   hyprcustard --version       print the version
@@ -54,7 +56,7 @@ fn main() {
                 print!("{HELP}");
                 return;
             }
-            "--print-state" | "--print-block" => {}
+            "--print-state" | "--print-block" | "--tray" => {}
             other if other.starts_with("--") => {
                 eprintln!("hyprcustard: unknown option {other}; see --help");
                 std::process::exit(2);
@@ -109,6 +111,16 @@ fn main() {
     // logging rules of their own.
     if std::env::var_os("QT_LOGGING_RULES").is_none() {
         std::env::set_var("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false");
+    }
+
+    // One copy at a time: a second launch shows the first one's window. A
+    // second `--tray` (a login line run twice) just leaves. Screenshot and
+    // other offscreen runs are not the user's copy, and are left out.
+    let offscreen = std::env::var_os("CUSTARD_SHOT_DIR").is_some()
+        || std::env::var("QT_QPA_PLATFORM").is_ok_and(|p| p == "offscreen");
+    let tray = args.iter().any(|a| a == "--tray");
+    if !offscreen && instance::another_is_running(!tray) {
+        return;
     }
 
     let mut app = QGuiApplication::new();

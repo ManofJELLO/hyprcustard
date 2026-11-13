@@ -52,5 +52,8 @@ fn main() {
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .files(["src/bridge.rs"])
+        // PNGs, so the app needs no SVG support to show its own icon. `make
+        // icons` renders them from the SVGs beside them.
+        .qrc_resources(["icons/hyprcustard.png", "icons/hyprcustard-tray.png"])
         .build();
 }

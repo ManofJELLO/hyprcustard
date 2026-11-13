@@ -35,6 +35,9 @@ pub struct Settings {
     pub colors: crate::colors::ColorSettings,
     /// The Wallpaper page's choices.
     pub wallpaper: crate::walls::WallSettings,
+    /// Show an icon in the system tray, and keep running there when the
+    /// window is closed.
+    pub tray: bool,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -56,6 +59,7 @@ impl Default for Settings {
             plugin_name: DEFAULT_PLUGIN_NAME.to_string(),
             colors: crate::colors::ColorSettings::default(),
             wallpaper: crate::walls::WallSettings::default(),
+            tray: false,
         }
     }
 }

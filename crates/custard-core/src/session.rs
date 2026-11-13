@@ -74,6 +74,8 @@ struct Desk {
     login_moved: Vec<walls::startup::Line>,
     /// The managed wallpaper block: the line it starts on, and its text.
     login_block: Option<(usize, String)>,
+    /// Whether the config starts hyprcustard at login, in the tray.
+    autostart: bool,
 }
 
 /// Which part of the app noticed a problem.
@@ -637,6 +639,7 @@ impl Session {
             })).collect::<Vec<_>>(),
             "themeDir": paths::contract(&theme::theme_dir()),
             "settings": self.settings,
+            "autostart": self.desk.autostart,
             "rules": self.config.rules.iter().map(|r| self.rule_view(r)).collect::<Vec<_>>(),
             "layers": self.config.layers,
             "binds": self.config.binds.iter().map(|b| json!({
@@ -788,6 +791,7 @@ impl Session {
             login_lines: walls::startup::user_lines(&text),
             login_moved: walls::startup::moved_lines(&text),
             login_block: walls::startup::block_text(&text),
+            autostart: crate::autostart::enabled(&text),
         };
     }
 
@@ -971,6 +975,23 @@ impl Session {
             "config.removeBlock" => self.remove_block().map(Some),
 
             // --- app settings ---
+            "app.autostart" => {
+                let on = payload.get("on").and_then(Value::as_bool).unwrap_or(false);
+                let path = self.settings.resolved_config_path();
+                let text =
+                    if path.exists() { paths::read_to_string(&path)? } else { String::new() };
+                let next = crate::autostart::set(&text, on)?;
+                self.write_config_text(&path, &text, &next)?;
+                self.refresh_desk();
+                Ok(Some(if on {
+                    format!(
+                        "hyprcustard starts in the tray at login, from a block at the end of {}",
+                        paths::contract(&path)
+                    )
+                } else {
+                    "hyprcustard no longer starts at login".into()
+                }))
+            }
             "settings.update" => {
                 let settings: Settings = from_field(payload, "settings")?;
                 let path_changed = settings.config_path != self.settings.config_path;
@@ -2678,6 +2699,48 @@ mod tests {
         s.settings.backups_to_keep = 0;
         s.hand_rules = read_hand_rules(&cfg_path);
         (dir, cfg_path, s)
+    }
+
+    #[test]
+    fn starting_at_login_adds_a_block_and_takes_it_out_again() {
+        let mine = "hl.config({ general = { gaps_in = 4 } })\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        assert_eq!(s.state()["autostart"], false);
+        let msg = s.command("app.autostart", &json!({ "on": true })).unwrap().unwrap();
+        assert!(msg.contains("starts in the tray at login"), "{msg}");
+        assert!(std::fs::read_to_string(&cfg).unwrap().contains("hyprcustard --tray"));
+        assert_eq!(s.state()["autostart"], true);
+        s.command("app.autostart", &json!({ "on": false })).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+        assert_eq!(s.state()["autostart"], false);
+    }
+
+    /// Flipping a toggle on the Settings page writes that toggle alone:
+    /// theming edits waiting for Save stay waiting, and the Save that comes
+    /// later keeps what the toggle wrote.
+    #[test]
+    fn settings_toggles_leave_unsaved_edits_unsaved() {
+        let mine = "hl.config({ general = { gaps_in = 4 } })\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 12 })).unwrap();
+        assert!(s.dirty());
+
+        s.command("app.autostart", &json!({ "on": true })).unwrap();
+        let mut settings = serde_json::to_value(&s.settings).unwrap();
+        settings["tray"] = json!(true);
+        s.command("settings.update", &json!({ "settings": settings })).unwrap();
+
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("hyprcustard --tray"));
+        assert!(!text.contains("rounding"), "the Look edit is not written by a toggle");
+        assert!(s.dirty(), "and is still waiting for Save");
+        assert!(s.settings.tray);
+
+        s.save().unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("rounding") && text.contains("hyprcustard --tray"));
+        assert!(!s.dirty());
     }
 
     #[test]

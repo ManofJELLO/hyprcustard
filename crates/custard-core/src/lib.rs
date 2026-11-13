@@ -21,6 +21,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod autostart;
 pub mod block;
 pub mod colors;
 pub mod emit;

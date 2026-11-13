@@ -187,6 +187,34 @@ Item {
                         onToggled: page.updateSettings({ reload_shaders_after_edit: checked })
                     }
                 }
+
+                FieldRow {
+                    width: parent.width
+                    label: "Keep it in the tray"
+                    hint: "An icon in your bar's tray. Closing the window leaves hyprcustard running "
+                          + "there; click the icon to open it, or right-click it to quit."
+
+                    Toggle {
+                        checked: App.settings.tray === true
+                        onToggled: page.updateSettings({ tray: checked })
+                    }
+                }
+
+                FieldRow {
+                    width: parent.width
+                    label: "Start at login"
+                    hint: App.state.autostart === true
+                          ? "A block at the end of " + App.state.configPathDisplay + " starts hyprcustard "
+                            + "in the tray when Hyprland starts. Turning this off takes the block out."
+                          : "Adds a block to the end of " + App.state.configPathDisplay + " that starts "
+                            + "hyprcustard in the tray when Hyprland starts, without opening its window. "
+                            + "A backup is made first."
+
+                    Toggle {
+                        checked: App.state.autostart === true
+                        onToggled: App.run("app.autostart", { on: checked })
+                    }
+                }
             }
 
             // ---------------------------------------------------------------
@@ -313,14 +341,29 @@ Item {
                 Layout.fillWidth: true
                 title: "About"
 
-                Text {
+                Row {
                     width: parent.width
-                    wrapMode: Text.WordWrap
-                    color: Theme.muted
-                    font.pixelSize: Theme.fontSizeSmall
-                    text: "hyprcustard " + App.appVersion + " — a theming GUI for Hyprland, "
-                          + "including the HyprWindowShade shader plugin. It only ever edits the "
-                          + "block between its own markers, and backs the file up first."
+                    spacing: Theme.gap
+
+                    Image {
+                        width: 64
+                        height: 64
+                        source: "qrc:/qt/qml/dev/hyprcustard/gui/icons/hyprcustard.png"
+                        sourceSize.width: 128
+                        sourceSize.height: 128
+                        smooth: true
+                    }
+
+                    Text {
+                        width: parent.width - 64 - Theme.gap
+                        anchors.verticalCenter: parent.verticalCenter
+                        wrapMode: Text.WordWrap
+                        color: Theme.muted
+                        font.pixelSize: Theme.fontSizeSmall
+                        text: "hyprcustard " + App.appVersion + " — a theming GUI for Hyprland, "
+                              + "including the HyprWindowShade shader plugin. It only ever edits the "
+                              + "block between its own markers, and backs the file up first."
+                    }
                 }
             }
 
