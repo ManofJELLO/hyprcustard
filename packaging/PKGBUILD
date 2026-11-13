@@ -5,7 +5,7 @@
 # from the GitHub release instead. Keep this one for building your own.
 pkgname=hyprcustard
 _reponame=hyprcustard
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
