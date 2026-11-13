@@ -88,6 +88,8 @@ own save: the header **Save** writes your Hyprland config, and **Save shader** w
   Hyprland 0.57 dropped `hyprland.conf` altogether, and so has the plugin.
 * **ffmpeg**, which the Colors page reads wallpapers with — stills and videos alike — and the
   Wallpaper page makes its previews with.
+* **adw-gtk3** (`adw-gtk-theme` on Arch), the GTK theme that lets GTK 3 apps take the Colors
+  page's scheme. The app never switches to it unasked; the Colors page offers to.
 * For the **Wallpaper** page, a wallpaper program: awww (or swww), hyprpaper, swaybg, or
   mpvpaper for videos. Whichever you already use is fine.
 
@@ -117,7 +119,7 @@ Every [release](https://github.com/ManofJELLO/hyprcustard/releases) has a
 `hyprcustard-<version>-x86_64.tar.gz` holding the two binaries (`hyprcustard`, and
 `custard-watch`, which follows the wallpaper), the desktop entry, the license and this
 README, with a `.sha256` beside it. The binaries need nothing but Qt 6 and ffmpeg, because
-the QML is compiled into them.
+the QML is compiled into them (adw-gtk3 is a theme the GTK rows use, not a library).
 
 On Arch, the package for it is `hyprcustard-bin`. Until it is on the AUR, build it from
 this repository — it downloads the release and checks it against the checksum in the
@@ -476,7 +478,8 @@ service that starts a wallpaper is pointed out, but left alone.
 ## Colors for the whole desktop
 
 The **Colors** page (under *Desktop*) makes one color scheme and writes it for every app you
-turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty and Ghostty. Nothing
+turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty, Ghostty, and GTK and Qt
+apps (through qt6ct, qt5ct or Kvantum). Nothing
 changes until you press **Apply**, and the preview shows the scheme first.
 
 A scheme comes from one of three places:
@@ -512,6 +515,9 @@ a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and 
 | Dunst | `dunst/dunstrc.d/90-hyprcustard-colors.conf` | backgrounds, text, frames | nothing — a drop-in, read when you have your own `dunstrc` |
 | kitty | `kitty/hyprcustard-colors.conf` | palette, cursor, selection, tabs | `include hyprcustard-colors.conf` at the end of `kitty.conf` |
 | Ghostty | `ghostty/hyprcustard-colors` | palette, cursor, selection | `config-file = ?hyprcustard-colors` at the end of its config |
+| GTK 3, GTK 4 | `gtk-3.0/hyprcustard-colors.css`, `gtk-4.0/…` | GTK's named colors (`window_bg_color`, `accent_bg_color`, `theme_bg_color`…), and libadwaita's CSS variables for GTK 4 | `@import "hyprcustard-colors.css";` at the end of `gtk.css` |
+| Qt 6, Qt 5 | `qt6ct/colors/hyprcustard.conf`, `qt5ct/…` | the whole Qt palette | `color_scheme_path=` and `custom_palette=true` under `[Appearance]` in `qt6ct.conf` / `qt5ct.conf` |
+| Kvantum | `Kvantum/HyprCustard/` | a recolored copy of your Kvantum theme | `theme=HyprCustard` under `[General]` in `kvantum.kvconfig` |
 
 Your configs are yours, so the page never edits one unless you ask: each app shows whether
 its config loads the file yet, the one line it needs, and an **Add it for me** button, which
@@ -519,6 +525,30 @@ backs the config up first. In Waybar a color your own style defines keeps your v
 comes after the import) — use the scheme's names, or remove your own, to follow it. In Rofi
 the import has to come after your `@theme` line, so where your theme defines one of the same
 names (`background`, say), the scheme's color is the one used.
+
+### GTK and Qt apps
+
+How far a scheme reaches into GTK and Qt depends on the theme you run, and the page reads
+yours and says what will change:
+
+* **GTK 4 apps built on libadwaita** (most GNOME apps) follow the scheme. If your
+  `~/.config/gtk-4.0/gtk.css` is itself a whole theme — many GTK themes install one there —
+  its fixed colors win over everything, so the page offers to set it aside (backed up) and
+  start a new one that only loads the colors.
+* **GTK 3 apps, and GTK 4 apps without libadwaita,** follow it only under a theme that draws
+  with GTK's named colors. [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) does (on Arch,
+  the `adw-gtk-theme` package); Adwaita's GTK 3 theme and most others have their colors built
+  in. When adw-gtk3 is installed, the GTK 3 row offers to switch to it. After that, applying a
+  light or dark scheme picks the matching adw-gtk3 variant, and sets the desktop's light or dark
+  preference, which libadwaita, browsers and Qt follow.
+* **Qt apps** take the palette when `QT_QPA_PLATFORMTHEME` is `qt6ct` (or `qt5ct`) and the
+  style draws with the palette, as Fusion does. **Kvantum** paints with its own theme instead,
+  so it gets a copy of your Kvantum theme with its colors and images recolored. The copy keeps
+  that theme's shapes and shading, so it is close to the scheme rather than exact, and a dark
+  theme turns light under a light scheme.
+
+Neither toolkit re-reads these files while an app runs: apps opened after **Apply** use the
+new colors, and open ones keep theirs until restarted.
 
 Apply then reloads what is running: Hyprland through `hyprctl eval`, Waybar and Ghostty with
 `SIGUSR2`, kitty with `SIGUSR1`, Dunst with `dunstctl reload`. Rofi reads its colors each time

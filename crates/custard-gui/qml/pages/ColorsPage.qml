@@ -725,7 +725,10 @@ Item {
                                 Badge {
                                     visible: row.t.on
                                     text: row.t.wired ? "Loads the colors"
-                                          : row.t.id === "dunst" ? "Needs its own dunstrc" : "Needs one line"
+                                          : row.t.id === "dunst" ? "Needs its own dunstrc"
+                                          : row.t.replaces ? "Its gtk.css is a theme"
+                                          : row.t.id === "kvantum" ? "Not the Kvantum theme"
+                                          : (row.t.id === "qt6ct" || row.t.id === "qt5ct") ? "Needs a setting" : "Needs one line"
                                     tint: row.t.wired ? Theme.ok : Theme.warn
                                 }
                                 Item {
@@ -757,10 +760,31 @@ Item {
                                 color: Theme.warn
                                 font.pixelSize: Theme.fontSizeSmall
                             }
+                            RowLayout {
+                                visible: row.t.on && (row.t.warning || "") !== ""
+                                width: parent.width
+                                spacing: Theme.gap
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: row.t.warning || ""
+                                    wrapMode: Text.WordWrap
+                                    color: Theme.warn
+                                    font.pixelSize: Theme.fontSizeSmall
+                                }
+                                PillButton {
+                                    visible: (row.t.fix || "") !== ""
+                                    text: row.t.fix || ""
+                                    tooltip: "Sets the GTK theme in gsettings and in your settings.ini files, "
+                                             + "backing those up first"
+                                    onClicked: App.run("colors.fix", { id: row.t.id })
+                                }
+                            }
                             Text {
                                 visible: row.t.on && !row.t.wired && row.t.line !== ""
                                 width: parent.width
-                                text: "Add this line " + row.t.place + " " + row.t.config + ":"
+                                text: row.t.replaces
+                                      ? "A new " + row.t.config + " would hold just this line:"
+                                      : "Add this line " + row.t.place + " " + row.t.config + ":"
                                 wrapMode: Text.WordWrap
                                 color: Theme.fgDim
                                 font.pixelSize: Theme.fontSizeSmall
@@ -787,11 +811,15 @@ Item {
                                     font.pixelSize: Theme.fontSizeSmall
                                 }
                                 PillButton {
-                                    text: row.t.line === "" ? "Make my own dunstrc" : "Add it for me"
+                                    text: row.t.line === "" ? "Make my own dunstrc"
+                                          : row.t.replaces ? "Set it aside for me" : "Add it for me"
                                     tooltip: row.t.line === ""
                                              ? "Copies the system dunstrc to " + row.t.config
-                                             : "Adds the line " + row.t.place + " " + row.t.config
-                                               + ", after backing it up"
+                                             : row.t.replaces
+                                               ? "Backs up " + row.t.config + " and starts a new one "
+                                                 + "that loads the colors"
+                                               : "Adds the line " + row.t.place + " " + row.t.config
+                                                 + ", after backing it up"
                                     onClicked: App.run("colors.wire", { id: row.t.id })
                                 }
                             }

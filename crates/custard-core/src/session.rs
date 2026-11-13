@@ -1187,6 +1187,7 @@ impl Session {
             "colors.set" => self.set_colors(payload),
             "colors.apply" => self.apply_colors(),
             "colors.wire" => self.wire_colors(payload),
+            "colors.fix" => self.fix_colors(payload),
             "colors.follow" => {
                 if payload.get("on").and_then(Value::as_bool).unwrap_or(false) {
                     self.start_following().map(Some)
@@ -1413,26 +1414,55 @@ impl Session {
         if t.wired {
             return Ok(Some(format!("{} already loads its colors", t.name)));
         }
-        let backup = colors::targets::wire(t, self.settings.backups_to_keep)?;
-        // A scheme already applied is written now, so the line has something
-        // to load rather than waiting for the next Apply.
+        // A scheme already applied is written first, so the line has
+        // something to load rather than waiting for the next Apply.
         if let Some(s) = &self.colors_applied {
             if !self.settings.colors.off.iter().any(|o| o == t.id) {
                 colors::targets::write(t, s, self.settings.colors.opacity)?;
             }
         }
+        let backup = colors::targets::wire(t, self.settings.backups_to_keep)?;
         if t.id == "hyprland" {
             self.hand_rules = read_hand_rules(&self.settings.resolved_config_path());
         }
+        let config = paths::contract(&t.config);
         let mut msg = if t.line.is_empty() {
-            format!("Made {} your own, so {} reads the colors", paths::contract(&t.config), t.name)
+            format!("Made {config} your own, so {} reads the colors", t.name)
+        } else if t.replaces {
+            format!("Set your theme in {config} aside and started a new one that loads the colors")
+        } else if t.id == "kvantum" {
+            format!("Set Kvantum to the {} theme in {config}", colors::toolkits::KVANTUM_THEME)
+        } else if matches!(t.id, "qt6ct" | "qt5ct") {
+            format!("Set {} to the hyprcustard colors in {config}", t.id)
         } else {
-            format!("Added the colors line to {}", paths::contract(&t.config))
+            format!("Added the colors line to {config}")
         };
         if let Some(b) = backup {
             msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
         }
         Ok(Some(msg))
+    }
+
+    /// Make the change a target's row offers to let the scheme show: for
+    /// GTK 3, switching to adw-gtk3.
+    fn fix_colors(&mut self, payload: &Value) -> Result<Option<String>> {
+        let id = id_of(payload)?;
+        if id != "gtk3" {
+            return Err(Error::other(format!("there is nothing to fix for `{id}`")));
+        }
+        let home = paths::apps_config_home();
+        let desk = colors::toolkits::Desktop::read(&home);
+        let dark = match (&self.colors_applied, &self.colors_built) {
+            (Some(s), _) => s.dark,
+            (None, Some(Ok(b))) => b.scheme.dark,
+            _ => self.settings.colors.dark,
+        };
+        let was =
+            colors::toolkits::use_adw_gtk3(&home, &desk, dark, self.settings.backups_to_keep)?;
+        let now = desk.adw_gtk3(dark).unwrap_or("adw-gtk3");
+        Ok(Some(format!(
+            "Switched the GTK theme to {now} (it was {was}). Apps opened from now on use it"
+        )))
     }
 
     fn colors_view(&self) -> Value {
@@ -1487,6 +1517,9 @@ impl Session {
                 "line": t.line,
                 "place": t.place,
                 "usage": t.usage,
+                "warning": t.warning,
+                "fix": t.fix,
+                "replaces": t.replaces,
             })).collect::<Vec<_>>(),
             "hyprlandConflicts": conflicts,
             "ffmpeg": self.desk.ffmpeg,

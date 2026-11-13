@@ -18,6 +18,7 @@ pub mod follow;
 pub mod named;
 pub mod scheme;
 pub mod targets;
+pub mod toolkits;
 pub mod wallpaper;
 
 use std::path::{Path, PathBuf};
@@ -279,7 +280,7 @@ pub fn apply(
             continue;
         }
         if t.wired {
-            out.written.push((t.name.to_string(), targets::reload(t)));
+            out.written.push((t.name.to_string(), targets::reload(t, built)));
         } else {
             out.written.push((t.name.to_string(), None));
             out.unwired.push(t.name.to_string());
