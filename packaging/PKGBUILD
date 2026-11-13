@@ -11,7 +11,7 @@ pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
 url="https://github.com/ManofJELLO/hyprcustard"
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg')
+depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg' 'adw-gtk-theme')
 makedepends=('cargo')
 optdepends=('hyprland: the compositor this configures'
             'hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure'

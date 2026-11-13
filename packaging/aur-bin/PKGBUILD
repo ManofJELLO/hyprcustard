@@ -30,7 +30,10 @@ license=('MIT')
 # belongs in depends rather than being inherited from something else's. They
 # are their own packages now rather than gcc-libs, which still exists and is
 # the wrong answer here.
-depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg')
+# adw-gtk-theme is what lets GTK 3 apps (and GTK 4 ones without libadwaita)
+# take the Colors page's scheme; most other GTK themes have their colors
+# built in. It is only themes, and nothing is switched to it unasked.
+depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg' 'adw-gtk-theme')
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname")
 optdepends=('hyprland: the compositor this configures'
