@@ -9,7 +9,7 @@ WATCH := custard-watch
 QMLLINT ?= qmllint
 QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
-.PHONY: all build release test check install uninstall clean shots aur-bin icons
+.PHONY: all build release test check install uninstall clean shots aur-bin icons local-pkg
 
 all: release
 
@@ -64,6 +64,22 @@ ICONS := crates/custard-gui/icons
 icons:
 	rsvg-convert -w 64 -h 64 $(ICONS)/hyprcustard-tray.svg -o $(ICONS)/hyprcustard-tray.png
 	rsvg-convert -w 128 -h 128 $(ICONS)/hyprcustard.svg -o $(ICONS)/hyprcustard.png
+
+# A pacman package of what is committed here, for using hyprcustard as a
+# user would between releases: see packaging/local/PKGBUILD. Built from a
+# copy under target/, since makepkg writes the version into the PKGBUILD it
+# runs. The build folder is kept, so the next build only compiles what
+# changed. Install the package with the `sudo pacman -U` line this prints.
+LOCAL_PKG := target/local-pkg
+local-pkg:
+	@git diff --quiet HEAD || echo "note: uncommitted changes are not in the package"
+	@mkdir -p $(LOCAL_PKG)
+	cp packaging/local/PKGBUILD $(LOCAL_PKG)/PKGBUILD
+	cd $(LOCAL_PKG) && CUSTARD_REPO=$(CURDIR) makepkg -f
+	@echo
+	@echo "Install it with:"
+	@cd $(LOCAL_PKG) && for p in $$(CUSTARD_REPO=$(CURDIR) makepkg --packagelist); do \
+		echo "  sudo pacman -U $$p"; done
 
 # Render every page to a PNG without a compositor.
 shots: build

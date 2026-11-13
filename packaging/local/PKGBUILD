@@ -1,0 +1,72 @@
+# Maintainer: Eric Trantina
+#
+# Builds a package from this git checkout, so pacman manages a build of
+# what is committed here — for using hyprcustard as a user would between
+# releases. `make local-pkg` builds it under target/local-pkg, then prints
+# the `sudo pacman -U` line that installs it.
+#
+# Only commits are built (makepkg clones the checkout), never uncommitted
+# work. The version comes from `git describe`, 0.3.1.r5.g1234abc, so every
+# new commit is an upgrade to pacman. It replaces hyprcustard-bin, and a
+# release of hyprcustard-bin replaces it in turn.
+pkgname=hyprcustard-git
+_name=hyprcustard
+pkgver=0.3.1.r0.g0000000
+pkgrel=1
+pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support (built from a local checkout)"
+arch=('x86_64')
+url="https://github.com/ManofJELLO/hyprcustard"
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'glibc' 'libstdc++' 'libgcc' 'ffmpeg' 'adw-gtk-theme')
+makedepends=('cargo' 'git')
+optdepends=('hyprland: the compositor this configures'
+            'hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure'
+            'hyprpm: the Plugin page, which installs and reloads the plugin'
+            'grim: the shader preview, which reads frames out of a nested compositor'
+            'swaybg: your wallpaper behind the shader preview, and a wallpaper program the Wallpaper page drives'
+            'awww: a wallpaper program the Wallpaper page drives (swww works too)'
+            'hyprpaper: a wallpaper program the Wallpaper page drives'
+            'mpvpaper: video wallpapers and whole folders on the Wallpaper page'
+            'kitty: a terminal for the preview window and "Run in a terminal" (foot, alacritty, ghostty, wezterm, konsole or xterm will do as well)')
+provides=("$_name=${pkgver%%.r*}")
+conflicts=("$_name" "$_name-bin")
+# makepkg's link-time optimization compiles the Qt bridge's C++ into GCC's
+# own intermediate form, which the linker cargo uses cannot read.
+options=('!lto')
+# The checkout: `make local-pkg` says which, since it builds from a copy of
+# this file. Run here by hand, it is the one this file sits in.
+_repo="${CUSTARD_REPO:-$(realpath "$startdir/../..")}"
+source=("$_name::git+file://$_repo")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$_name"
+    git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+    cd "$_name"
+    export RUSTUP_TOOLCHAIN=stable
+    # build() is --frozen, which is --offline: everything it compiles has to
+    # be here before the network goes away.
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$_name"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --release --frozen
+}
+
+check() {
+    cd "$_name"
+    export RUSTUP_TOOLCHAIN=stable
+    # Only the engine is tested; the UI needs a compositor.
+    cargo test --frozen -p custard-core
+}
+
+package() {
+    cd "$_name"
+    make install DESTDIR="$pkgdir" PREFIX=/usr
+}
