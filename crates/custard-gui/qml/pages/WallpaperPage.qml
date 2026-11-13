@@ -25,6 +25,11 @@ Item {
     readonly property bool stuckLines: (startup.lines || []).some(function (l) { return !l.movable })
     // Folders as text, so the library is read again only when they change.
     readonly property string foldersKey: JSON.stringify(wall.folders || [])
+    readonly property bool scanned: wall.scanned === true
+    // The files on screen as text, so a new pick asks for its preview.
+    readonly property string shownKey: JSON.stringify(monitors.map(function (m) {
+        return m.wallpaper ? m.wallpaper.file : null
+    }))
 
     // Which monitor a pick goes on; empty for all of them. Not saved.
     property string target: ""
@@ -63,14 +68,14 @@ Item {
         var want = []
         for (var m = 0; m < page.monitors.length; m++) {
             var w = page.monitors[m].wallpaper
-            if (w && w.file)
+            if (w && w.file && !w.ready && page.readyMap[w.file] !== true)
                 want.push(w.file)
         }
         var groups = page.library.groups || []
         for (var g = 0; g < groups.length; g++) {
             var files = groups[g].files
             for (var f = 0; f < files.length; f++) {
-                if (!files[f].ready)
+                if (!files[f].ready && page.readyMap[files[f].path] !== true)
                     want.push(files[f].path)
             }
         }
@@ -92,10 +97,12 @@ Item {
         return on
     }
 
-    function canShow(video, folder) {
+    function canShow(video, folder, gif) {
         if (!page.using)
             return false
-        return folder ? page.using.folders : (!video || page.using.videos)
+        if (folder)
+            return page.using.folders
+        return (!video || page.using.videos) && (!gif || page.using.gifs)
     }
 
     function put(path) {
@@ -107,9 +114,80 @@ Item {
         App.run("wallpaper.set", changes)
     }
 
-    onVisibleChanged: if (page.visible) page.scan()
+    readonly property var mpv: wall.mpv || ({ changeEvery: 0, shuffle: false })
+    // The timer to go back to when it is turned on again, in seconds.
+    property int lastTimer: 300
+
+    function minutes(secs) {
+        var m = secs / 60
+        return String(Math.round(m * 100) / 100)
+    }
+
+    // Change mpvpaper's timer or shuffle, and play the folder on screen
+    // again with it.
+    function setMpv(changes) {
+        if (changes.change_every > 0)
+            page.lastTimer = changes.change_every
+        page.set({ mpv: changes })
+        if (page.monitors.some(function (m) { return !!m.wallpaper && m.wallpaper.folder }))
+            Qt.callLater(page.reapply)
+    }
+
+    // Picks waiting for the one being put up to finish.
+    property var again: []
+
+    // Change a choice and put what is on screen up again with it, so it
+    // shows at once rather than at the next pick: each monitor's own
+    // wallpaper, or one pick for all of them when they show the same.
+    function setAndApply(changes) {
+        page.set(changes)
+        Qt.callLater(page.reapply)
+    }
+
+    function reapply() {
+        var folders = !!page.using && page.using.folders
+        var jobs = []
+        for (var i = 0; i < page.monitors.length; i++) {
+            var w = page.monitors[i].wallpaper
+            if (!w)
+                continue
+            // A program that shows one file at a time takes the clip a
+            // folder is on.
+            var path = w.folder && !folders ? (w.file || "") : w.path
+            if (path)
+                jobs.push({ path: path, monitor: page.monitors[i].name })
+        }
+        if (jobs.length === 0)
+            return
+        if (jobs.every(function (j) { return j.path === jobs[0].path }))
+            jobs = [{ path: jobs[0].path, monitor: "" }]
+        page.again = jobs
+        page.next()
+    }
+
+    function next() {
+        if (page.busy || page.again.length === 0 || !App.backend)
+            return
+        var job = page.again[0]
+        page.again = page.again.slice(1)
+        App.backend.wallpaperSet(JSON.stringify(job))
+    }
+
+    onBusyChanged: if (!page.busy) page.next()
+
+    // The folders are read once the first scan is in, and again each time the
+    // page is opened, so files added since show up.
+    onVisibleChanged: {
+        if (!page.visible)
+            return
+        page.scan()
+        if (page.scanned)
+            page.load()
+    }
     Component.onCompleted: if (page.visible) page.scan()
-    onFoldersKeyChanged: if (page.wall.scanned) page.load()
+    onScannedChanged: if (page.scanned) page.load()
+    onFoldersKeyChanged: if (page.scanned) page.load()
+    onShownKeyChanged: if (page.scanned) page.makeThumbs()
 
     Connections {
         target: App.backend
@@ -191,7 +269,7 @@ Item {
                                 Image {
                                     anchors.fill: parent
                                     visible: !!now.shown && !!now.shown.thumb
-                                             && page.ready(now.shown.file, false)
+                                             && page.ready(now.shown.file, now.shown.ready === true)
                                     source: visible ? "file://" + now.shown.thumb : ""
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
@@ -278,7 +356,10 @@ Item {
                                    + running.map(function (p) { return p.id }).join(" and ") + "."
                         if (page.using && page.using.id === "mpvpaper")
                             return "mpvpaper plays videos and whole folders, and keeps the options you started it with."
-                        return page.using && !page.using.videos ? page.using.id + " shows images and GIFs, not videos." : ""
+                        if (!page.using || page.using.videos)
+                            return ""
+                        return page.using.id + (page.using.gifs ? " shows images and GIFs, not videos."
+                                                                : " shows images, not videos or GIFs.")
                     }
                     Dropdown {
                         width: 260
@@ -288,7 +369,10 @@ Item {
                         })
                         currentIndex: page.using ? Math.max(0, page.programs.map(function (p) { return p.id }).indexOf(page.using.id)) : -1
                         onActivated: function (index) {
-                            page.set({ program: page.programs[index].id })
+                            var id = page.programs[index].id
+                            if (page.using && page.using.id === id)
+                                return
+                            page.setAndApply({ program: id })
                         }
                     }
                 }
@@ -298,14 +382,72 @@ Item {
                     label: "Fit"
                     hint: page.using && page.using.id === "mpvpaper"
                           && (page.wall.programs || []).some(function (p) { return p.id === "mpvpaper" && p.running })
-                          ? "mpvpaper keeps the options it was started with, so this applies once it is started fresh."
+                          ? "mpvpaper keeps the options you started it with, where its own panscan and "
+                            + "video-zoom decide the fit; this applies when hyprcustard chooses the options."
                           : ""
                     Dropdown {
                         width: 260
                         model: ["Fill the screen", "Fit inside it", "Stretch to it"]
                         currentIndex: Math.max(0, ["fill", "fit", "stretch"].indexOf(page.choice.fit || "fill"))
                         onActivated: function (index) {
-                            page.set({ fit: ["fill", "fit", "stretch"][index] })
+                            var fit = ["fill", "fit", "stretch"][index]
+                            if (fit !== (page.choice.fit || "fill"))
+                                page.setAndApply({ fit: fit })
+                        }
+                    }
+                }
+
+                // mpvpaper's timer and shuffle, laid over whatever command
+                // it is started with.
+                FieldRow {
+                    visible: !!page.using && page.using.id === "mpvpaper"
+                    width: parent.width
+                    label: "A whole folder"
+                    hint: "Without a timer, mpv decides: each video plays to its end, and your "
+                          + "loop options may keep one playing. Your other mpvpaper options stay as they are."
+                    Row {
+                        spacing: Theme.gap
+                        Toggle {
+                            id: timerSwitch
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Next file every"
+                            checked: page.mpv.changeEvery > 0
+                            onToggled: page.setMpv({ change_every: checked ? page.lastTimer : 0 })
+                        }
+                        LineEdit {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 72
+                            enabled: timerSwitch.checked
+                            horizontalAlignment: TextInput.AlignRight
+                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                            text: page.minutes(page.mpv.changeEvery > 0 ? page.mpv.changeEvery : page.lastTimer)
+                            onCommit: function (v) {
+                                var m = parseFloat(String(v).replace(",", "."))
+                                var secs = Math.round(m * 60)
+                                if (!(secs >= 1)) {
+                                    text = page.minutes(page.mpv.changeEvery || page.lastTimer)
+                                    return
+                                }
+                                page.lastTimer = secs
+                                if (secs !== page.mpv.changeEvery)
+                                    page.setMpv({ change_every: secs })
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "minutes"
+                            color: Theme.fgDim
+                            font.pixelSize: Theme.fontSize
+                        }
+                        Item {
+                            width: Theme.gap
+                            height: 1
+                        }
+                        Toggle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Shuffle"
+                            checked: page.mpv.shuffle === true
+                            onToggled: page.setMpv({ shuffle: checked })
                         }
                     }
                 }
@@ -316,7 +458,14 @@ Item {
                           : "Recolor the desktop to match each pick, with the Colors page's style and apps"
                     enabled: !page.wall.colorsFollow
                     checked: page.wall.colorsFollow === true || page.choice.recolor === true
-                    onToggled: page.set({ recolor: checked })
+                    onToggled: {
+                        page.set({ recolor: checked })
+                        // Turned on: the wallpaper already up is the first
+                        // to recolor from.
+                        if (checked && App.backend && !page.busy
+                                && page.monitors.some(function (m) { return !!m.wallpaper }))
+                            App.backend.wallpaperSet(JSON.stringify({ colorsOnly: true }))
+                    }
                 }
 
                 Text {
@@ -350,6 +499,38 @@ Item {
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.fontSizeSmall
                         elide: Text.ElideRight
+                    }
+                }
+
+                // What starts it instead, for the user to see what was added.
+                Text {
+                    visible: page.startup.managed === true && !!page.startup.block
+                    width: parent.width
+                    text: page.startup.block ? "added, from line " + page.startup.block.number + ":" : ""
+                    color: Theme.muted
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+                Rectangle {
+                    visible: page.startup.managed === true && !!page.startup.block
+                    width: parent.width
+                    implicitHeight: blockText.implicitHeight + 2 * Theme.gapSmall
+                    radius: Theme.radiusSmall
+                    color: Theme.bgAlt
+                    border.width: 1
+                    border.color: Theme.border
+
+                    TextEdit {
+                        id: blockText
+                        x: Theme.gapSmall
+                        y: Theme.gapSmall
+                        width: parent.width - 2 * Theme.gapSmall
+                        readOnly: true
+                        selectByMouse: true
+                        wrapMode: TextEdit.WrapAnywhere
+                        text: page.startup.block ? page.startup.block.text : ""
+                        color: Theme.fg
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fontSizeSmall
                     }
                 }
 
@@ -535,7 +716,7 @@ Item {
                                     id: tile
                                     required property var modelData
                                     readonly property var on: page.shownOn(tile.modelData.path)
-                                    readonly property bool showable: page.canShow(tile.modelData.video, false)
+                                    readonly property bool showable: page.canShow(tile.modelData.video, false, tile.modelData.gif)
                                     width: 192
                                     height: 140
                                     radius: Theme.radiusSmall
