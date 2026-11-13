@@ -16,7 +16,7 @@
 pkgname=hyprcustard-bin
 _pkgname=hyprcustard
 _reponame=hyprcustard
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
