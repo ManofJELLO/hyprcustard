@@ -1,0 +1,31 @@
+pkgbase = hyprcustard-bin
+	pkgdesc = A theming GUI for Hyprland, with HyprWindowShade shader support
+	pkgver = 0.3.1
+	pkgrel = 1
+	url = https://github.com/ManofJELLO/hyprcustard
+	arch = x86_64
+	license = MIT
+	depends = qt6-base
+	depends = qt6-declarative
+	depends = glibc
+	depends = libstdc++
+	depends = libgcc
+	depends = ffmpeg
+	depends = adw-gtk-theme
+	optdepends = hyprland: the compositor this configures
+	optdepends = hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure
+	optdepends = hyprpm: the Plugin page, which installs and reloads the plugin
+	optdepends = grim: the shader preview, which reads frames out of a nested compositor
+	optdepends = swaybg: your wallpaper behind the shader preview, and a wallpaper program the Wallpaper page drives
+	optdepends = awww: a wallpaper program the Wallpaper page drives (swww works too)
+	optdepends = hyprpaper: a wallpaper program the Wallpaper page drives
+	optdepends = mpvpaper: video wallpapers and whole folders on the Wallpaper page
+	optdepends = kitty: a terminal for the preview window and "Run in a terminal" (foot, alacritty, ghostty, wezterm, konsole or xterm will do as well)
+	provides = hyprcustard=0.3.1
+	conflicts = hyprcustard
+	options = !strip
+	options = !debug
+	source_x86_64 = hyprcustard-bin-0.3.1.tar.gz::https://github.com/ManofJELLO/hyprcustard/releases/download/v0.3.1/hyprcustard-0.3.1-x86_64.tar.gz
+	sha256sums_x86_64 = 8e6b7b5e49a6664f80eff58fd3c8ea872389de5d14912e009299be6d83df3437
+
+pkgname = hyprcustard-bin

@@ -51,7 +51,7 @@ options=('!strip' '!debug')
 source_x86_64=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/$_pkgname-$pkgver-$CARCH.tar.gz")
 # Filled in by `make aur-bin VERSION=<version>`, from the asset the release
 # workflow published, once that release exists.
-sha256sums_x86_64=('SKIP')
+sha256sums_x86_64=('8e6b7b5e49a6664f80eff58fd3c8ea872389de5d14912e009299be6d83df3437')
 
 package() {
     cd "$_pkgname-$pkgver-$CARCH"
