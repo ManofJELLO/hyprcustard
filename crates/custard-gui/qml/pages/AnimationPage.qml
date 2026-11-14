@@ -126,9 +126,13 @@ Item {
             Layout.maximumWidth: Theme.listWidth
             Layout.fillHeight: true
             radius: Theme.radius
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.border
+            color: "transparent"
+
+            Raised {
+                anchors.fill: parent
+                z: -1
+                radius: parent.radius
+            }
 
             ListView {
                 id: list

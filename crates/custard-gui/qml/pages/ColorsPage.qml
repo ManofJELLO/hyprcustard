@@ -716,9 +716,14 @@ Item {
                         width: parent ? parent.width : 0
                         height: rowColumn.implicitHeight + 2 * Theme.gap
                         radius: Theme.radiusSmall
-                        color: Theme.surface
-                        border.width: 1
-                        border.color: Theme.border
+                        color: "transparent"
+
+                        Raised {
+                            anchors.fill: parent
+                            z: -1
+                            radius: parent.radius
+                            depth: Theme.depthSmall
+                        }
 
                         Column {
                             id: rowColumn

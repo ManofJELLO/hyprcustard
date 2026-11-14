@@ -20,11 +20,9 @@ TextField {
     font.pixelSize: Theme.fontSize
     font.family: control.mono ? Theme.monoFamily : font.family
 
-    background: Rectangle {
+    background: Inset {
         radius: Theme.radiusSmall
-        color: Theme.bgAlt
-        border.width: 1
-        border.color: control.activeFocus ? Theme.accent : Theme.border
+        glow: control.activeFocus
     }
 
     onEditingFinished: control.commit(control.text)

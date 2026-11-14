@@ -18,26 +18,32 @@ Button {
     rightPadding: control.compact ? Theme.gap : Theme.pad
     hoverEnabled: true
 
-    readonly property color _tint: danger ? Theme.error
-                                          : (primary ? Theme.accent : Theme.border)
+    readonly property color _tint: danger ? Theme.error : Theme.accent
+    readonly property bool _sunk: control.down || control.checked
+    readonly property real _radius: control.compact ? height / 2 : Theme.radiusSmall
 
-    background: Rectangle {
-        radius: control.compact ? height / 2 : Theme.radiusSmall
-        color: {
-            if (!control.enabled)
-                return "transparent"
-            if (control.primary)
-                return control.down ? Qt.darker(Theme.accent, 1.2) : Theme.accent
-            if (control.down)
-                return Theme.selection
-            return control.hovered ? Theme.surfaceHi : "transparent"
-        }
-        border.width: 1
-        border.color: control.enabled ? control._tint : Theme.border
+    // Raised, and pressed in while held. A primary or danger button carries
+    // its color on its edge, and the primary one glows while it can be
+    // pressed.
+    background: Item {
+        implicitHeight: control.implicitHeight
         opacity: control.enabled ? 1.0 : 0.45
 
-        Behavior on color {
-            ColorAnimation { duration: 90 }
+        Raised {
+            anchors.fill: parent
+            visible: !control._sunk
+            radius: control._radius
+            depth: control.compact ? 2 : (control.hovered ? Theme.depthSmall + 1 : Theme.depthSmall)
+            glow: control.primary && control.enabled
+            glowColor: control._tint
+            edge: control.danger ? Theme.wash(Theme.error, 0.7) : "transparent"
+        }
+        Inset {
+            anchors.fill: parent
+            visible: control._sunk
+            radius: control._radius
+            glow: control.primary || control.danger
+            glowColor: control._tint
         }
     }
 
@@ -47,7 +53,7 @@ Button {
             if (!control.enabled)
                 return Theme.muted
             if (control.primary)
-                return Theme.onAccent
+                return Theme.accent
             if (control.danger)
                 return Theme.error
             return Theme.fg

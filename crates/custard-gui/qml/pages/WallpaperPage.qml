@@ -252,9 +252,15 @@ Item {
                             width: 236
                             height: 182
                             radius: Theme.radiusSmall
-                            color: Theme.surface
-                            border.width: now.chosen ? 2 : 1
-                            border.color: now.chosen ? Theme.accent : Theme.border
+                            color: "transparent"
+
+                            Raised {
+                                anchors.fill: parent
+                                z: -1
+                                radius: parent.radius
+                                depth: Theme.depthSmall
+                                glow: now.chosen
+                            }
 
                             Rectangle {
                                 id: nowFrame
@@ -598,9 +604,14 @@ Item {
                             height: 28
                             width: chipText.implicitWidth + 40
                             radius: 14
-                            color: Theme.surface
-                            border.width: 1
-                            border.color: Theme.border
+                            color: "transparent"
+
+                            Raised {
+                                anchors.fill: parent
+                                z: -1
+                                radius: parent.radius
+                                depth: Theme.depthSmall
+                            }
                             Text {
                                 id: chipText
                                 x: 12

@@ -183,9 +183,14 @@ Item {
                         width: 300
                         height: cardColumn.implicitHeight + Theme.pad * 2
                         radius: Theme.radius
-                        color: Theme.surface
-                        border.width: themeCard.modelData.active ? 2 : 1
-                        border.color: themeCard.modelData.active ? Theme.accent : Theme.border
+                        color: "transparent"
+
+                        Raised {
+                            anchors.fill: parent
+                            z: -1
+                            radius: parent.radius
+                            glow: themeCard.modelData.active
+                        }
 
                         Column {
                             id: cardColumn

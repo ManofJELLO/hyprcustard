@@ -129,6 +129,12 @@ fn main() {
         app.set_organization_name(&QString::from("hyprcustard"));
     }
 
+    // The font chosen in Settings. Text items take their family from the
+    // application font when they are made and do not follow a later change,
+    // so it is set once, here, before the interface is built.
+    let (settings, _) = custard_core::settings::Settings::load();
+    bridge::qobject::apply_app_font(&QString::from(settings.font.as_str()));
+
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
         // Qt 6.5 added `:/qt/qml` to the default import path; on 6.4 the module's

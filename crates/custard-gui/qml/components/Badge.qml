@@ -11,10 +11,10 @@ Rectangle {
 
     implicitWidth: label.implicitWidth + 14
     implicitHeight: 20
-    radius: 10
-    color: badge.solid ? badge.tint : Theme.wash(badge.tint, Theme.dark ? 0.2 : 0.16)
+    radius: 4
+    color: badge.solid ? badge.tint : Theme.wash(badge.tint, Theme.dark ? 0.12 : 0.14)
     border.width: 1
-    border.color: Theme.wash(badge.tint, 0.55)
+    border.color: Theme.wash(badge.tint, 0.7)
 
     Text {
         id: label
@@ -23,5 +23,6 @@ Rectangle {
         color: badge.solid ? Theme.onAccent : badge.tint
         font.pixelSize: Theme.fontSizeSmall
         font.weight: Font.DemiBold
+        font.letterSpacing: 0.6
     }
 }

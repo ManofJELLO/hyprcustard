@@ -122,12 +122,32 @@ QtObject {
         return Qt.rgba(c.r, c.g, c.b, 1)
     }
 
+    // --- depth ---------------------------------------------------------------
+    //
+    // Shapes are raised out of the background or pressed into it: lit at the
+    // top left, shadowed at the bottom right. Both shades come from the
+    // background itself, so the look holds under any theme, light or dark.
+
+    readonly property color shadowDark: _shade(bg, dark ? -0.62 : -0.22)
+    readonly property color shadowLight: dark ? wash(_shade(bg, 0.17), 0.85)
+                                              : Qt.rgba(1, 1, 1, 0.9)
+    // The floor of a pressed-in shape.
+    readonly property color well: _shade(bg, dark ? -0.22 : -0.06)
+    // How far a raised shape stands out.
+    readonly property int depth: 6
+    readonly property int depthSmall: 3
+
+    // A soft colored light around what is focused or on.
+    function glow(c) {
+        return Qt.rgba(c.r, c.g, c.b, dark ? 0.45 : 0.35)
+    }
+
     // Metrics. One place, so spacing stays consistent across pages.
     readonly property int pad: 16
     readonly property int gap: 10
     readonly property int gapSmall: 6
-    readonly property int radius: 8
-    readonly property int radiusSmall: 5
+    readonly property int radius: 12
+    readonly property int radiusSmall: 8
     readonly property int rowHeight: 34
     readonly property int sidebarWidth: 188
     readonly property int listWidth: 300

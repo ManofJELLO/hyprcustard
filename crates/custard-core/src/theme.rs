@@ -1,8 +1,9 @@
 //! Colors for the app's own window.
 //!
-//! By default the app wears whatever Qt is already wearing, so it matches the
-//! rest of the desktop rather than announcing itself. Gruvbox dark and light
-//! are built in for anyone who would rather it did. Anything else is a TOML
+//! By default the app wears Sodium: warm charcoal lit amber and teal, like a
+//! city street at night under sodium lamps. It can instead wear whatever Qt
+//! is wearing, the color scheme applied from the Colors page, or Gruvbox dark
+//! or light. Anything else is a TOML
 //! file in `~/.config/hyprcustard/themes/`, which may override as few
 //! or as many of the colors as it likes and set the window's opacity.
 //!
@@ -70,6 +71,34 @@ pub struct Theme {
     pub system: bool,
     /// The colors.
     pub colors: Palette,
+}
+
+/// Sodium: the app's own look, and its default.
+pub fn sodium() -> Theme {
+    Theme {
+        id: "sodium".into(),
+        name: "Sodium".into(),
+        dark: true,
+        opacity: 1.0,
+        system: false,
+        colors: Palette {
+            bg: "#221d1a".into(),
+            bg_alt: "#1b1714".into(),
+            surface: "#26211d".into(),
+            surface_hi: "#2e2823".into(),
+            border: "#3d342c".into(),
+            fg: "#f3e9dc".into(),
+            fg_dim: "#bfae9b".into(),
+            muted: "#857565".into(),
+            accent: "#ffa53b".into(),
+            accent_alt: "#2fd3c6".into(),
+            ok: "#a6e36b".into(),
+            warn: "#ffd166".into(),
+            error: "#ff4a3d".into(),
+            selection: "#3a2f25".into(),
+            on_accent: "#221d1a".into(),
+        },
+    }
 }
 
 /// Gruvbox dark.
@@ -186,9 +215,9 @@ pub fn from_scheme(s: &crate::colors::Scheme) -> Theme {
     }
 }
 
-/// The themes that ship with the app, the system one first.
+/// The themes that ship with the app, the default one first.
 pub fn builtin() -> Vec<Theme> {
-    vec![system(), color_scheme(), gruvbox_dark(), gruvbox_light()]
+    vec![sodium(), system(), color_scheme(), gruvbox_dark(), gruvbox_light()]
 }
 
 // ---------------------------------------------------------------------------
@@ -249,11 +278,12 @@ pub fn from_toml(id: &str, text: &str) -> Result<Theme> {
 
     let mut theme = match file.base.as_deref() {
         Some("gruvbox-light") => gruvbox_light(),
+        Some("sodium") => sodium(),
         Some("gruvbox-dark") | None => gruvbox_dark(),
         Some(other) => {
             return Err(Error::other(format!(
                 "theme `{id}` has base = \"{other}\", which is not a built-in theme \
-                 (use gruvbox-dark or gruvbox-light)"
+                 (use sodium, gruvbox-dark or gruvbox-light)"
             )))
         }
     };
@@ -338,10 +368,10 @@ pub fn load_all() -> (Vec<Theme>, Vec<String>) {
     (themes, problems)
 }
 
-/// Find a theme by id, falling back to Gruvbox dark.
+/// Find a theme by id, falling back to Sodium.
 pub fn resolve(id: &str) -> Theme {
     let (themes, _) = load_all();
-    themes.into_iter().find(|t| t.id == id).unwrap_or_else(system)
+    themes.into_iter().find(|t| t.id == id).unwrap_or_else(sodium)
 }
 
 /// Write a documented example theme file, so there is something to copy.
@@ -361,7 +391,7 @@ pub const EXAMPLE_THEME: &str = r##"# A theme for hyprcustard.
 # leave out keeps the base theme's value.
 
 name = "Example"
-base = "gruvbox-dark"     # gruvbox-dark or gruvbox-light
+base = "gruvbox-dark"     # sodium, gruvbox-dark or gruvbox-light
 dark = true               # affects shadows and a few contrast choices
 opacity = 0.96            # 0.3 – 1.0; Hyprland composites the rest
 
@@ -417,12 +447,12 @@ mod tests {
     fn builtins_are_distinct_and_named() {
         let b = builtin();
         let ids: Vec<&str> = b.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids, vec!["system", "scheme", "gruvbox-dark", "gruvbox-light"]);
+        assert_eq!(ids, vec!["sodium", "system", "scheme", "gruvbox-dark", "gruvbox-light"]);
         assert!(b.iter().all(|t| !t.name.is_empty()));
         // The two Gruvboxes are a dark/light pair and must not look alike.
-        assert!(b[2].dark);
-        assert!(!b[3].dark);
-        assert_ne!(b[2].colors.bg, b[3].colors.bg);
+        assert!(b[3].dark);
+        assert!(!b[4].dark);
+        assert_ne!(b[3].colors.bg, b[4].colors.bg);
     }
 
     #[test]
@@ -446,9 +476,10 @@ mod tests {
     }
 
     #[test]
-    fn the_system_theme_is_the_default_and_the_fallback() {
-        assert_eq!(crate::model::Config::default().theme, "system");
-        assert_eq!(resolve("no-such-theme").id, "system");
+    fn sodium_is_the_default_and_the_fallback() {
+        assert_eq!(crate::model::Config::default().theme, "sodium");
+        assert_eq!(resolve("no-such-theme").id, "sodium");
+        assert_eq!(from_toml("mine", "base = \"sodium\"\n").unwrap().colors.bg, sodium().colors.bg);
     }
 
     #[test]

@@ -8,27 +8,25 @@ Switch {
     implicitHeight: 26
     font.pixelSize: Theme.fontSize
 
-    indicator: Rectangle {
-        implicitWidth: 38
-        implicitHeight: 20
+    // A pressed-in track with a raised knob, which lights up when on.
+    indicator: Inset {
+        implicitWidth: 42
+        implicitHeight: 22
         x: control.leftPadding
         y: parent.height / 2 - height / 2
-        radius: 10
-        color: control.checked ? Theme.accent : Theme.bgAlt
-        border.width: 1
-        border.color: control.checked ? Theme.accent : Theme.border
+        radius: height / 2
+        glow: control.checked
+        opacity: control.enabled ? 1.0 : 0.45
 
-        Behavior on color {
-            ColorAnimation { duration: 110 }
-        }
-
-        Rectangle {
-            x: control.checked ? parent.width - width - 2 : 2
-            y: 2
+        Raised {
+            x: control.checked ? parent.width - width - 3 : 3
+            y: 3
             width: 16
             height: 16
             radius: 8
-            color: control.checked ? Theme.onAccent : Theme.muted
+            depth: 2
+            fill: control.checked ? Theme.accent : Theme.bg
+            glow: control.checked
 
             Behavior on x {
                 NumberAnimation { duration: 110; easing.type: Easing.OutCubic }

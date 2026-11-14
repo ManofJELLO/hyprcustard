@@ -27,13 +27,14 @@ ComboBox {
             // resolves to nothing at all. That looks like a list of blank rows
             // that still select the correct entry.
             text: control.textAt(item.index)
-            color: Theme.fg
+            color: item.highlighted ? Theme.accent : Theme.fg
             font.pixelSize: Theme.fontSize
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
-            color: item.highlighted ? Theme.selection : Theme.surface
+            color: item.highlighted ? Theme.wash(Theme.accent, 0.16) : "transparent"
+            radius: 4
         }
     }
 
@@ -55,11 +56,20 @@ ComboBox {
         elide: Text.ElideRight
     }
 
-    background: Rectangle {
-        radius: Theme.radiusSmall
-        color: Theme.bgAlt
-        border.width: 1
-        border.color: control.activeFocus ? Theme.accent : Theme.border
+    background: Item {
+        Raised {
+            anchors.fill: parent
+            visible: !control.down && !control.popup.visible
+            radius: Theme.radiusSmall
+            depth: Theme.depthSmall
+            glow: control.visualFocus
+        }
+        Inset {
+            anchors.fill: parent
+            visible: control.down || control.popup.visible
+            radius: Theme.radiusSmall
+            glow: true
+        }
     }
 
     popup: Popup {
@@ -81,11 +91,10 @@ ComboBox {
             }
         }
 
-        background: Rectangle {
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.border
+        background: Raised {
             radius: Theme.radiusSmall
+            depth: Theme.depthSmall
+            edge: Theme.wash(Theme.accent, 0.5)
         }
     }
 }

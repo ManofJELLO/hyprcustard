@@ -295,10 +295,14 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: Math.max(
                 220, scroll.availableHeight - statusCard.implicitHeight - Theme.pad)
-            color: Theme.surface
+            color: "transparent"
             radius: Theme.radius
-            border.width: 1
-            border.color: Theme.border
+
+            Raised {
+                anchors.fill: parent
+                z: -1
+                radius: parent.radius
+            }
 
             ColumnLayout {
                 anchors.fill: parent

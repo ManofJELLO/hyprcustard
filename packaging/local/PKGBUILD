@@ -32,7 +32,8 @@ provides=("$_name=${pkgver%%.r*}")
 conflicts=("$_name" "$_name-bin")
 # makepkg's link-time optimization compiles the Qt bridge's C++ into GCC's
 # own intermediate form, which the linker cargo uses cannot read.
-options=('!lto')
+# No hyprcustard-debug split package: nobody installs it.
+options=('!lto' '!debug')
 # The checkout: `make local-pkg` says which, since it builds from a copy of
 # this file. Run here by hand, it is the one this file sits in.
 _repo="${CUSTARD_REPO:-$(realpath "$startdir/../..")}"

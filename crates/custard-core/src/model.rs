@@ -669,8 +669,8 @@ fn default_version() -> u32 {
 }
 
 fn default_theme() -> String {
-    // The desktop's own colors, until someone picks otherwise.
-    "system".into()
+    // The app's own look, until someone picks otherwise.
+    "sodium".into()
 }
 
 impl Default for Config {

@@ -222,15 +222,16 @@ Item {
                 Layout.fillWidth: true
                 title: "This app's colors"
                 subtitle: "How hyprcustard itself looks — for your Hyprland look, see the "
-                          + "Look and Themes pages. Gruvbox dark and light are built in. Anything else is a TOML file in " +
+                          + "Look and Themes pages. Sodium, Gruvbox dark and Gruvbox light are built in. Anything "
+                          + "else is a TOML file in " +
                           App.state.themeDir + ", which can override as few colors as you like."
 
                 FieldRow {
                     width: parent.width
                     label: "App colors"
-                    hint: "System follows your Qt colors, so the app matches the rest of your " +
-                          "desktop and changes with it. Color scheme wears the scheme last applied " +
-                          "on the Colors page. The Gruvboxes look the same everywhere."
+                    hint: "Sodium is hyprcustard's own look. System follows your Qt colors, so the " +
+                          "app matches the rest of your desktop and changes with it. Color scheme " +
+                          "wears the scheme last applied on the Colors page."
 
                     Dropdown {
                         width: parent.width
@@ -248,6 +249,29 @@ Item {
                     }
                 }
 
+                FieldRow {
+                    id: fontRow
+                    width: parent.width
+                    label: "Font"
+                    hint: "Following the system uses the font Qt is given by qt6ct or your desktop. "
+                          + "A change shows the next time hyprcustard opens."
+
+                    readonly property var families: Qt.fontFamilies()
+
+                    Dropdown {
+                        width: parent.width
+                        model: ["Follow the system (" + Backend.systemFontFamily() + ")"]
+                               .concat(fontRow.families)
+                        currentIndex: {
+                            var f = App.settings.font || ""
+                            return f === "" ? 0 : fontRow.families.indexOf(f) + 1
+                        }
+                        onActivated: function (index) {
+                            page.updateSettings({ font: index === 0 ? "" : fontRow.families[index - 1] })
+                        }
+                    }
+                }
+
                 RowLayout {
                     width: parent.width
                     spacing: Theme.gapSmall
@@ -261,6 +285,9 @@ Item {
                     PillButton {
                         text: "Reload themes"
                         onClicked: App.run("theme.reload", {})
+                    }
+                    Item {
+                        Layout.fillWidth: true
                     }
                 }
 

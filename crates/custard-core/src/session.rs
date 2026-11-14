@@ -450,7 +450,7 @@ impl Session {
             .iter()
             .find(|t| t.id == self.config.theme)
             .cloned()
-            .unwrap_or_else(theme::system);
+            .unwrap_or_else(theme::sodium);
         self.themes = themes;
     }
 

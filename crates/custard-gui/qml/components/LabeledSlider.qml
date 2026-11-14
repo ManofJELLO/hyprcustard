@@ -100,22 +100,28 @@ Item {
                     root.settled(value)
             }
 
-            background: Rectangle {
+            background: Inset {
                 id: track
                 x: slider.leftPadding
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
                 width: slider.availableWidth
-                height: 4
-                radius: 2
-                color: Theme.bgAlt
-                border.width: 1
-                border.color: Theme.border
+                height: 8
+                radius: 4
 
+                // The filled part, brightening toward the handle.
                 Rectangle {
-                    width: slider.visualPosition * parent.width
+                    width: Math.max(height, slider.visualPosition * parent.width)
                     height: parent.height
-                    radius: 2
-                    color: root.enabled ? Theme.accent : Theme.muted
+                    radius: 4
+                    visible: slider.visualPosition > 0
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop {
+                            position: 0
+                            color: Theme.wash(root.enabled ? Theme.accent : Theme.muted, 0.25)
+                        }
+                        GradientStop { position: 1; color: root.enabled ? Theme.accent : Theme.muted }
+                    }
                 }
 
                 // Where the value sits in the file. Positioned on the handle's
@@ -131,20 +137,21 @@ Item {
                     x: {
                         var span = root.to - root.from
                         var at = span === 0 ? 0 : (root.markValue - root.from) / span
-                        return at * (track.width - 14) + 7 - width / 2
+                        return at * (track.width - 16) + 8 - width / 2
                     }
                 }
             }
 
-            handle: Rectangle {
+            handle: Raised {
                 x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                width: 14
-                height: 14
-                radius: 7
-                color: slider.pressed ? Theme.accent : Theme.surfaceHi
-                border.width: 1
-                border.color: root.enabled ? Theme.accent : Theme.border
+                width: 16
+                height: 16
+                radius: 8
+                depth: 2
+                fill: slider.pressed ? Theme.accent : Theme.bg
+                glow: root.enabled && (slider.pressed || slider.hovered)
+                edge: root.enabled ? Theme.wash(Theme.accent, 0.8) : Theme.border
             }
         }
     }

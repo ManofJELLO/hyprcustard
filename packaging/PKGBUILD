@@ -30,7 +30,8 @@ conflicts=('hyprcustard-bin' 'hyprcustard-git')
 # makepkg's link-time optimization compiles the Qt bridge's C++ into GCC's
 # own intermediate form, which the linker cargo uses cannot read: the build
 # fails with every cxx-qt symbol undefined.
-options=('!lto')
+# No hyprcustard-debug split package: nobody installs it.
+options=('!lto' '!debug')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 

@@ -1,7 +1,8 @@
 import QtQuick
 import dev.hyprcustard.gui
 
-// A panel. Content goes in `content`, which is laid out as a column.
+// A panel raised out of the background. Content goes in `content`, which is
+// laid out as a column.
 Rectangle {
     id: card
 
@@ -11,13 +12,22 @@ Rectangle {
     property int spacing: Theme.gap
     property alias columnItem: column
 
-    color: Theme.surface
+    color: "transparent"
     radius: Theme.radius
-    border.width: 1
-    border.color: Theme.border
     implicitHeight: column.implicitHeight + Theme.pad * 2
         + (header.visible ? header.implicitHeight + Theme.gap : 0)
     implicitWidth: column.implicitWidth + Theme.pad * 2
+
+    Raised {
+        anchors.fill: parent
+        z: -1
+        radius: card.radius
+    }
+    Brackets {
+        anchors.fill: parent
+        anchors.margins: 7
+        z: -1
+    }
 
     Column {
         id: header
@@ -29,8 +39,10 @@ Rectangle {
             text: card.title
             visible: text !== ""
             color: Theme.fg
-            font.pixelSize: Theme.fontSizeLarge
+            font.pixelSize: Theme.fontSize + 1
             font.weight: Font.DemiBold
+            font.capitalization: Font.AllUppercase
+            font.letterSpacing: 3
         }
         Text {
             text: card.subtitle

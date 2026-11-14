@@ -81,10 +81,14 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: Theme.surface
+                color: "transparent"
                 radius: Theme.radius
-                border.width: 1
-                border.color: Theme.border
+
+                Raised {
+                    anchors.fill: parent
+                    z: -1
+                    radius: parent.radius
+                }
 
                 EmptyState {
                     anchors.centerIn: parent

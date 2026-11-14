@@ -84,9 +84,14 @@ Item {
         width: Math.min(460, root.width - 2 * Theme.pad)
         height: content.implicitHeight + 2 * Theme.pad
         radius: Theme.radius
-        color: Theme.surface
-        border.width: 1
-        border.color: root.danger ? Theme.error : Theme.border
+        color: "transparent"
+
+        Raised {
+            anchors.fill: parent
+            z: -1
+            radius: parent.radius
+            edge: root.danger ? Theme.error : Theme.wash(Theme.accent, 0.35)
+        }
 
         // Clicks on the panel itself must not dismiss it.
         MouseArea {

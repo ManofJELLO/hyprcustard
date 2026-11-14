@@ -36,10 +36,15 @@ Item {
                 width: Math.min(toast.width - Theme.pad * 2, Math.max(240, label.implicitWidth + Theme.pad * 2))
                 height: label.implicitHeight + Theme.pad
                 radius: Theme.radius
-                color: Theme.surface
-                border.width: 1
-                border.color: item.isError ? Theme.error : Theme.border
+                color: "transparent"
                 opacity: 0
+
+                Raised {
+                    anchors.fill: parent
+                    z: -1
+                    radius: parent.radius
+                    edge: item.isError ? Theme.error : Theme.wash(Theme.accent, 0.35)
+                }
 
                 Rectangle {
                     width: 3

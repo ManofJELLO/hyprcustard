@@ -23,6 +23,20 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
     }
 
+    unsafe extern "C++" {
+        include!("custard-gui/cpp/appfont.h");
+
+        /// Set the application font's family; empty for the system's.
+        #[namespace = "hyprcustard"]
+        #[rust_name = "apply_app_font"]
+        fn set_app_font(family: &QString);
+
+        /// The family of the font Qt started with.
+        #[namespace = "hyprcustard"]
+        #[rust_name = "startup_font_family"]
+        fn system_font_family() -> QString;
+    }
+
     extern "RustQt" {
         /// The singleton QML talks to.
         #[qobject]
@@ -99,6 +113,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "refresh"]
         fn refresh(self: Pin<&mut Backend>);
+
+        /// The system's font family: the one Qt started with.
+        #[qinvokable]
+        #[cxx_name = "systemFontFamily"]
+        fn system_font_family(self: &Backend) -> QString;
 
         #[qinvokable]
         #[cxx_name = "lookTry"]
@@ -320,6 +339,10 @@ impl cxx_qt::Initialize for qobject::Backend {
 }
 
 impl qobject::Backend {
+    fn system_font_family(&self) -> QString {
+        qobject::startup_font_family()
+    }
+
     /// Run a command and push the new state.
     pub fn run(mut self: Pin<&mut Self>, command: &QString, payload: &QString) {
         let command = command.to_string();

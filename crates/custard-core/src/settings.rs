@@ -38,6 +38,9 @@ pub struct Settings {
     /// Show an icon in the system tray, and keep running there when the
     /// window is closed.
     pub tray: bool,
+    /// The font family the app is drawn in. Empty follows the system font:
+    /// the one Qt is given by qt6ct or the desktop.
+    pub font: String,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -60,6 +63,7 @@ impl Default for Settings {
             colors: crate::colors::ColorSettings::default(),
             wallpaper: crate::walls::WallSettings::default(),
             tray: false,
+            font: String::new(),
         }
     }
 }

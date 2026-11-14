@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtQuick.Effects
 import Qt.labs.platform as Platform
 import dev.hyprcustard.gui
 
@@ -263,8 +264,19 @@ ApplicationWindow {
         onActivated: App.refresh()
     }
 
-    // Everything lives inside one item so the whole interface can be captured
-    // as a single image, which is what the screenshot aid below grabs.
+    // Everything is drawn inside `shot`, so the screenshot aid below can
+    // grab the whole interface as one image. The window's own color does not
+    // show in a grabbed image, so in shot mode it is painted here too.
+    Item {
+        id: shot
+        anchors.fill: parent
+
+        Rectangle {
+            anchors.fill: parent
+            visible: Backend.shotDir !== ""
+            color: Theme.bg
+        }
+
     ColumnLayout {
         id: shell
         anchors.fill: parent
@@ -277,13 +289,19 @@ ApplicationWindow {
         Layout.fillWidth: true
         Layout.preferredHeight: 58
         implicitHeight: 58
-        color: Theme.bgAlt
+        color: Theme.bg
 
+        // A line that fades out at both ends, lit in the middle.
         Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width
             height: 1
-            color: Theme.border
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0; color: "transparent" }
+                GradientStop { position: 0.5; color: Theme.wash(Theme.accent, 0.5) }
+                GradientStop { position: 1; color: "transparent" }
+            }
         }
 
         RowLayout {
@@ -296,10 +314,12 @@ ApplicationWindow {
                 spacing: 0
 
                 Text {
-                    text: "HyprCustard"
+                    text: "HYPR<font color='" + Theme.accent + "'>CUSTARD</font>"
+                    textFormat: Text.StyledText
                     color: Theme.fg
                     font.pixelSize: Theme.fontSizeTitle
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Bold
+                    font.letterSpacing: 4
                 }
                 Text {
                     text: App.configPathDisplay
@@ -366,13 +386,16 @@ ApplicationWindow {
         Rectangle {
             Layout.preferredWidth: Theme.sidebarWidth
             Layout.fillHeight: true
-            color: Theme.bgAlt
+            color: Theme.bg
 
             Rectangle {
                 anchors.right: parent.right
                 width: 1
                 height: parent.height
-                color: Theme.border
+                gradient: Gradient {
+                    GradientStop { position: 0; color: Theme.wash(Theme.border, 0.6) }
+                    GradientStop { position: 1; color: "transparent" }
+                }
             }
 
             ColumnLayout {
@@ -409,12 +432,19 @@ ApplicationWindow {
                             color: Theme.muted
                             font.pixelSize: Theme.fontSizeSmall
                             font.weight: Font.DemiBold
-                            font.letterSpacing: 1
+                            font.letterSpacing: 2.2
                         }
                         radius: Theme.radiusSmall
-                        color: window.currentPage === navItem.index
-                               ? Theme.selection
-                               : (navHover.hovered ? Theme.surfaceHi : "transparent")
+                        // The page on show is pressed in; another one under the
+                        // pointer is washed with the accent.
+                        color: window.currentPage !== navItem.index && navHover.hovered
+                               ? Theme.wash(Theme.accent, 0.07) : "transparent"
+
+                        Inset {
+                            anchors.fill: parent
+                            visible: window.currentPage === navItem.index
+                            radius: Theme.radiusSmall
+                        }
 
                         HoverHandler {
                             id: navHover
@@ -424,11 +454,20 @@ ApplicationWindow {
                             onClicked: window.currentPage = navItem.index
                         }
 
+                        RectangularShadow {
+                            anchors.fill: activeMark
+                            radius: 1.5
+                            blur: 8
+                            color: Theme.glow(Theme.accent)
+                            visible: activeMark.visible
+                        }
                         Rectangle {
+                            id: activeMark
                             width: 3
                             height: 22
-                            radius: 2
+                            radius: 1.5
                             anchors.left: parent.left
+                            anchors.leftMargin: 6
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.accent
                             visible: window.currentPage === navItem.index
@@ -444,7 +483,7 @@ ApplicationWindow {
 
                             Text {
                                 text: navItem.modelData.label
-                                color: window.currentPage === navItem.index ? Theme.fg : Theme.fgDim
+                                color: window.currentPage === navItem.index ? Theme.accent : Theme.fgDim
                                 font.pixelSize: Theme.fontSize
                                 font.weight: window.currentPage === navItem.index
                                              ? Font.DemiBold : Font.Normal
@@ -573,6 +612,7 @@ ApplicationWindow {
     }
 
     }
+    }
 
     Toast {
         id: toast
@@ -602,7 +642,7 @@ ApplicationWindow {
             running: true
             repeat: true
             onTriggered: {
-                shell.grabToImage(function (result) {
+                shot.grabToImage(function (result) {
                     result.saveToFile(Backend.shotDir + "/" + window.currentPage + "-"
                                       + window.pages[window.currentPage].label.toLowerCase()
                                       + ".png")
