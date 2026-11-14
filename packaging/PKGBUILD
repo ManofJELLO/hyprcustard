@@ -1,11 +1,13 @@
 # Maintainer: Eric Trantina
 #
-# Builds a package from source. This is not what is on the AUR - that is
-# hyprcustard-bin, in packaging/aur-bin, which installs the binary
-# from the GitHub release instead. Keep this one for building your own.
+# Builds a package from the source of a release tag. This is the package the
+# signed pacman repository ships: .github/workflows/package.yml builds and
+# signs it for every tag (see the README's install section). It is not what
+# is on the AUR - that is hyprcustard-bin, in packaging/aur-bin, which
+# installs the binary from the GitHub release instead.
 pkgname=hyprcustard
 _reponame=hyprcustard
-pkgver=0.3.1
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
@@ -22,6 +24,9 @@ optdepends=('hyprland: the compositor this configures'
             'hyprpaper: a wallpaper program the Wallpaper page drives'
             'mpvpaper: video wallpapers and whole folders on the Wallpaper page'
             'kitty: a terminal for the preview window and "Run in a terminal" (foot, alacritty, ghostty, wezterm, konsole or xterm will do as well)')
+# The AUR's binary package and the local checkout's build are the same app:
+# installing one replaces the other.
+conflicts=('hyprcustard-bin' 'hyprcustard-git')
 # makepkg's link-time optimization compiles the Qt bridge's C++ into GCC's
 # own intermediate form, which the linker cargo uses cannot read: the build
 # fails with every cxx-qt symbol undefined.

@@ -115,6 +115,37 @@ of `hyprland`.
 
 ## Install
 
+### Arch: the pacman repository
+
+Signed packages are built by GitHub Actions for every release and published to this
+repository's [`repo` release](https://github.com/ManofJELLO/hyprcustard/releases/tag/repo).
+
+1. Trust the packaging key:
+
+   ```sh
+   curl -sL https://raw.githubusercontent.com/ManofJELLO/hyprcustard/main/packaging/hyprcustard.asc \
+     | sudo pacman-key --add -
+   sudo pacman-key --lsign-key BA48547D9A95A6F8F421253B82ECC5B81415F831
+   ```
+
+2. Add the repository to `/etc/pacman.conf`:
+
+   ```ini
+   [hyprcustard]
+   Server = https://github.com/ManofJELLO/hyprcustard/releases/download/repo
+   ```
+
+3. Install it, and from then on update it with the rest of the system:
+
+   ```sh
+   sudo pacman -Sy hyprcustard
+   ```
+
+The package replaces `hyprcustard-bin` and the local `hyprcustard-git` build if either is
+installed. To build the same package yourself: `cd packaging && makepkg -si`.
+
+### The release tarball
+
 Every [release](https://github.com/ManofJELLO/hyprcustard/releases) has a
 `hyprcustard-<version>-x86_64.tar.gz` holding the two binaries (`hyprcustard`, and
 `custard-watch`, which follows the wallpaper), the desktop entry, the license and this
