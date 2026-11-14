@@ -18,6 +18,7 @@ makedepends=('cargo')
 optdepends=('hyprland: the compositor this configures'
             'hyprwindowshade: the shader plugin the Shaders, Layers and Plugin pages configure'
             'hyprpm: the Plugin page, which installs and reloads the plugin'
+            'qt6-svg: previews of SVG icon themes on the Icons page'
             'grim: the shader preview, which reads frames out of a nested compositor'
             'swaybg: your wallpaper behind the shader preview, and a wallpaper program the Wallpaper page drives'
             'awww: a wallpaper program the Wallpaper page drives (swww works too)'

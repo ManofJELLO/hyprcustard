@@ -29,6 +29,7 @@ pub mod error;
 pub mod fsc;
 pub mod hyprctl;
 pub mod hyprpm;
+pub mod icons;
 pub mod import;
 pub mod look;
 pub mod model;

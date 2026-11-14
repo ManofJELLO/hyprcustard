@@ -53,6 +53,7 @@ ApplicationWindow {
         { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
         { label: "Wallpaper", hint: "Pick and put up",     section: "Desktop" },
         { label: "Colors",    hint: "One scheme, every app", section: "Desktop" },
+        { label: "Icons",     hint: "Icon and cursor themes", section: "Desktop" },
         { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
         { label: "Shaders",   hint: "Files",               section: "HyprWindowShade" },
         { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade" },
@@ -555,6 +556,12 @@ ApplicationWindow {
             }
             Item {
                 ColorsPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                IconsPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }

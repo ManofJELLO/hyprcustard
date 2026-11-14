@@ -27,6 +27,7 @@ use crate::theme::Theme;
 use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme, walls};
 
 mod fsc_page;
+mod icons_page;
 mod walls_page;
 pub use walls_page::{WallJob, WallOutcome};
 
@@ -96,6 +97,12 @@ struct Desk {
     /// What is installed. Kept across refreshes: reading it starts
     /// processes, so it is only read when the page asks.
     fsc_facts: Option<crate::fsc::Facts>,
+    /// The Icons page: the themes it found, read only when it asks, and the
+    /// lines in the Hyprland config that set the cursor.
+    icon_scan: Option<icons_page::IconScan>,
+    cursor_lines: Vec<crate::icons::Line>,
+    cursor_moved: Vec<usize>,
+    cursor_managed: bool,
 }
 
 /// Which part of the app noticed a problem.
@@ -687,6 +694,7 @@ impl Session {
             "colors": self.colors_view(),
             "wallpaper": self.wall_view(),
             "fsc": self.fsc_view(),
+            "icons": self.icons_view(),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -814,6 +822,10 @@ impl Session {
             qt_style: Default::default(),
             qt_style_advice: Default::default(),
             fsc_facts: self.desk.fsc_facts.take(),
+            icon_scan: self.desk.icon_scan.take(),
+            cursor_lines: crate::icons::user_lines(&text),
+            cursor_moved: crate::icons::moved_lines(&text),
+            cursor_managed: crate::icons::managed(&text),
             ..Default::default()
         };
         self.refresh_fsc(&text);
@@ -1294,6 +1306,7 @@ impl Session {
             // --- wallpaper ---
             c if c.starts_with("wallpaper.") => self.wall_command(c, payload),
             c if c.starts_with("fsc.") => self.fsc_command(c, payload),
+            c if c.starts_with("icons.") => self.icons_command(c, payload),
 
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
@@ -3049,6 +3062,37 @@ mod tests {
 
         s.command("fsc.giveBack", &json!({})).unwrap();
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+    }
+
+    #[test]
+    fn cursor_lines_are_taken_over_kept_up_to_date_and_given_back() {
+        let mine = "hl.env(\"XCURSOR_THEME\", \"Old\")\nhl.env(\"XCURSOR_SIZE\", \"24\")\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        assert_eq!(s.state()["icons"]["cursorLines"].as_array().unwrap().len(), 2);
+
+        // Set while the user's lines still set it at login: said, not hidden.
+        let msg = s
+            .command("icons.setCursor", &json!({ "theme": "phinger-cursors-dark", "size": 32 }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.contains("Lines 1, 2 of") && msg.contains("take them over"), "{msg}");
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+
+        let msg = s
+            .command("icons.takeOver", &json!({ "theme": "phinger-cursors-dark", "size": 32 }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.starts_with("2 lines of yours"), "{msg}");
+        assert_eq!(s.state()["icons"]["cursorManaged"], true);
+
+        s.command("icons.setCursor", &json!({ "theme": "Adwaita", "size": 24 })).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("hl.exec_cmd(\"hyprctl setcursor Adwaita 24\")"), "{text}");
+
+        s.command("icons.giveBack", &json!({})).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+        assert!(s.command("icons.setIcons", &json!({})).is_err(), "needs a theme");
     }
 
     #[test]

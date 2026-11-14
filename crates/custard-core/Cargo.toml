@@ -16,7 +16,8 @@ dirs.workspace = true
 regex.workspace = true
 chrono.workspace = true
 material-colors = { version = "0.5", default-features = false, features = ["std", "quantize"] }
+# Cursor previews: Xcursor images, written out as PNG for the window to show.
+png = "0.17"
 
 [dev-dependencies]
 tempfile = "3"
-png = "0.17"

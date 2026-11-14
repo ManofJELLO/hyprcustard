@@ -659,7 +659,7 @@ pub fn ini_set(text: &str, section: &str, pairs: &[(&str, &str)]) -> String {
 }
 
 /// A key of `org.gnome.desktop.interface`, unquoted. Never read in tests.
-fn gsettings_get(key: &str) -> Option<String> {
+pub(crate) fn gsettings_get(key: &str) -> Option<String> {
     if cfg!(test) || crate::paths::which("gsettings").is_none() {
         return None;
     }
@@ -675,7 +675,7 @@ fn gsettings_get(key: &str) -> Option<String> {
 }
 
 /// Set a key of `org.gnome.desktop.interface`. Never in tests.
-fn gsettings_set(key: &str, value: &str) {
+pub(crate) fn gsettings_set(key: &str, value: &str) {
     if cfg!(test) || crate::paths::which("gsettings").is_none() {
         return;
     }
