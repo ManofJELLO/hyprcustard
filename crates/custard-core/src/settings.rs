@@ -41,6 +41,8 @@ pub struct Settings {
     /// The font family the app is drawn in. Empty follows the system font:
     /// the one Qt is given by qt6ct or the desktop.
     pub font: String,
+    /// The Fishsticks & Custard page's start and key choices.
+    pub fsc: crate::fsc::FscSettings,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -64,6 +66,7 @@ impl Default for Settings {
             wallpaper: crate::walls::WallSettings::default(),
             tray: false,
             font: String::new(),
+            fsc: crate::fsc::FscSettings::default(),
         }
     }
 }
@@ -116,6 +119,7 @@ impl Settings {
         }
         self.colors = self.colors.sanitized();
         self.wallpaper = self.wallpaper.sanitized();
+        self.fsc = self.fsc.sanitized();
         self
     }
 

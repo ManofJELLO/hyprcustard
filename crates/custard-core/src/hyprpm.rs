@@ -103,6 +103,13 @@ impl Op {
         }
     }
 
+    /// The job that runs this operation.
+    pub fn run(&self) -> Run {
+        let mut args = vec!["hyprpm".to_string()];
+        args.extend(self.args());
+        Run { label: self.label(), args }
+    }
+
     /// What the window says while this is running.
     pub fn label(&self) -> String {
         match self {
@@ -274,7 +281,18 @@ pub enum Event {
     },
 }
 
-/// A running `hyprpm` operation.
+/// One long-running command for a [`Job`]: `hyprpm`, or any other program
+/// that may need sudo on the way (`sudo -A` asks the window, through the
+/// same helper hyprpm's own escalation uses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Run {
+    /// What the window says while it runs, and in the message at the end.
+    pub label: String,
+    /// The program and its arguments.
+    pub args: Vec<String>,
+}
+
+/// A running operation: `hyprpm`, or another [`Run`].
 ///
 /// Dropping this does not stop anything; the operation is stopped with
 /// [`Job::cancel`] and reports its own end through the sink.
@@ -323,11 +341,15 @@ impl Job {
     ///
     /// Returns as soon as the process is running; everything else arrives
     /// through `sink`, on a thread of the job's own.
-    pub fn start(op: Op, askpass: &Path, sink: impl Fn(Event) + Send + 'static) -> Result<Job> {
-        if !available() {
+    pub fn start(run: Run, askpass: &Path, sink: impl Fn(Event) + Send + 'static) -> Result<Job> {
+        let program = run.args.first().ok_or_else(|| Error::other("nothing to run"))?;
+        if program == "hyprpm" && !available() {
             return Err(Error::other(
                 "hyprpm is not on PATH — it comes with Hyprland, as the hyprpm package on Arch",
             ));
+        }
+        if which(program).is_none() && !Path::new(program).is_file() {
+            return Err(Error::other(format!("{program} is not on PATH")));
         }
 
         let dir = runtime_dir()?;
@@ -352,7 +374,7 @@ impl Job {
         std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700))
             .map_err(|e| Error::io(&helper, e))?;
 
-        let (mut command, detached) = build_command(&op, &pidfile);
+        let (mut command, detached) = build_command(&run, &pidfile);
         command
             .env("SUDO_ASKPASS", &helper)
             .env("CUSTARD_ASKPASS_SOCKET", &socket)
@@ -366,7 +388,7 @@ impl Job {
         let mut child = command.spawn().map_err(|e| {
             let _ = std::fs::remove_file(&socket);
             let _ = std::fs::remove_file(&helper);
-            Error::other(format!("could not start hyprpm: {e}"))
+            Error::other(format!("could not start {}: {e}", run.args[0]))
         })?;
 
         let shared = Arc::new(Shared {
@@ -410,7 +432,7 @@ impl Job {
         }
 
         let job_shared = Arc::clone(&shared);
-        std::thread::spawn(move || run_loop(op, job_shared, rx, sink));
+        std::thread::spawn(move || run_loop(run, job_shared, rx, sink));
 
         Ok(Job { shared })
     }
@@ -473,12 +495,12 @@ impl Job {
 /// process group to signal on cancel.
 ///
 /// The second return value is false when `setsid` is missing.
-fn build_command(op: &Op, pidfile: &Path) -> (Command, bool) {
-    const SCRIPT: &str = r#"echo $$ > "$1"; shift; exec hyprpm "$@""#;
+fn build_command(run: &Run, pidfile: &Path) -> (Command, bool) {
+    const SCRIPT: &str = r#"echo $$ > "$1"; shift; exec "$@""#;
 
     let mut sh_args: Vec<String> =
-        vec!["-c".into(), SCRIPT.into(), "hyprpm-job".into(), pidfile.display().to_string()];
-    sh_args.extend(op.args());
+        vec!["-c".into(), SCRIPT.into(), "custard-job".into(), pidfile.display().to_string()];
+    sh_args.extend(run.args.iter().cloned());
 
     match which("setsid") {
         Some(setsid) => {
@@ -495,7 +517,7 @@ fn build_command(op: &Op, pidfile: &Path) -> (Command, bool) {
 }
 
 /// The job's own thread: everything that happens while it runs, in order.
-fn run_loop(op: Op, shared: Arc<Shared>, rx: Receiver<Msg>, sink: impl Fn(Event)) {
+fn run_loop(run: Run, shared: Arc<Shared>, rx: Receiver<Msg>, sink: impl Fn(Event)) {
     let mut code: Option<Option<i32>> = None;
     let mut open_pipes = 2;
     let mut retry = false;
@@ -556,13 +578,13 @@ fn run_loop(op: Op, shared: Arc<Shared>, rx: Receiver<Msg>, sink: impl Fn(Event)
     let canceled = shared.canceled.load(Ordering::SeqCst);
     let ok = !canceled && matches!(code, Some(Some(0)));
     let message = if canceled {
-        format!("{} — canceled", op.label())
+        format!("{} — canceled", run.label)
     } else if ok {
-        format!("{} — done", op.label())
+        format!("{} — done", run.label)
     } else {
         match code {
-            Some(Some(status)) => format!("{} — failed (exit code {status})", op.label()),
-            _ => format!("{} — failed", op.label()),
+            Some(Some(status)) => format!("{} — failed (exit code {status})", run.label),
+            _ => format!("{} — failed", run.label),
         }
     };
 

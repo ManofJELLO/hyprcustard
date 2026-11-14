@@ -94,7 +94,7 @@ impl Ran {
 /// Run a job to its end, answering each password prompt from `answers`.
 fn run_answering(op: Op, askpass: &Path, answers: &[&str]) -> Ran {
     let (tx, rx) = channel();
-    let job = Job::start(op, askpass, move |event| {
+    let job = Job::start(op.run(), askpass, move |event| {
         let _ = tx.send(event);
     })
     .expect("start the job");
@@ -260,7 +260,7 @@ fn canceling_stops_what_hyprpm_is_waiting_on() {
     let _guard = shim("echo started\nsleep 60\necho 'should never get here'");
 
     let (tx, rx) = channel();
-    let job = Job::start(Op::Reload, Path::new("/bin/true"), move |event| {
+    let job = Job::start(Op::Reload.run(), Path::new("/bin/true"), move |event| {
         let _ = tx.send(event);
     })
     .expect("start the job");

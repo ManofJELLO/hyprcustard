@@ -89,16 +89,24 @@ Item {
     Connections {
         target: App.backend
 
+        // The Fishsticks & Custard page runs its jobs through the same
+        // signals; their output is its own.
         function onHyprpmStarted(label) {
+            if (App.jobOwner !== "hyprpm")
+                return
             page.appendLine("", false)
             page.appendLine("── " + label + " ──", false)
         }
 
         function onHyprpmOutput(line, isTransient) {
+            if (App.jobOwner !== "hyprpm")
+                return
             page.appendLine(line, isTransient)
         }
 
         function onHyprpmFinished(ok, message) {
+            if (App.jobOwner !== "hyprpm")
+                return
             page.appendLine(message, false)
             page.refreshStatus()
         }

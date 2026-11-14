@@ -26,6 +26,7 @@ pub mod block;
 pub mod colors;
 pub mod emit;
 pub mod error;
+pub mod fsc;
 pub mod hyprctl;
 pub mod hyprpm;
 pub mod import;

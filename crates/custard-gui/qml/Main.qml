@@ -43,8 +43,9 @@ ApplicationWindow {
     palette.highlightedText: Theme.onAccent
 
     // `section` groups the sidebar: Hyprland's own settings, the rest of the
-    // desktop, then the HyprWindowShade plugin's, then the app's. A heading is drawn wherever
-    // the section changes, so the order here is the order on screen.
+    // desktop, the HyprWindowShade plugin's, other apps hyprcustard sets up,
+    // then the app's. A heading is drawn wherever the section changes, so the
+    // order here is the order on screen.
     readonly property var pages: [
         { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland" },
         { label: "Look rules", hint: "Per app and workspace", section: "Hyprland" },
@@ -58,6 +59,7 @@ ApplicationWindow {
         { label: "Keybinds",  hint: "And startup",         section: "HyprWindowShade" },
         { label: "Preview",   hint: "And import",          section: "HyprWindowShade" },
         { label: "Plugin",    hint: "Install, update",     section: "HyprWindowShade" },
+        { label: "Fishsticks", hint: "Voice assistant",     section: "Apps" },
         { label: "Settings",  hint: "",                    section: "" }
     ]
 
@@ -137,7 +139,7 @@ ApplicationWindow {
 
         if (App.hyprpmBusy && !window.hyprpmCloseConfirmed) {
             close.accepted = false
-            confirm.ask("Close while hyprpm is working?",
+            confirm.ask("Close while it is working?",
                         App.hyprpmLabel + " is still running. It will carry on without this "
                         + "window, but if it needs your password again it will fail.",
                         "Close anyway", true,
@@ -397,85 +399,102 @@ ApplicationWindow {
                 anchors.margins: Theme.gap
                 spacing: 2
 
-                Repeater {
-                    model: window.pages
+                // The pages, scrolling when the window is too short for
+                // all of them.
+                Flickable {
+                    id: navScroll
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    contentHeight: navList.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    interactive: contentHeight > height
+                    ScrollBar.vertical: ScrollBar {
+                        policy: navScroll.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                    }
 
-                    Rectangle {
-                        id: navItem
+                    ColumnLayout {
+                        id: navList
+                        width: navScroll.width
+                        spacing: 2
 
-                        required property var modelData
-                        required property int index
+                        Repeater {
+                            model: window.pages
 
-                        readonly property string section: navItem.modelData.section || ""
-                        readonly property bool startsSection: navItem.index === 0
-                            || (window.pages[navItem.index - 1].section || "") !== navItem.section
+                            Rectangle {
+                                id: navItem
 
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        // Room for the section's heading, or just a gap
-                        // before a page that belongs to no section.
-                        Layout.topMargin: !navItem.startsSection ? 0
-                                          : (navItem.section === "" ? Theme.pad
-                                                                    : (navItem.index === 0 ? 18 : 30))
+                                required property var modelData
+                                required property int index
 
-                        Text {
-                            visible: navItem.startsSection && navItem.section !== ""
-                            text: navItem.section
-                            x: 8
-                            y: -18
-                            color: Theme.muted
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.weight: Font.DemiBold
-                        }
-                        radius: Theme.radiusSmall
-                        // The page on show is pressed in; another one under the
-                        // pointer is washed with the accent.
-                        color: window.currentPage !== navItem.index && navHover.hovered
-                               ? Theme.wash(Theme.accent, 0.07) : "transparent"
+                                readonly property string section: navItem.modelData.section || ""
+                                readonly property bool startsSection: navItem.index === 0
+                                    || (window.pages[navItem.index - 1].section || "") !== navItem.section
 
-                        Inset {
-                            anchors.fill: parent
-                            visible: window.currentPage === navItem.index
-                            radius: Theme.radiusSmall
-                        }
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 40
+                                // Room for the section's heading, or just a gap
+                                // before a page that belongs to no section.
+                                Layout.topMargin: !navItem.startsSection ? 0
+                                                  : (navItem.section === "" ? Theme.pad
+                                                                            : (navItem.index === 0 ? 18 : 30))
 
-                        HoverHandler {
-                            id: navHover
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: window.currentPage = navItem.index
-                        }
+                                Text {
+                                    visible: navItem.startsSection && navItem.section !== ""
+                                    text: navItem.section
+                                    x: 8
+                                    y: -18
+                                    color: Theme.muted
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    font.weight: Font.DemiBold
+                                }
+                                radius: Theme.radiusSmall
+                                // The page on show is pressed in; another one under the
+                                // pointer is washed with the accent.
+                                color: window.currentPage !== navItem.index && navHover.hovered
+                                       ? Theme.wash(Theme.accent, 0.07) : "transparent"
 
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: Theme.pad
-                            anchors.right: parent.right
-                            anchors.rightMargin: Theme.gapSmall
-                            spacing: 0
+                                Inset {
+                                    anchors.fill: parent
+                                    visible: window.currentPage === navItem.index
+                                    radius: Theme.radiusSmall
+                                }
 
-                            Text {
-                                text: navItem.modelData.label
-                                color: window.currentPage === navItem.index ? Theme.accent : Theme.fgDim
-                                font.pixelSize: Theme.fontSize
-                                font.weight: window.currentPage === navItem.index
-                                             ? Font.DemiBold : Font.Normal
-                            }
-                            Text {
-                                text: navItem.modelData.hint
-                                visible: text !== ""
-                                color: Theme.muted
-                                font.pixelSize: Theme.fontSizeSmall
-                                elide: Text.ElideRight
-                                width: parent.width
+                                HoverHandler {
+                                    id: navHover
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: window.currentPage = navItem.index
+                                }
+
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: Theme.pad
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: Theme.gapSmall
+                                    spacing: 0
+
+                                    Text {
+                                        text: navItem.modelData.label
+                                        color: window.currentPage === navItem.index ? Theme.accent : Theme.fgDim
+                                        font.pixelSize: Theme.fontSize
+                                        font.weight: window.currentPage === navItem.index
+                                                     ? Font.DemiBold : Font.Normal
+                                    }
+                                    Text {
+                                        text: navItem.modelData.hint
+                                        visible: text !== ""
+                                        color: Theme.muted
+                                        font.pixelSize: Theme.fontSizeSmall
+                                        elide: Text.ElideRight
+                                        width: parent.width
+                                    }
+                                }
                             }
                         }
                     }
-                }
-
-                Item {
-                    Layout.fillHeight: true
                 }
 
                 Text {
@@ -572,6 +591,12 @@ ApplicationWindow {
             }
             Item {
                 PluginPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pad
+                }
+            }
+            Item {
+                FscPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pad
                 }

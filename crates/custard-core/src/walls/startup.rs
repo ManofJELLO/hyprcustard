@@ -58,7 +58,7 @@ pub fn user_lines(text: &str) -> Vec<Line> {
 /// with a trailing comment, or a hyprlang `exec-once = ...`. Anything sharing
 /// the line — a `function()` opening, an `end)`, a second call, a table —
 /// would be commented out with it.
-fn movable(line: &str) -> bool {
+pub(crate) fn movable(line: &str) -> bool {
     let t = line.trim();
     if t.starts_with("exec-once") || t.starts_with("exec ") || t.starts_with("exec=") {
         return true;
@@ -113,7 +113,7 @@ pub fn command_of(line: &str) -> Option<Vec<String>> {
 }
 
 /// The Lua string literal `s` starts with, unescaped.
-fn lua_string(s: &str) -> Option<String> {
+pub(crate) fn lua_string(s: &str) -> Option<String> {
     let mut chars = s.chars();
     let quote = chars.next().filter(|q| *q == '"' || *q == '\'')?;
     let mut out = String::new();
@@ -331,7 +331,7 @@ fn has_word(line: &str, word: &str) -> bool {
 }
 
 /// Lines, with their 1-based numbers, that are not inside a managed block.
-fn lines_outside_blocks(text: &str) -> impl Iterator<Item = (usize, &str)> {
+pub(crate) fn lines_outside_blocks(text: &str) -> impl Iterator<Item = (usize, &str)> {
     let mut inside = false;
     text.lines().enumerate().filter_map(move |(i, l)| {
         let t = l.trim_start();
@@ -348,7 +348,7 @@ fn lines_outside_blocks(text: &str) -> impl Iterator<Item = (usize, &str)> {
 }
 
 /// Lines with their endings kept, so the file goes back together exactly.
-fn split_keep(text: &str) -> Vec<&str> {
+pub(crate) fn split_keep(text: &str) -> Vec<&str> {
     text.split_inclusive('\n').collect()
 }
 

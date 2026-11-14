@@ -105,6 +105,16 @@ QtObject {
 
     readonly property bool hyprpmBusy: app.backend ? app.backend.hyprpmBusy : false
     readonly property string hyprpmLabel: app.backend ? app.backend.hyprpmLabel : ""
+    // Which page started the running (or last) job: hyprpm or fsc.
+    readonly property string jobOwner: app.backend ? app.backend.jobOwner : ""
+    readonly property var fsc: state.fsc || ({})
+
+    // A Fishsticks & Custard job: install, remove, models or selftest. It
+    // reports through the hyprpm signals, with jobOwner "fsc".
+    function fscRun(op) {
+        if (app.backend)
+            app.backend.fscRun(op)
+    }
 
     // `op` is add, remove, enable, disable, update or reload. The argument is
     // the repository URL or the plugin name, for the ones that need one.

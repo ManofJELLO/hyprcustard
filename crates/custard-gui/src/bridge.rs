@@ -48,6 +48,7 @@ pub mod qobject {
         #[qproperty(bool, start_in_tray, cxx_name = "startInTray")]
         #[qproperty(bool, hyprpm_busy, cxx_name = "hyprpmBusy")]
         #[qproperty(QString, hyprpm_label, cxx_name = "hyprpmLabel")]
+        #[qproperty(QString, job_owner, cxx_name = "jobOwner")]
         #[qproperty(bool, preview_busy, cxx_name = "previewBusy")]
         #[qproperty(bool, preview_running, cxx_name = "previewRunning")]
         #[qproperty(QString, preview_shader, cxx_name = "previewShader")]
@@ -191,6 +192,13 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "hyprpmOpenTerminal"]
         fn hyprpm_open_terminal(self: Pin<&mut Backend>, op: &QString, argument: &QString);
+
+        /// Start a Fishsticks & Custard job: `install`, `remove`, `models` or
+        /// `selftest`. It reports through the same signals as a hyprpm
+        /// operation, with `jobOwner` set to `fsc`.
+        #[qinvokable]
+        #[cxx_name = "fscRun"]
+        fn fsc_run(self: Pin<&mut Backend>, op: &QString);
     }
 
     extern "RustQt" {
@@ -291,6 +299,8 @@ pub struct BackendRust {
     hyprpm_busy: bool,
     /// What that operation is called, for the header.
     hyprpm_label: QString,
+    /// Which page started it: `hyprpm` or `fsc`. Each shows only its own.
+    job_owner: QString,
     /// The running operation, kept so it can be answered and canceled.
     hyprpm_job: Option<hyprpm::Job>,
 
@@ -728,7 +738,30 @@ impl qobject::Backend {
                 return;
             }
         };
+        self.start_job(op.run(), "hyprpm");
+    }
 
+    /// Start a Fishsticks & Custard job.
+    pub fn fsc_run(mut self: Pin<&mut Self>, op: &QString) {
+        if self.as_ref().rust().hyprpm_busy {
+            let m = QString::from(&format!(
+                "{} is still running — wait for it, or cancel it",
+                self.as_ref().rust().hyprpm_label
+            ));
+            self.as_mut().notify(&m, true);
+            return;
+        }
+        match custard_core::fsc::job(&op.to_string()) {
+            Ok(run) => self.start_job(run, "fsc"),
+            Err(e) => {
+                let m = QString::from(&e.to_string());
+                self.as_mut().notify(&m, true);
+            }
+        }
+    }
+
+    /// Start a job, and report it back through the signals.
+    fn start_job(mut self: Pin<&mut Self>, run: hyprpm::Run, owner: &str) {
         // sudo runs this executable again, with --askpass, to ask the window
         // for the password.
         let askpass = match std::env::current_exe() {
@@ -740,9 +773,9 @@ impl qobject::Backend {
             }
         };
 
-        let label = op.label();
+        let label = run.label.clone();
         let thread = self.as_mut().qt_thread();
-        let started = hyprpm::Job::start(op, &askpass, move |event| {
+        let started = hyprpm::Job::start(run, &askpass, move |event| {
             // Fails only once the QObject is gone, and an operation whose
             // window has closed has nowhere to report to anyway.
             let _ = thread.queue(move |backend| deliver(backend, event));
@@ -751,6 +784,7 @@ impl qobject::Backend {
         match started {
             Ok(job) => {
                 self.as_mut().rust_mut().hyprpm_job = Some(job);
+                self.as_mut().set_job_owner(QString::from(owner));
                 self.as_mut().set_hyprpm_busy(true);
                 self.as_mut().set_hyprpm_label(QString::from(&label));
                 let l = QString::from(&label);

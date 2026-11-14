@@ -26,6 +26,7 @@ use crate::shader::{DraftItem, ShaderDraft};
 use crate::theme::Theme;
 use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme, walls};
 
+mod fsc_page;
 mod walls_page;
 pub use walls_page::{WallJob, WallOutcome};
 
@@ -82,6 +83,19 @@ struct Desk {
     /// `QT_STYLE_OVERRIDE`: where it is set, and what the Qt rows say.
     qt_style: colors::qt_style::Override,
     qt_style_advice: colors::qt_style::Advice,
+    /// The Fishsticks & Custard page: lines in the Hyprland config that run
+    /// it, the ones handed over, and the managed block.
+    fsc_lines: Vec<crate::fsc::Line>,
+    fsc_moved: Vec<usize>,
+    fsc_block: Option<(usize, String)>,
+    /// Other lines in the Hyprland config bound to the assistant's keys.
+    fsc_clashes: Vec<Value>,
+    /// What FSC's own config sets, or why it could not be read.
+    fsc_values: serde_json::Map<String, Value>,
+    fsc_config_error: Option<String>,
+    /// What is installed. Kept across refreshes: reading it starts
+    /// processes, so it is only read when the page asks.
+    fsc_facts: Option<crate::fsc::Facts>,
 }
 
 /// Which part of the app noticed a problem.
@@ -672,6 +686,7 @@ impl Session {
             "lookRules": self.rules_view(),
             "colors": self.colors_view(),
             "wallpaper": self.wall_view(),
+            "fsc": self.fsc_view(),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -798,7 +813,10 @@ impl Session {
             own_colors: Vec::new(),
             qt_style: Default::default(),
             qt_style_advice: Default::default(),
+            fsc_facts: self.desk.fsc_facts.take(),
+            ..Default::default()
         };
+        self.refresh_fsc(&text);
         // Only the two variables are needed, not all of Desktop::read.
         let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
         let uses_ct = matches!(env("QT_QPA_PLATFORMTHEME").as_deref(), Some("qt5ct" | "qt6ct"));
@@ -1275,6 +1293,7 @@ impl Session {
 
             // --- wallpaper ---
             c if c.starts_with("wallpaper.") => self.wall_command(c, payload),
+            c if c.starts_with("fsc.") => self.fsc_command(c, payload),
 
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
@@ -2996,6 +3015,63 @@ mod tests {
         s.command("app.autostart", &json!({ "on": false })).unwrap();
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
         assert_eq!(s.state()["autostart"], false);
+    }
+
+    #[test]
+    fn fishsticks_lines_are_taken_over_set_and_given_back() {
+        let mine = "hl.on(\"hyprland.start\", function()\n    hl.exec_cmd(\"fscd\")\nend)\n\
+                    hl.bind(\"SUPER + A\", hl.dsp.exec_cmd(\"fsc type\"))\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        let view = &s.state()["fsc"];
+        assert_eq!(view["managed"], false);
+        assert_eq!(view["userLines"].as_array().unwrap().len(), 2);
+
+        // Writing a block beside the user's own lines would run it twice.
+        let settings = serde_json::to_value(&s.settings.fsc).unwrap();
+        let e = s.command("fsc.set", &json!({ "settings": settings })).unwrap_err();
+        assert!(e.to_string().contains("Take those lines over first"), "{e}");
+
+        let msg = s.command("fsc.handOver", &json!({})).unwrap().unwrap();
+        assert!(msg.starts_with("2 lines"), "{msg}");
+        let view = &s.state()["fsc"];
+        assert_eq!(view["managed"], true);
+        assert_eq!(view["moved"].as_array().unwrap().len(), 2);
+        assert!(!s.settings.fsc.keys[1].enabled, "talk was not bound by hand");
+
+        let mut next = s.settings.fsc.clone();
+        next.keys[4].key = "SUPER + period".into();
+        next.keys[4].enabled = true;
+        let settings = serde_json::to_value(&next).unwrap();
+        s.command("fsc.set", &json!({ "settings": settings })).unwrap();
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("hl.bind(\"SUPER + period\", hl.dsp.exec_cmd(\"fsc stop\"))"));
+
+        s.command("fsc.giveBack", &json!({})).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+    }
+
+    #[test]
+    fn fishsticks_config_is_edited_in_place() {
+        let (_dir, _cfg, mut s) = rule_session("");
+        let path = crate::fsc::config_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# mine\n[voice]\nlanguage = \"en\" # spoken\n").unwrap();
+        s.refresh_desk();
+        let fields = s.state()["fsc"]["fields"].as_array().unwrap().clone();
+        let lang = fields.iter().find(|f| f["name"] == "voice.language").unwrap();
+        assert_eq!(lang["value"], "en");
+        let msg = s
+            .command("fsc.config", &json!({ "changes": { "voice.language": "de" } }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.contains("restart it"), "{msg}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# mine\n[voice]\nlanguage = \"de\" # spoken\n"
+        );
+        assert!(s.command("fsc.config", &json!({ "changes": { "voice.speak": "loud" } })).is_err());
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
