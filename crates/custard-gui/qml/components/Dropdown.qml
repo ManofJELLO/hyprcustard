@@ -56,20 +56,11 @@ ComboBox {
         elide: Text.ElideRight
     }
 
-    background: Item {
-        Raised {
-            anchors.fill: parent
-            visible: !control.down && !control.popup.visible
-            radius: Theme.radiusSmall
-            depth: Theme.depthSmall
-            glow: control.visualFocus
-        }
-        Inset {
-            anchors.fill: parent
-            visible: control.down || control.popup.visible
-            radius: Theme.radiusSmall
-            glow: true
-        }
+    background: Raised {
+        sunk: control.down || control.popup.visible
+        radius: Theme.radiusSmall
+        depth: sunk ? Theme.depthInset : Theme.depthSmall
+        ring: control.visualFocus
     }
 
     popup: Popup {

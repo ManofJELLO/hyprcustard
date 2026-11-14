@@ -239,12 +239,10 @@ Item {
                 body: "Pick a rule on the left, or add one."
             }
 
-            ScrollView {
+            PageScroll {
                 id: editorScroll
                 anchors.fill: parent
                 visible: page.selected !== null
-                clip: true
-                contentWidth: availableWidth
 
                 ColumnLayout {
                     width: Math.min(editorScroll.availableWidth, Theme.contentMax)

@@ -65,11 +65,9 @@ Item {
         onAccepted: page.set({ source: "color:" + App.hyprHex(App.argb(seedDialog.selectedColor)).substr(0, 6) })
     }
 
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)

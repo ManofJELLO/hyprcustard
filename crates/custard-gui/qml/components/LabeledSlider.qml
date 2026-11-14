@@ -108,20 +108,13 @@ Item {
                 height: 8
                 radius: 4
 
-                // The filled part, brightening toward the handle.
+                // The filled part.
                 Rectangle {
                     width: Math.max(height, slider.visualPosition * parent.width)
                     height: parent.height
                     radius: 4
                     visible: slider.visualPosition > 0
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop {
-                            position: 0
-                            color: Theme.wash(root.enabled ? Theme.accent : Theme.muted, 0.25)
-                        }
-                        GradientStop { position: 1; color: root.enabled ? Theme.accent : Theme.muted }
-                    }
+                    color: Theme.wash(root.enabled ? Theme.accent : Theme.muted, 0.7)
                 }
 
                 // Where the value sits in the file. Positioned on the handle's
@@ -148,10 +141,17 @@ Item {
                 width: 16
                 height: 16
                 radius: 8
-                depth: 2
-                fill: slider.pressed ? Theme.accent : Theme.bg
-                glow: root.enabled && (slider.pressed || slider.hovered)
-                edge: root.enabled ? Theme.wash(Theme.accent, 0.8) : Theme.border
+                depth: slider.pressed ? 1 : 2
+                ring: slider.visualFocus
+
+                // A dot in the accent, so the handle reads as part of the fill.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: root.enabled ? Theme.accent : Theme.muted
+                }
             }
         }
     }

@@ -446,11 +446,8 @@ impl Session {
         self.forget(Source::Themes);
         self.problems
             .extend(problems.into_iter().map(|text| Problem { source: Source::Themes, text }));
-        self.theme = themes
-            .iter()
-            .find(|t| t.id == self.config.theme)
-            .cloned()
-            .unwrap_or_else(theme::sodium);
+        self.theme =
+            themes.iter().find(|t| t.id == self.config.theme).cloned().unwrap_or_else(theme::slate);
         self.themes = themes;
     }
 

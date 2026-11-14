@@ -211,11 +211,9 @@ Item {
         onAccepted: App.run("wallpaper.addFolder", { path: folderDialog.selectedFolder.toString() })
     }
 
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)
@@ -259,7 +257,7 @@ Item {
                                 z: -1
                                 radius: parent.radius
                                 depth: Theme.depthSmall
-                                glow: now.chosen
+                                sunk: now.chosen
                             }
 
                             Rectangle {

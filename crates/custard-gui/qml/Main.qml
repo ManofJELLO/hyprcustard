@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQuick.Effects
 import Qt.labs.platform as Platform
 import dev.hyprcustard.gui
 
@@ -285,23 +284,21 @@ ApplicationWindow {
     // -----------------------------------------------------------------------
     // Header
     // -----------------------------------------------------------------------
+    // Drawn over the pages, which do not clip their content so that the
+    // cards' shadows can fade out, and so a scrolled page slides under it.
     Rectangle {
         Layout.fillWidth: true
         Layout.preferredHeight: 58
         implicitHeight: 58
+        z: 1
         color: Theme.bg
 
-        // A line that fades out at both ends, lit in the middle.
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width
-            height: 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: 0.5; color: Theme.wash(Theme.accent, 0.5) }
-                GradientStop { position: 1; color: "transparent" }
-            }
+        // Clicks and scrolls on the header stay on it rather than reaching
+        // a page scrolled underneath.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onWheel: function (wheel) { wheel.accepted = true }
         }
 
         RowLayout {
@@ -314,12 +311,11 @@ ApplicationWindow {
                 spacing: 0
 
                 Text {
-                    text: "HYPR<font color='" + Theme.accent + "'>CUSTARD</font>"
+                    text: "hypr<font color='" + Theme.accent + "'>custard</font>"
                     textFormat: Text.StyledText
                     color: Theme.fg
                     font.pixelSize: Theme.fontSizeTitle
                     font.weight: Font.Bold
-                    font.letterSpacing: 4
                 }
                 Text {
                     text: App.configPathDisplay
@@ -386,16 +382,14 @@ ApplicationWindow {
         Rectangle {
             Layout.preferredWidth: Theme.sidebarWidth
             Layout.fillHeight: true
+            // Over the pages, as the header is.
+            z: 1
             color: Theme.bg
 
-            Rectangle {
-                anchors.right: parent.right
-                width: 1
-                height: parent.height
-                gradient: Gradient {
-                    GradientStop { position: 0; color: Theme.wash(Theme.border, 0.6) }
-                    GradientStop { position: 1; color: "transparent" }
-                }
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onWheel: function (wheel) { wheel.accepted = true }
             }
 
             ColumnLayout {
@@ -426,13 +420,12 @@ ApplicationWindow {
 
                         Text {
                             visible: navItem.startsSection && navItem.section !== ""
-                            text: navItem.section.toUpperCase()
+                            text: navItem.section
                             x: 8
                             y: -18
                             color: Theme.muted
                             font.pixelSize: Theme.fontSizeSmall
                             font.weight: Font.DemiBold
-                            font.letterSpacing: 2.2
                         }
                         radius: Theme.radiusSmall
                         // The page on show is pressed in; another one under the
@@ -452,25 +445,6 @@ ApplicationWindow {
                         MouseArea {
                             anchors.fill: parent
                             onClicked: window.currentPage = navItem.index
-                        }
-
-                        RectangularShadow {
-                            anchors.fill: activeMark
-                            radius: 1.5
-                            blur: 8
-                            color: Theme.glow(Theme.accent)
-                            visible: activeMark.visible
-                        }
-                        Rectangle {
-                            id: activeMark
-                            width: 3
-                            height: 22
-                            radius: 1.5
-                            anchors.left: parent.left
-                            anchors.leftMargin: 6
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: Theme.accent
-                            visible: window.currentPage === navItem.index
                         }
 
                         Column {

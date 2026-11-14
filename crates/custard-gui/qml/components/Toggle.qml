@@ -8,14 +8,15 @@ Switch {
     implicitHeight: 26
     font.pixelSize: Theme.fontSize
 
-    // A pressed-in track with a raised knob, which lights up when on.
+    // A pressed-in track with a raised knob. On, the track fills with the
+    // accent and the knob takes it too.
     indicator: Inset {
         implicitWidth: 42
         implicitHeight: 22
         x: control.leftPadding
         y: parent.height / 2 - height / 2
         radius: height / 2
-        glow: control.checked
+        fill: control.checked ? Theme.wash(Theme.accent, 0.45) : Theme.well
         opacity: control.enabled ? 1.0 : 0.45
 
         Raised {
@@ -26,7 +27,6 @@ Switch {
             radius: 8
             depth: 2
             fill: control.checked ? Theme.accent : Theme.bg
-            glow: control.checked
 
             Behavior on x {
                 NumberAnimation { duration: 110; easing.type: Easing.OutCubic }

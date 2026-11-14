@@ -22,29 +22,18 @@ Button {
     readonly property bool _sunk: control.down || control.checked
     readonly property real _radius: control.compact ? height / 2 : Theme.radiusSmall
 
-    // Raised, and pressed in while held. A primary or danger button carries
-    // its color on its edge, and the primary one glows while it can be
-    // pressed.
-    background: Item {
+    // Raised, and pressed in while held. A primary or danger button says so
+    // with the color of its text.
+    background: Raised {
         implicitHeight: control.implicitHeight
         opacity: control.enabled ? 1.0 : 0.45
-
-        Raised {
-            anchors.fill: parent
-            visible: !control._sunk
-            radius: control._radius
-            depth: control.compact ? 2 : (control.hovered ? Theme.depthSmall + 1 : Theme.depthSmall)
-            glow: control.primary && control.enabled
-            glowColor: control._tint
-            edge: control.danger ? Theme.wash(Theme.error, 0.7) : "transparent"
-        }
-        Inset {
-            anchors.fill: parent
-            visible: control._sunk
-            radius: control._radius
-            glow: control.primary || control.danger
-            glowColor: control._tint
-        }
+        sunk: control._sunk
+        radius: control._radius
+        depth: control._sunk ? (control.compact ? 2 : Theme.depthSmall)
+                             : (control.compact ? 2 : (control.hovered ? Theme.depthSmall + 1
+                                                                       : Theme.depthSmall))
+        ring: control.visualFocus
+        ringColor: control._tint
     }
 
     contentItem: Text {

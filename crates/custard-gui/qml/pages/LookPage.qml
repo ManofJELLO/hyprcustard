@@ -177,11 +177,9 @@ Item {
 
     // --- the page ------------------------------------------------------------
 
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)

@@ -670,7 +670,7 @@ fn default_version() -> u32 {
 
 fn default_theme() -> String {
     // The app's own look, until someone picks otherwise.
-    "sodium".into()
+    "slate".into()
 }
 
 impl Default for Config {

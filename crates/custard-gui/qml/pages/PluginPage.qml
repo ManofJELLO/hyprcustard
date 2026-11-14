@@ -109,11 +109,9 @@ Item {
     // none, and an output pane nobody can reach is worse than a short one. So
     // the page scrolls like the others, and the pane takes what is left over
     // only when there is something left over.
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)

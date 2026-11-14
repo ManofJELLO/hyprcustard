@@ -128,19 +128,19 @@ QtObject {
     // top left, shadowed at the bottom right. Both shades come from the
     // background itself, so the look holds under any theme, light or dark.
 
-    readonly property color shadowDark: _shade(bg, dark ? -0.62 : -0.22)
-    readonly property color shadowLight: dark ? wash(_shade(bg, 0.17), 0.85)
-                                              : Qt.rgba(1, 1, 1, 0.9)
+    readonly property color shadowDark: _shade(bg, dark ? -0.55 : -0.20)
+    readonly property color shadowLight: dark ? wash(_shade(bg, 0.12), 0.7)
+                                              : Qt.rgba(1, 1, 1, 0.85)
+    // The same pair, for the inner edges of a pressed-in shape.
+    readonly property color innerDark: wash(_shade(bg, dark ? -0.6 : -0.25), dark ? 0.75 : 0.5)
+    readonly property color innerLight: dark ? wash(_shade(bg, 0.12), 0.45)
+                                             : Qt.rgba(1, 1, 1, 0.7)
     // The floor of a pressed-in shape.
-    readonly property color well: _shade(bg, dark ? -0.22 : -0.06)
-    // How far a raised shape stands out.
+    readonly property color well: _shade(bg, dark ? -0.16 : -0.05)
+    // How far a raised shape stands out, and how deep a pressed one goes.
     readonly property int depth: 6
     readonly property int depthSmall: 3
-
-    // A soft colored light around what is focused or on.
-    function glow(c) {
-        return Qt.rgba(c.r, c.g, c.b, dark ? 0.45 : 0.35)
-    }
+    readonly property int depthInset: 4
 
     // Metrics. One place, so spacing stays consistent across pages.
     readonly property int pad: 16

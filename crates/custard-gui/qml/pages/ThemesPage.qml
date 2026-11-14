@@ -81,11 +81,9 @@ Item {
         }
     }
 
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)
@@ -189,7 +187,7 @@ Item {
                             anchors.fill: parent
                             z: -1
                             radius: parent.radius
-                            glow: themeCard.modelData.active
+                            sunk: themeCard.modelData.active
                         }
 
                         Column {

@@ -23,12 +23,6 @@ Rectangle {
         z: -1
         radius: card.radius
     }
-    Brackets {
-        anchors.fill: parent
-        anchors.margins: 7
-        z: -1
-    }
-
     Column {
         id: header
         visible: card.title !== "" || card.subtitle !== ""
@@ -39,10 +33,8 @@ Rectangle {
             text: card.title
             visible: text !== ""
             color: Theme.fg
-            font.pixelSize: Theme.fontSize + 1
+            font.pixelSize: Theme.fontSizeLarge
             font.weight: Font.DemiBold
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: 3
         }
         Text {
             text: card.subtitle

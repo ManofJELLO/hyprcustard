@@ -460,12 +460,10 @@ Item {
             Layout.fillHeight: true
 
             // Nothing selected: what the page is for, and a common one to add.
-            ScrollView {
+            PageScroll {
                 id: introScroll
                 anchors.fill: parent
                 visible: page.selected === null && page.selectedHand === null
-                clip: true
-                contentWidth: availableWidth
 
                 ColumnLayout {
                     width: Math.min(introScroll.availableWidth, Theme.contentMax)
@@ -507,12 +505,10 @@ Item {
             }
 
             // One of the user's own rules.
-            ScrollView {
+            PageScroll {
                 id: handScroll
                 anchors.fill: parent
                 visible: page.selectedHand !== null
-                clip: true
-                contentWidth: availableWidth
 
                 ColumnLayout {
                     width: Math.min(handScroll.availableWidth, Theme.contentMax)
@@ -589,12 +585,10 @@ Item {
             }
 
             // One of the app's rules.
-            ScrollView {
+            PageScroll {
                 id: editorScroll
                 anchors.fill: parent
                 visible: page.selected !== null
-                clip: true
-                contentWidth: availableWidth
 
                 ColumnLayout {
                     width: Math.min(editorScroll.availableWidth, Theme.contentMax)

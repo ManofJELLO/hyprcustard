@@ -1,7 +1,8 @@
 //! Colors for the app's own window.
 //!
-//! By default the app wears Sodium: warm charcoal lit amber and teal, like a
-//! city street at night under sodium lamps. It can instead wear whatever Qt
+//! By default the app wears Slate: a soft blue-gray that its raised and
+//! pressed-in shapes read well against, with one quiet accent. It can instead
+//! wear whatever Qt
 //! is wearing, the color scheme applied from the Colors page, or Gruvbox dark
 //! or light. Anything else is a TOML
 //! file in `~/.config/hyprcustard/themes/`, which may override as few
@@ -73,30 +74,34 @@ pub struct Theme {
     pub colors: Palette,
 }
 
-/// Sodium: the app's own look, and its default.
-pub fn sodium() -> Theme {
+/// Slate: the app's own look, and its default.
+///
+/// Low contrast between the surfaces and only a little saturation, because
+/// the shapes are made of light and shadow on one background color; the
+/// accent is kept for what is on or chosen.
+pub fn slate() -> Theme {
     Theme {
-        id: "sodium".into(),
-        name: "Sodium".into(),
+        id: "slate".into(),
+        name: "Slate".into(),
         dark: true,
         opacity: 1.0,
         system: false,
         colors: Palette {
-            bg: "#221d1a".into(),
-            bg_alt: "#1b1714".into(),
-            surface: "#26211d".into(),
-            surface_hi: "#2e2823".into(),
-            border: "#3d342c".into(),
-            fg: "#f3e9dc".into(),
-            fg_dim: "#bfae9b".into(),
-            muted: "#857565".into(),
-            accent: "#ffa53b".into(),
-            accent_alt: "#2fd3c6".into(),
-            ok: "#a6e36b".into(),
-            warn: "#ffd166".into(),
-            error: "#ff4a3d".into(),
-            selection: "#3a2f25".into(),
-            on_accent: "#221d1a".into(),
+            bg: "#2b2f36".into(),
+            bg_alt: "#262a30".into(),
+            surface: "#2b2f36".into(),
+            surface_hi: "#343942".into(),
+            border: "#3c424c".into(),
+            fg: "#e3e6eb".into(),
+            fg_dim: "#b4bac4".into(),
+            muted: "#7e8592".into(),
+            accent: "#8fa8e8".into(),
+            accent_alt: "#c3a0d8".into(),
+            ok: "#8dc79b".into(),
+            warn: "#e2c07e".into(),
+            error: "#e58282".into(),
+            selection: "#3b4252".into(),
+            on_accent: "#1f2228".into(),
         },
     }
 }
@@ -217,7 +222,7 @@ pub fn from_scheme(s: &crate::colors::Scheme) -> Theme {
 
 /// The themes that ship with the app, the default one first.
 pub fn builtin() -> Vec<Theme> {
-    vec![sodium(), system(), color_scheme(), gruvbox_dark(), gruvbox_light()]
+    vec![slate(), system(), color_scheme(), gruvbox_dark(), gruvbox_light()]
 }
 
 // ---------------------------------------------------------------------------
@@ -278,12 +283,14 @@ pub fn from_toml(id: &str, text: &str) -> Result<Theme> {
 
     let mut theme = match file.base.as_deref() {
         Some("gruvbox-light") => gruvbox_light(),
-        Some("sodium") => sodium(),
+        // Sodium was the default before Slate; a theme file built on it
+        // gets Slate rather than an error.
+        Some("slate") | Some("sodium") => slate(),
         Some("gruvbox-dark") | None => gruvbox_dark(),
         Some(other) => {
             return Err(Error::other(format!(
                 "theme `{id}` has base = \"{other}\", which is not a built-in theme \
-                 (use sodium, gruvbox-dark or gruvbox-light)"
+                 (use slate, gruvbox-dark or gruvbox-light)"
             )))
         }
     };
@@ -368,10 +375,10 @@ pub fn load_all() -> (Vec<Theme>, Vec<String>) {
     (themes, problems)
 }
 
-/// Find a theme by id, falling back to Sodium.
+/// Find a theme by id, falling back to Slate.
 pub fn resolve(id: &str) -> Theme {
     let (themes, _) = load_all();
-    themes.into_iter().find(|t| t.id == id).unwrap_or_else(sodium)
+    themes.into_iter().find(|t| t.id == id).unwrap_or_else(slate)
 }
 
 /// Write a documented example theme file, so there is something to copy.
@@ -391,7 +398,7 @@ pub const EXAMPLE_THEME: &str = r##"# A theme for hyprcustard.
 # leave out keeps the base theme's value.
 
 name = "Example"
-base = "gruvbox-dark"     # sodium, gruvbox-dark or gruvbox-light
+base = "gruvbox-dark"     # slate, gruvbox-dark or gruvbox-light
 dark = true               # affects shadows and a few contrast choices
 opacity = 0.96            # 0.3 – 1.0; Hyprland composites the rest
 
@@ -447,7 +454,7 @@ mod tests {
     fn builtins_are_distinct_and_named() {
         let b = builtin();
         let ids: Vec<&str> = b.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids, vec!["sodium", "system", "scheme", "gruvbox-dark", "gruvbox-light"]);
+        assert_eq!(ids, vec!["slate", "system", "scheme", "gruvbox-dark", "gruvbox-light"]);
         assert!(b.iter().all(|t| !t.name.is_empty()));
         // The two Gruvboxes are a dark/light pair and must not look alike.
         assert!(b[3].dark);
@@ -476,10 +483,13 @@ mod tests {
     }
 
     #[test]
-    fn sodium_is_the_default_and_the_fallback() {
-        assert_eq!(crate::model::Config::default().theme, "sodium");
-        assert_eq!(resolve("no-such-theme").id, "sodium");
-        assert_eq!(from_toml("mine", "base = \"sodium\"\n").unwrap().colors.bg, sodium().colors.bg);
+    fn slate_is_the_default_and_the_fallback() {
+        assert_eq!(crate::model::Config::default().theme, "slate");
+        assert_eq!(resolve("no-such-theme").id, "slate");
+        // A config still naming the old default lands on the new one.
+        assert_eq!(resolve("sodium").id, "slate");
+        assert_eq!(from_toml("mine", "base = \"slate\"\n").unwrap().colors.bg, slate().colors.bg);
+        assert_eq!(from_toml("mine", "base = \"sodium\"\n").unwrap().colors.bg, slate().colors.bg);
     }
 
     #[test]

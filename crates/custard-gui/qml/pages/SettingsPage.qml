@@ -14,11 +14,9 @@ Item {
         App.run("settings.update", { settings: copy })
     }
 
-    ScrollView {
+    PageScroll {
         id: scroll
         anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
 
         ColumnLayout {
             width: Math.min(scroll.availableWidth, Theme.contentMax)
@@ -222,14 +220,14 @@ Item {
                 Layout.fillWidth: true
                 title: "This app's colors"
                 subtitle: "How hyprcustard itself looks — for your Hyprland look, see the "
-                          + "Look and Themes pages. Sodium, Gruvbox dark and Gruvbox light are built in. Anything "
+                          + "Look and Themes pages. Slate, Gruvbox dark and Gruvbox light are built in. Anything "
                           + "else is a TOML file in " +
                           App.state.themeDir + ", which can override as few colors as you like."
 
                 FieldRow {
                     width: parent.width
                     label: "App colors"
-                    hint: "Sodium is hyprcustard's own look. System follows your Qt colors, so the " +
+                    hint: "Slate is hyprcustard's own look. System follows your Qt colors, so the " +
                           "app matches the rest of your desktop and changes with it. Color scheme " +
                           "wears the scheme last applied on the Colors page."
 

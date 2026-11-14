@@ -22,7 +22,7 @@ TextField {
 
     background: Inset {
         radius: Theme.radiusSmall
-        glow: control.activeFocus
+        ring: control.activeFocus
     }
 
     onEditingFinished: control.commit(control.text)

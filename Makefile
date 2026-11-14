@@ -9,7 +9,7 @@ WATCH := custard-watch
 QMLLINT ?= qmllint
 QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
-.PHONY: all build release test check install uninstall clean shots aur-bin icons local-pkg
+.PHONY: all build release test check install uninstall clean shots aur-bin icons shaders local-pkg
 
 all: release
 
@@ -65,6 +65,14 @@ icons:
 	rsvg-convert -w 64 -h 64 $(ICONS)/hyprcustard-tray.svg -o $(ICONS)/hyprcustard-tray.png
 	rsvg-convert -w 128 -h 128 $(ICONS)/hyprcustard.svg -o $(ICONS)/hyprcustard.png
 
+# The app's shape shader, compiled for every graphics API Qt can use.
+# Committed, so building does not need qsb (qt6-shadertools); run this after
+# changing the .frag.
+SHADERS := crates/custard-gui/shaders
+QSB ?= /usr/lib/qt6/bin/qsb
+shaders:
+	$(QSB) --glsl "100 es,120,150" --hlsl 50 --msl 12 -o $(SHADERS)/neu.frag.qsb $(SHADERS)/neu.frag
+
 # A pacman package of what is committed here, for using hyprcustard as a
 # user would between releases: see packaging/local/PKGBUILD. Built from a
 # copy under target/, since makepkg writes the version into the PKGBUILD it
@@ -81,10 +89,13 @@ local-pkg:
 	@cd $(LOCAL_PKG) && for p in $$(CUSTARD_REPO=$(CURDIR) makepkg --packagelist); do \
 		echo "  sudo pacman -U $$p"; done
 
-# Render every page to a PNG without a compositor.
+# Render every page to a PNG without a compositor. On OpenGL rather than the
+# software renderer, which cannot run the shape shader and would show every
+# card flat.
 shots: build
 	@mkdir -p shots
-	CUSTARD_SHOT_DIR=$(PWD)/shots QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+	CUSTARD_SHOT_DIR=$(PWD)/shots QT_QPA_PLATFORM=offscreen \
+		QT_QUICK_BACKEND=rhi QSG_RHI_BACKEND=opengl \
 		./target/debug/$(BIN) || true
 
 # Make the AUR package ready to push: PKGBUILD and .SRCINFO, written back

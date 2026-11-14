@@ -5,7 +5,6 @@ fn main() {
         "qml/Main.qml",
         "qml/components/AnimationDemo.qml",
         "qml/components/Badge.qml",
-        "qml/components/Brackets.qml",
         "qml/components/Card.qml",
         "qml/components/ColorButton.qml",
         "qml/components/ConfirmDialog.qml",
@@ -17,6 +16,7 @@ fn main() {
         "qml/components/Inset.qml",
         "qml/components/LabeledSlider.qml",
         "qml/components/LineEdit.qml",
+        "qml/components/PageScroll.qml",
         "qml/components/PasswordDialog.qml",
         "qml/components/PillButton.qml",
         "qml/components/Raised.qml",
@@ -56,7 +56,12 @@ fn main() {
         .qt_module("QuickControls2")
         .files(["src/bridge.rs"])
         // PNGs, so the app needs no SVG support to show its own icon. `make
-        // icons` renders them from the SVGs beside them.
-        .qrc_resources(["icons/hyprcustard.png", "icons/hyprcustard-tray.png"])
+        // icons` renders them from the SVGs beside them. The shader is
+        // compiled by `make shaders`, so building needs no qsb.
+        .qrc_resources([
+            "icons/hyprcustard.png",
+            "icons/hyprcustard-tray.png",
+            "shaders/neu.frag.qsb",
+        ])
         .build();
 }

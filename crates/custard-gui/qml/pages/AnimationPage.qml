@@ -212,12 +212,10 @@ Item {
         // ------------------------------------------------------------------
         // The selected leaf
         // ------------------------------------------------------------------
-        ScrollView {
+        PageScroll {
             id: scroll
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            contentWidth: availableWidth
 
             ColumnLayout {
                 width: Math.min(scroll.availableWidth, Theme.contentMax)
