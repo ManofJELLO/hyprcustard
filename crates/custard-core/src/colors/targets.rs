@@ -115,7 +115,7 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
             wired: false,
             usage: "Use the names in your style: @primary, @on_surface, @base0D. \
                     @surface_alpha and friends follow the bar opacity. A color your \
-                    style defines itself keeps your value."
+                    style defines itself keeps your value, until you hand it over."
                 .into(),
             warning: String::new(),
             fix: String::new(),
@@ -135,7 +135,8 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
             usage: "Use the names in your theme: @primary, @on-surface, @base0D \
                     (rofi spells them with dashes). The import comes after your @theme \
                     line, so where your theme defines the same name (background, for \
-                    one), the scheme's color is used."
+                    one), the scheme's color is used. Colors your config defines itself \
+                    keep your value, until you hand them over."
                 .into(),
             warning: String::new(),
             fix: String::new(),
@@ -550,7 +551,24 @@ pub fn write(target: &Target, scheme: &Scheme, opacity: f64) -> Result<()> {
         let dir = target.file.parent().unwrap_or(Path::new("."));
         return toolkits::write_kvantum(dir, &base, scheme, &header);
     }
-    crate::paths::write_atomic(&target.file, &render(target.id, scheme, opacity))
+    let mut text = render(target.id, scheme, opacity);
+    // The user's own names handed over to the scheme, defined last so they
+    // win over the same names above.
+    if let Some(kind) = super::adopt::Kind::of(target.id) {
+        let config = std::fs::read_to_string(&target.config).unwrap_or_default();
+        let taken = super::adopt::taken(kind, &config);
+        text.push_str(&super::adopt::lines_for(kind, &taken, |name| color_of(scheme, name)));
+    }
+    crate::paths::write_atomic(&target.file, &text)
+}
+
+/// A scheme color by the name a colors file gives it: a role, or
+/// `base00`..`base0F`.
+pub fn color_of(scheme: &Scheme, name: &str) -> String {
+    match name.strip_prefix("base").and_then(|n| usize::from_str_radix(n, 16).ok()) {
+        Some(n) if n < 16 => scheme.base(n).to_string(),
+        _ => scheme.role(name).to_string(),
+    }
 }
 
 /// Make a target's config load its colors file, backing the config up first.

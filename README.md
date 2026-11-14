@@ -557,10 +557,30 @@ a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and 
 
 Your configs are yours, so the page never edits one unless you ask: each app shows whether
 its config loads the file yet, the one line it needs, and an **Add it for me** button, which
-backs the config up first. In Waybar a color your own style defines keeps your value (it
-comes after the import) — use the scheme's names, or remove your own, to follow it. In Rofi
-the import has to come after your `@theme` line, so where your theme defines one of the same
-names (`background`, say), the scheme's color is the one used.
+backs the config up first. In Rofi the import has to come after your `@theme` line, so where
+your theme defines one of the same names (`background`, say), the scheme's color is the one
+used.
+
+### Your own colors
+
+A Waybar style or a Rofi config usually defines its colors itself, after the import, in its
+own words (`@color_aqua`, `bar-background`), so its own win and the scheme never shows. The
+page lists them under the app's row, and **Let the scheme set them…** pairs each one with a
+scheme color: by its name when the name says (`color_aqua` is cyan, `foreground` is text),
+otherwise by the color — a gray by how light it is, anything else by its hue. Change any
+pairing, or keep any color as it is, then **Hand them over**:
+
+* your line is commented out, with a marker naming the scheme color it now gets —
+  `/* [hyprcustard sets this: base0C] @define-color color_aqua #89B482; */` — and a backup
+  of the config is made first;
+* the colors file defines the same name in that scheme color, with your own transparency, so
+  `rgba(40,40,40,0.8)` stays 80% opaque in whatever scheme comes next;
+* **Give them back** takes the markers off, leaving every line exactly as it was.
+
+Only colors written out are offered (`#rrggbb`, `rgba(…)`): one defined from another
+(`@foreground`, `shade(@bg, 1.2)`) follows it by itself. In Rofi only the top-level `* { }`
+block holds variables, so only it is read. The pairing lives in your file, in the marker, so
+custard-watch keeps it when it recolors from the wallpaper.
 
 ### GTK and Qt apps
 

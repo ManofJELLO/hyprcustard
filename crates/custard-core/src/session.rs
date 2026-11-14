@@ -76,6 +76,9 @@ struct Desk {
     login_block: Option<(usize, String)>,
     /// Whether the config starts hyprcustard at login, in the tray.
     autostart: bool,
+    /// For waybar and rofi: the colors their config defines itself, and the
+    /// ones handed over to the scheme.
+    own_colors: Vec<(&'static str, Vec<colors::adopt::Own>, Vec<colors::adopt::Own>)>,
 }
 
 /// Which part of the app noticed a problem.
@@ -792,7 +795,18 @@ impl Session {
             login_moved: walls::startup::moved_lines(&text),
             login_block: walls::startup::block_text(&text),
             autostart: crate::autostart::enabled(&text),
+            own_colors: Vec::new(),
         };
+        self.desk.own_colors = self
+            .desk
+            .targets
+            .iter()
+            .filter_map(|t| {
+                let kind = colors::adopt::Kind::of(t.id)?;
+                let text = std::fs::read_to_string(&t.config).unwrap_or_default();
+                Some((t.id, colors::adopt::own(kind, &text), colors::adopt::taken(kind, &text)))
+            })
+            .collect();
     }
 
     fn run_command(&mut self, name: &str, payload: &Value) -> Result<Option<String>> {
@@ -1212,6 +1226,8 @@ impl Session {
             "colors.apply" => self.apply_colors(),
             "colors.wire" => self.wire_colors(payload),
             "colors.fix" => self.fix_colors(payload),
+            "colors.handOver" => self.hand_over_colors(payload),
+            "colors.giveBack" => self.give_back_colors(payload),
             "colors.follow" => {
                 if payload.get("on").and_then(Value::as_bool).unwrap_or(false) {
                     self.start_following().map(Some)
@@ -1428,6 +1444,125 @@ impl Session {
         Ok(done.summary(&scheme.name))
     }
 
+    /// An app's own colors for the page: the ones it still defines itself,
+    /// or the ones handed over.
+    fn own_colors_view(&self, id: &str, taken: bool) -> Vec<Value> {
+        let Some((_, own, gone)) = self.desk.own_colors.iter().find(|(i, ..)| *i == id) else {
+            return Vec::new();
+        };
+        let scheme = self.colors_applied.as_ref();
+        (if taken { gone } else { own })
+            .iter()
+            .map(|o| {
+                json!({
+                    "line": o.line,
+                    "name": o.name,
+                    "value": o.value,
+                    "swatch": colors::scheme::hex(o.rgb),
+                    "role": o.role,
+                    "becomes": scheme.map(|s| colors::targets::color_of(s, &o.role)),
+                })
+            })
+            .collect()
+    }
+
+    /// Hand some of an app's own colors over to the scheme: their lines are
+    /// commented out, marked with the scheme color each one gets, and the
+    /// colors file defines them from then on.
+    fn hand_over_colors(&mut self, payload: &Value) -> Result<Option<String>> {
+        let id = id_of(payload)?;
+        let pairs: Vec<(String, String)> = payload
+            .get("pairs")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|p| {
+                        Some((
+                            p.get("name")?.as_str()?.to_string(),
+                            p.get("role")?.as_str()?.to_string(),
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let (t, kind) = self.own_colors_target(id)?;
+        let text = paths::read_to_string(&t.config)?;
+        let next = colors::adopt::hand_over(kind, &text, &pairs);
+        let moved =
+            colors::adopt::taken(kind, &next).len() - colors::adopt::taken(kind, &text).len();
+        if moved == 0 {
+            return Ok(Some(format!("None of {}'s colors were handed over", t.name)));
+        }
+        let backup = paths::backup(&t.config, self.settings.backups_to_keep)?;
+        paths::write_atomic(&t.config, &next)?;
+        let reloaded = self.rewrite_colors_file(&t)?;
+        self.refresh_desk();
+        let mut msg = format!(
+            "{} of {}'s own colors now come from the scheme. Their lines in {} are commented \
+             out, and Give them back restores them",
+            moved,
+            t.name,
+            paths::contract(&t.config)
+        );
+        if let Some(b) = backup {
+            msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
+        }
+        if let Some(r) = reloaded {
+            msg.push_str(&format!(". {r}"));
+        }
+        Ok(Some(msg))
+    }
+
+    /// Put an app's handed-over colors back as they were.
+    fn give_back_colors(&mut self, payload: &Value) -> Result<Option<String>> {
+        let id = id_of(payload)?;
+        let (t, _) = self.own_colors_target(id)?;
+        let text = paths::read_to_string(&t.config)?;
+        let next = colors::adopt::give_back(&text);
+        if next == text {
+            return Ok(Some(format!("{} has no colors handed over", t.name)));
+        }
+        let backup = paths::backup(&t.config, self.settings.backups_to_keep)?;
+        paths::write_atomic(&t.config, &next)?;
+        let reloaded = self.rewrite_colors_file(&t)?;
+        self.refresh_desk();
+        let mut msg = format!("{}'s own colors are back as they were", t.name);
+        if let Some(b) = backup {
+            msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
+        }
+        if let Some(r) = reloaded {
+            msg.push_str(&format!(". {r}"));
+        }
+        Ok(Some(msg))
+    }
+
+    fn own_colors_target(
+        &self,
+        id: &str,
+    ) -> Result<(colors::targets::Target, colors::adopt::Kind)> {
+        let t = self
+            .color_targets()
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| Error::other(format!("there is no app called `{id}`")))?;
+        let kind = colors::adopt::Kind::of(t.id).ok_or_else(|| {
+            Error::other(format!("{}'s own colors cannot be handed over", t.name))
+        })?;
+        Ok((t, kind))
+    }
+
+    /// Write a target's colors file again with the scheme applied last, so a
+    /// hand-over shows at once, and reload the app. Nothing when no scheme
+    /// has been applied, or the app is turned off.
+    fn rewrite_colors_file(&self, t: &colors::targets::Target) -> Result<Option<String>> {
+        let Some(s) = &self.colors_applied else { return Ok(None) };
+        if self.settings.colors.off.iter().any(|o| o == t.id) {
+            return Ok(None);
+        }
+        colors::targets::write(t, s, self.settings.colors.opacity)?;
+        Ok(if t.wired { colors::targets::reload(t, s) } else { None })
+    }
+
     /// Make one app's config load its colors file.
     fn wire_colors(&mut self, payload: &Value) -> Result<Option<String>> {
         let id = id_of(payload)?;
@@ -1544,7 +1679,17 @@ impl Session {
                 "warning": t.warning,
                 "fix": t.fix,
                 "replaces": t.replaces,
+                "own": self.own_colors_view(t.id, false),
+                "taken": self.own_colors_view(t.id, true),
             })).collect::<Vec<_>>(),
+            "colorChoices": colors::adopt::CHOICES,
+            // What each choice is in the scheme applied last, for swatches.
+            "choiceColors": self.colors_applied.as_ref().map(|s| {
+                colors::adopt::CHOICES
+                    .iter()
+                    .map(|c| (c.to_string(), Value::from(colors::targets::color_of(s, c))))
+                    .collect::<serde_json::Map<_, _>>()
+            }),
             "hyprlandConflicts": conflicts,
             "ffmpeg": self.desk.ffmpeg,
             "paletteDir": paths::contract(&colors::named::dir()),
@@ -2741,6 +2886,69 @@ mod tests {
         let text = std::fs::read_to_string(&cfg).unwrap();
         assert!(text.contains("rounding") && text.contains("hyprcustard --tray"));
         assert!(!s.dirty());
+    }
+
+    /// rofi's own colors handed over: the line is marked, the colors file
+    /// defines the name in the scheme's color, and giving it back restores
+    /// the config byte for byte.
+    #[test]
+    fn an_apps_own_colors_are_handed_over_and_given_back() {
+        let rofi = paths::apps_config_home().join("rofi");
+        std::fs::create_dir_all(&rofi).unwrap();
+        let config = rofi.join("config.rasi");
+        let mine = "@import \"hyprcustard-colors.rasi\"\n* {\n    foreground: #EBDBB2;\n    \
+                    bar-background: rgba(40,40,40,0.8);\n    text-color: @foreground;\n}\n";
+        std::fs::write(&config, mine).unwrap();
+        let base16: [String; 16] =
+            std::array::from_fn(|i| format!("#{:02x}{:02x}{:02x}", i * 16, i * 8, 0));
+        let mut s = session();
+        s.colors_applied = Some(colors::scheme::from_base16("Test", true, &base16));
+        s.refresh_desk();
+        let rofi_row = |s: &Session| {
+            s.state()["colors"]["targets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["id"] == "rofi")
+                .cloned()
+                .unwrap()
+        };
+        let row = rofi_row(&s);
+        assert_eq!(row["own"].as_array().unwrap().len(), 2);
+        assert_eq!(row["own"][0]["role"], "on_surface");
+
+        let msg = s
+            .command(
+                "colors.handOver",
+                &json!({ "id": "rofi", "pairs": [{ "name": "foreground", "role": "on_surface" }] }),
+            )
+            .unwrap()
+            .unwrap();
+        assert!(msg.starts_with("1 of Rofi's own colors"), "{msg}");
+        let text = std::fs::read_to_string(&config).unwrap();
+        assert!(text.contains("/* [hyprcustard sets this: on_surface] foreground: #EBDBB2; */"));
+        // The colors file defines the name in the scheme's color. Written to a
+        // file of this test's own: other tests applying a scheme rewrite the
+        // shared one at the same time.
+        let mut target = s.color_targets().into_iter().find(|t| t.id == "rofi").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        target.file = out.path().join("hyprcustard-colors.rasi");
+        let scheme = s.colors_applied.clone().unwrap();
+        colors::targets::write(&target, &scheme, 1.0).unwrap();
+        let file = std::fs::read_to_string(&target.file).unwrap();
+        assert!(
+            file.contains(&format!("    foreground: {};", scheme.role("on_surface"))),
+            "{file}"
+        );
+        let row = rofi_row(&s);
+        assert_eq!(
+            (row["own"].as_array().unwrap().len(), row["taken"].as_array().unwrap().len()),
+            (1, 1)
+        );
+
+        s.command("colors.giveBack", &json!({ "id": "rofi" })).unwrap();
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), mine);
+        assert!(s.command("colors.handOver", &json!({ "id": "kitty", "pairs": [] })).is_err());
     }
 
     #[test]

@@ -35,6 +35,15 @@ Item {
     }
 
     // The targets turned off, with `id` switched to `on`.
+    // A scheme color as the pairing list names it.
+    function choiceLabel(name) {
+        var hues = { base08: "red", base09: "orange", base0A: "yellow", base0B: "green",
+                     base0C: "cyan", base0D: "blue", base0E: "purple", base0F: "brown" }
+        if (hues[name])
+            return name + " (" + hues[name] + ")"
+        return String(name).replace(/_/g, " ")
+    }
+
     function setTarget(id, on) {
         var off = (page.choice.off || []).filter(function (x) { return x !== id })
         if (!on)
@@ -700,6 +709,10 @@ Item {
                         id: row
                         required property var modelData
                         readonly property var t: row.modelData
+                        // Handing the app's own colors over: the list is open,
+                        // and the pairings changed from the guesses, by name.
+                        property bool pairing: false
+                        property var picks: ({})
                         width: parent ? parent.width : 0
                         height: rowColumn.implicitHeight + 2 * Theme.gap
                         radius: Theme.radiusSmall
@@ -786,6 +799,143 @@ Item {
                                     tooltip: "Sets the GTK theme in gsettings and in your settings.ini files, "
                                              + "backing those up first"
                                     onClicked: App.run("colors.fix", { id: row.t.id })
+                                }
+                            }
+                            // The app's own colors, defined in its config after
+                            // the line that loads the scheme's, so they win —
+                            // offered to the scheme name by name.
+                            RowLayout {
+                                visible: row.t.on && (row.t.own || []).length > 0
+                                width: parent.width
+                                spacing: Theme.gap
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: row.t.config + " sets " + App.plural((row.t.own || []).length, "color")
+                                          + " of its own, so the scheme cannot change them: "
+                                          + (row.t.own || []).map(function (o) { return o.name }).join(", ") + "."
+                                    wrapMode: Text.WordWrap
+                                    color: Theme.warn
+                                    font.pixelSize: Theme.fontSizeSmall
+                                }
+                                PillButton {
+                                    text: row.pairing ? "Not now" : "Let the scheme set them…"
+                                    onClicked: {
+                                        row.picks = ({})
+                                        row.pairing = !row.pairing
+                                    }
+                                }
+                            }
+                            Column {
+                                visible: row.pairing && row.t.on && (row.t.own || []).length > 0
+                                width: parent.width
+                                spacing: Theme.gapSmall
+
+                                Text {
+                                    width: parent.width
+                                    text: "Each of your colors takes the scheme color beside it, keeping its own "
+                                          + "transparency. Your lines in " + row.t.config + " are commented out with "
+                                          + "a marker naming that color, so Give them back restores them exactly. "
+                                          + "A backup is made first."
+                                    wrapMode: Text.WordWrap
+                                    color: Theme.fgDim
+                                    font.pixelSize: Theme.fontSizeSmall
+                                }
+
+                                Repeater {
+                                    model: row.t.own || []
+
+                                    RowLayout {
+                                        id: pair
+                                        required property var modelData
+                                        readonly property string role: row.picks[pair.modelData.name] !== undefined
+                                                                       ? row.picks[pair.modelData.name]
+                                                                       : pair.modelData.role
+                                        width: parent ? parent.width : 0
+                                        spacing: Theme.gap
+
+                                        Rectangle {
+                                            implicitWidth: 18
+                                            implicitHeight: 18
+                                            radius: 3
+                                            color: pair.modelData.swatch
+                                            border.width: 1
+                                            border.color: Theme.border
+                                        }
+                                        Text {
+                                            Layout.preferredWidth: 220
+                                            text: pair.modelData.name
+                                            color: Theme.fg
+                                            font.family: Theme.monoFamily
+                                            font.pixelSize: Theme.fontSizeSmall
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            text: "→"
+                                            color: Theme.muted
+                                            font.pixelSize: Theme.fontSize
+                                        }
+                                        Dropdown {
+                                            Layout.preferredWidth: 240
+                                            model: ["keep mine"].concat((page.colors.colorChoices || []).map(page.choiceLabel))
+                                            currentIndex: pair.role === "" ? 0
+                                                          : (page.colors.colorChoices || []).indexOf(pair.role) + 1
+                                            onActivated: function (index) {
+                                                var picks = Object.assign({}, row.picks)
+                                                picks[pair.modelData.name] = index === 0 ? "" : page.colors.colorChoices[index - 1]
+                                                row.picks = picks
+                                            }
+                                        }
+                                        Rectangle {
+                                            visible: pair.role !== "" && !!page.colors.choiceColors
+                                            implicitWidth: 18
+                                            implicitHeight: 18
+                                            radius: 3
+                                            color: page.colors.choiceColors ? (page.colors.choiceColors[pair.role] || "transparent")
+                                                                            : "transparent"
+                                            border.width: 1
+                                            border.color: Theme.border
+                                        }
+                                        Item {
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+
+                                PillButton {
+                                    text: "Hand them over"
+                                    onClicked: {
+                                        var pairs = []
+                                        var own = row.t.own || []
+                                        for (var i = 0; i < own.length; i++) {
+                                            var name = own[i].name
+                                            var role = row.picks[name] !== undefined ? row.picks[name] : own[i].role
+                                            if (role !== "")
+                                                pairs.push({ name: name, role: role })
+                                        }
+                                        App.run("colors.handOver", { id: row.t.id, pairs: pairs })
+                                        row.pairing = false
+                                    }
+                                }
+                            }
+                            RowLayout {
+                                visible: row.t.on && (row.t.taken || []).length > 0
+                                width: parent.width
+                                spacing: Theme.gap
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: App.plural((row.t.taken || []).length, "color") + " from " + row.t.config
+                                          + " now come from the scheme: "
+                                          + (row.t.taken || []).map(function (o) {
+                                                return o.name + " → " + page.choiceLabel(o.role)
+                                            }).join(", ") + "."
+                                    wrapMode: Text.WordWrap
+                                    color: Theme.fgDim
+                                    font.pixelSize: Theme.fontSizeSmall
+                                }
+                                PillButton {
+                                    text: "Give them back"
+                                    tooltip: "Uncomment your own lines in " + row.t.config + ", exactly as they were"
+                                    onClicked: App.run("colors.giveBack", { id: row.t.id })
                                 }
                             }
                             Text {

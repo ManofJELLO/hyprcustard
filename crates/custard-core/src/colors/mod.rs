@@ -13,6 +13,7 @@
 //! `~/.config/hyprcustard/colors/current.json`, which the app's own window
 //! can wear.
 
+pub mod adopt;
 pub mod extract;
 pub mod follow;
 pub mod named;
