@@ -307,7 +307,7 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: Theme.pad
-            anchors.rightMargin: Theme.pad
+            anchors.rightMargin: Theme.pageMargin
             spacing: Theme.gap
 
             ColumnLayout {
@@ -527,91 +527,91 @@ ApplicationWindow {
             Item {
                 LookPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 LookRulesPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 AnimationPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 ThemesPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 WallpaperPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 ColorsPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 IconsPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 RulesPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 ShadersPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 LayersPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 BindsPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 PreviewPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 PluginPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 FscPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
             Item {
                 SettingsPage {
                     anchors.fill: parent
-                    anchors.margins: Theme.pad
+                    anchors.margins: Theme.pageMargin
                 }
             }
         }

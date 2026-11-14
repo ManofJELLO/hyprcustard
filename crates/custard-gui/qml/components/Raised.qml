@@ -47,6 +47,7 @@ Item {
         readonly property color fill: neu.fill
         readonly property color dark: neu.sunk ? Theme.innerDark : Theme.shadowDark
         readonly property color light: neu.sunk ? Theme.innerLight : Theme.shadowLight
+        readonly property color ground: Theme.bg
 
         fragmentShader: "qrc:/qt/qml/dev/hyprcustard/gui/shaders/neu.frag.qsb"
     }

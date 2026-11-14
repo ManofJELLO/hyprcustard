@@ -66,7 +66,7 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        spacing: Theme.pad
+        spacing: Theme.pageMargin
 
         // ------------------------------------------------------------------
         // The list
@@ -256,19 +256,32 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     columns: page.sideBySide ? 2 : 1
-                    columnSpacing: Theme.pad
+                    columnSpacing: Theme.pageMargin
                     rowSpacing: Theme.gap
 
+                    // It clips, as the pane sits beside or under it, so its
+                    // box reaches out past the cards by a shadow's room on
+                    // the sides and the top, into the gaps around it, and the
+                    // cards sit that far in. Their shadows then fade out
+                    // inside the clip instead of being cut straight off.
                     ScrollView {
                         id: detailScroll
+                        readonly property int room: Theme.pageMargin
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        Layout.leftMargin: -detailScroll.room
+                        Layout.rightMargin: -detailScroll.room
+                        Layout.topMargin: -detailScroll.room
                         clip: true
                         contentWidth: availableWidth
+                        contentHeight: detailCards.implicitHeight + detailScroll.room * 2
 
                         ColumnLayout {
-                            width: Math.min(detailScroll.availableWidth, Theme.contentMax)
+                            id: detailCards
+                            width: Math.min(detailScroll.availableWidth - detailScroll.room * 2,
+                                            Theme.contentMax)
                             x: Math.round((detailScroll.availableWidth - width) / 2)
+                            y: detailScroll.room
                             spacing: Theme.pad
 
                             // --- header ---

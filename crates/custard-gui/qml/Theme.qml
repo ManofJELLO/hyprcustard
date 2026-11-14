@@ -141,6 +141,10 @@ QtObject {
     readonly property int depth: 6
     readonly property int depthSmall: 3
     readonly property int depthInset: 4
+    // Room around a page for its cards' shadows to fade out in before the
+    // sidebar, the header or the window's edge cuts them off: the offset plus
+    // two of Raised's blur widths, where a shadow is under half a level.
+    readonly property int pageMargin: depth + Math.ceil(depth * 1.3 * 2) + 2
 
     // Metrics. One place, so spacing stays consistent across pages.
     readonly property int pad: 16

@@ -6,7 +6,9 @@
 // The shadows are a Gaussian falloff from the shape's signed distance, so
 // they have no stops to show as lines, and the result is dithered, so a
 // shadow that crosses only a handful of 8-bit levels does not show them as
-// steps. `make shaders` compiles this into neu.frag.qsb, which is committed.
+// steps. The dither is sized by what reaches the screen, not by the shadow's
+// alpha: a faint shadow tail is where the levels are widest apart, so that is
+// where the dither is needed most. `make shaders` compiles this into neu.frag.qsb, which is committed.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -23,6 +25,7 @@ layout(std140, binding = 0) uniform buf {
     vec4 fill;      // premultiplied, as Qt passes colors
     vec4 dark;
     vec4 light;
+    vec4 ground;    // the background the shadows fall on
 };
 
 float box(vec2 p, vec2 half_, float r)
@@ -78,9 +81,17 @@ void main()
         c = over(light * glint, over(dark * shade, fill)) * cover;
     }
 
-    // Interleaved gradient noise, half a level either way.
+    // How far this pixel moves the ground under it, in 8-bit levels. A flat
+    // face the color of the ground moves it not at all and stays clean; any
+    // shading that moves it by a level or more gets the full dither.
+    vec3 moved = abs(c.rgb - ground.rgb * c.a) * 255.0;
+    float w = clamp(max(moved.r, max(moved.g, moved.b)), 0.0, 1.0);
+
+    // Interleaved gradient noise, half a level either way on the screen.
+    // Added to premultiplied color it shifts the blended result by the same
+    // amount whatever the alpha, so it is not scaled down by it.
     float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    c.rgb += (n - 0.5) / 255.0 * c.a;
+    c.rgb = max(c.rgb + (n - 0.5) / 255.0 * w, 0.0);
 
     fragColor = c * qt_Opacity;
 }
