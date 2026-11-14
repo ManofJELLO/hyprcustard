@@ -7,7 +7,7 @@
 # installs the binary from the GitHub release instead.
 pkgname=hyprcustard
 _reponame=hyprcustard
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="A theming GUI for Hyprland, with HyprWindowShade shader support"
 arch=('x86_64')
