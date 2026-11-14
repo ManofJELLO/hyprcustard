@@ -138,13 +138,24 @@ QtObject {
     // The floor of a pressed-in shape.
     readonly property color well: _shade(bg, dark ? -0.16 : -0.05)
     // How far a raised shape stands out, and how deep a pressed one goes.
-    readonly property int depth: 6
+    readonly property int depth: 4
     readonly property int depthSmall: 3
     readonly property int depthInset: 4
+    // A raised shape's shadow blur, as a share of its depth.
+    readonly property real raisedBlur: 0.9
+    // How far a raised shape's shadow reaches past its edge before it is
+    // under half a level: the offset plus two blur widths.
+    function shadowReach(d) {
+        return d + Math.ceil(d * raisedBlur * 2)
+    }
     // Room around a page for its cards' shadows to fade out in before the
-    // sidebar, the header or the window's edge cuts them off: the offset plus
-    // two of Raised's blur widths, where a shadow is under half a level.
-    readonly property int pageMargin: depth + Math.ceil(depth * 1.3 * 2) + 2
+    // sidebar, the header or the window's edge cuts them off.
+    readonly property int pageMargin: Math.max(pad, shadowReach(depth) + 2)
+    // The least space between two cards: room for both their shadows, so
+    // one card's shadow never falls on the next card.
+    readonly property int cardGap: shadowReach(depth) * 2
+    // The same for small raised tiles laid out in a section.
+    readonly property int tileGap: shadowReach(depthSmall) * 2
 
     // Metrics. One place, so spacing stays consistent across pages.
     readonly property int pad: 16

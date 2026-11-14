@@ -87,7 +87,7 @@ Item {
 
                 Flow {
                     width: parent.width
-                    spacing: Theme.gap
+                    spacing: Theme.tileGap
 
                     Repeater {
                         model: page.view.icons || []
@@ -266,7 +266,7 @@ Item {
 
                 Flow {
                     width: parent.width
-                    spacing: Theme.gap
+                    spacing: Theme.tileGap
 
                     Repeater {
                         model: page.view.cursors || []

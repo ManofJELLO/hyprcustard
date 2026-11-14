@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import dev.hyprcustard.gui
 
 // A panel raised out of the background. Content goes in `content`, which is
@@ -14,6 +15,10 @@ Rectangle {
 
     color: "transparent"
     radius: Theme.radius
+    // Cards stack in columns spaced Theme.pad apart; these margins widen that
+    // to Theme.cardGap, so neighboring cards' shadows do not overlap.
+    Layout.topMargin: Math.max(0, (Theme.cardGap - Theme.pad) / 2)
+    Layout.bottomMargin: Math.max(0, (Theme.cardGap - Theme.pad) / 2)
     implicitHeight: column.implicitHeight + Theme.pad * 2
         + (header.visible ? header.implicitHeight + Theme.gap : 0)
     implicitWidth: column.implicitWidth + Theme.pad * 2

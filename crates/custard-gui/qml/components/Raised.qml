@@ -26,7 +26,7 @@ Item {
     readonly property real _depth: neu.sunk
         ? Math.min(neu.depth, Math.min(neu.width, neu.height) / 4)
         : neu.depth
-    readonly property real _blur: Math.max(1, neu._depth * (neu.sunk ? 1.1 : 1.3))
+    readonly property real _blur: Math.max(1, neu._depth * (neu.sunk ? 1.1 : Theme.raisedBlur))
     // Room around a raised shape for its shadows to fade out in.
     readonly property real _room: neu.sunk ? 0 : Math.ceil(neu._depth + neu._blur * 3)
     readonly property bool _software: GraphicsInfo.api === GraphicsInfo.Software

@@ -237,7 +237,7 @@ Item {
                 Flow {
                     visible: page.wall.scanned === true && page.monitors.length > 0
                     width: parent.width
-                    spacing: Theme.gap
+                    spacing: Theme.tileGap
 
                     Repeater {
                         model: page.monitors

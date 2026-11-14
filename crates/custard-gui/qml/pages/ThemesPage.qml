@@ -168,7 +168,7 @@ Item {
 
             Flow {
                 Layout.fillWidth: true
-                spacing: Theme.pad
+                spacing: Theme.cardGap
 
                 Repeater {
                     model: page.presets

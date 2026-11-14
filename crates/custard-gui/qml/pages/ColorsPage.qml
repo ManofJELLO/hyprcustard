@@ -696,6 +696,7 @@ Item {
             Card {
                 Layout.fillWidth: true
                 title: "Apps"
+                spacing: Theme.tileGap
                 subtitle: "Each app turned on gets its own colors file next to its config. "
                           + "Its config has to load that file once — the line to add is shown, "
                           + "and the app can add it for you (backing the config up first)."
