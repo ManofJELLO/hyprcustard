@@ -330,8 +330,8 @@ fn toolkit_targets(config_home: &Path, desk: &Desktop) -> Vec<Target> {
             warning.push(' ');
         }
         warning.push_str(
-            "Qt apps are not drawing with Kvantum (set QT_STYLE_OVERRIDE=kvantum, or choose \
-             kvantum as the style in qt6ct).",
+            "Qt apps are not drawing with Kvantum (choose kvantum as the style in qt6ct, or \
+             without qt6ct, set QT_STYLE_OVERRIDE=kvantum).",
         );
     }
     out.push(Target {

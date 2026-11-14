@@ -602,6 +602,14 @@ yours and says what will change:
   so it gets a copy of your Kvantum theme with its colors and images recolored. The copy keeps
   that theme's shapes and shading, so it is close to the scheme rather than exact, and a dark
   theme turns light under a light scheme.
+* **`QT_STYLE_OVERRIDE`** is something Kvantum guides often say to set. With qt6ct it is in
+  the way: Qt ignores the style chosen in qt6ct while it is set, and qt6ct warns about it. When
+  it is set, the qt6ct row lists where: your Hyprland config and the files it sources,
+  `environment.d`, uwsm's env files, and your shell profiles. **Take it out** backs those files
+  up and comments out each line, with a marker. If qt6ct (and qt5ct) don't already choose the
+  same style, it sets their style to the variable's value, so apps look the same. **Put it
+  back** restores the lines exactly. The variable is read when you log in, so the change takes
+  effect after you log out and back in.
 
 Neither toolkit re-reads these files while an app runs: apps opened after **Apply** use the
 new colors, and open ones keep theirs until restarted.

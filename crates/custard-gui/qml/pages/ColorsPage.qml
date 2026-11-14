@@ -801,6 +801,31 @@ Item {
                                     onClicked: App.run("colors.fix", { id: row.t.id })
                                 }
                             }
+                            // QT_STYLE_OVERRIDE, which qt6ct asks to have taken
+                            // out: said once, on qt6ct's row.
+                            RowLayout {
+                                id: qtStyleRow
+                                readonly property var qs: page.colors.qtStyle || ({})
+                                visible: row.t.id === "qt6ct" && (qs.note || "") !== ""
+                                width: parent.width
+                                spacing: Theme.gap
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: qtStyleRow.qs.note || ""
+                                    wrapMode: Text.WordWrap
+                                    color: qtStyleRow.qs.warn ? Theme.warn : Theme.fgDim
+                                    font.pixelSize: Theme.fontSizeSmall
+                                }
+                                PillButton {
+                                    visible: (qtStyleRow.qs.action || "") !== ""
+                                    text: qtStyleRow.qs.action === "take" ? "Take it out" : "Put it back"
+                                    tooltip: qtStyleRow.qs.action === "take"
+                                             ? "Comments out each line that sets it, backing the files up first; "
+                                               + "Put it back restores them exactly"
+                                             : "Restores the lines hyprcustard commented out"
+                                    onClicked: App.run("colors.qtStyle", { take: qtStyleRow.qs.action === "take" })
+                                }
+                            }
                             // The app's own colors, defined in its config after
                             // the line that loads the scheme's, so they win —
                             // offered to the scheme name by name.

@@ -79,6 +79,9 @@ struct Desk {
     /// For waybar and rofi: the colors their config defines itself, and the
     /// ones handed over to the scheme.
     own_colors: Vec<(&'static str, Vec<colors::adopt::Own>, Vec<colors::adopt::Own>)>,
+    /// `QT_STYLE_OVERRIDE`: where it is set, and what the Qt rows say.
+    qt_style: colors::qt_style::Override,
+    qt_style_advice: colors::qt_style::Advice,
 }
 
 /// Which part of the app noticed a problem.
@@ -796,7 +799,19 @@ impl Session {
             login_block: walls::startup::block_text(&text),
             autostart: crate::autostart::enabled(&text),
             own_colors: Vec::new(),
+            qt_style: Default::default(),
+            qt_style_advice: Default::default(),
         };
+        // Only the two variables are needed, not all of Desktop::read.
+        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let uses_ct = matches!(env("QT_QPA_PLATFORMTHEME").as_deref(), Some("qt5ct" | "qt6ct"));
+        self.desk.qt_style =
+            colors::qt_style::Override::read(env(colors::qt_style::VAR), &self.qt_style_sources());
+        let styles: Vec<(&str, Option<String>)> = qt_ct_configs(&paths::apps_config_home())
+            .into_iter()
+            .map(|(id, _, style)| (id, style))
+            .collect();
+        self.desk.qt_style_advice = self.desk.qt_style.advice(uses_ct, &styles);
         self.desk.own_colors = self
             .desk
             .targets
@@ -1228,6 +1243,13 @@ impl Session {
             "colors.fix" => self.fix_colors(payload),
             "colors.handOver" => self.hand_over_colors(payload),
             "colors.giveBack" => self.give_back_colors(payload),
+            "colors.qtStyle" => {
+                if payload.get("take").and_then(Value::as_bool).unwrap_or(false) {
+                    self.take_out_qt_style()
+                } else {
+                    self.put_back_qt_style()
+                }
+            }
             "colors.follow" => {
                 if payload.get("on").and_then(Value::as_bool).unwrap_or(false) {
                     self.start_following().map(Some)
@@ -1536,6 +1558,94 @@ impl Session {
         Ok(Some(msg))
     }
 
+    /// The files `QT_STYLE_OVERRIDE` is looked for in. A unit test leaves
+    /// the shell profiles out, since they are in the real home.
+    fn qt_style_sources(&self) -> Vec<colors::qt_style::Source> {
+        let home = if cfg!(test) { None } else { dirs::home_dir() };
+        colors::qt_style::sources(
+            &paths::apps_config_home(),
+            home.as_deref(),
+            &self.settings.resolved_config_path(),
+        )
+    }
+
+    /// Comment out every line that sets `QT_STYLE_OVERRIDE`, and have qt5ct
+    /// and qt6ct choose the style it chose, so apps look the same.
+    fn take_out_qt_style(&mut self) -> Result<Option<String>> {
+        use colors::qt_style;
+        let sources = self.qt_style_sources();
+        let set: Vec<qt_style::Setting> =
+            qt_style::find(&sources).into_iter().filter(|s| !s.taken).collect();
+        let Some(value) = set.first().map(|s| s.value.clone()) else {
+            return Ok(Some(format!("{} is not set in any file hyprcustard reads", qt_style::VAR)));
+        };
+        let keep = self.settings.backups_to_keep;
+        let mut files = Vec::new();
+        for src in sources.iter().filter(|src| set.iter().any(|s| s.path == src.path)) {
+            let text = paths::read_to_string(&src.path)?;
+            let next = qt_style::take_out(src.kind, &text);
+            if next != text {
+                guard_test_write(&src.path);
+                paths::backup(&src.path, keep)?;
+                paths::write_atomic(&src.path, &next)?;
+                files.push(paths::contract(&src.path));
+            }
+        }
+        let home = paths::apps_config_home();
+        let mut styled = Vec::new();
+        for (_, conf, style) in qt_ct_configs(&home) {
+            if style.as_deref() == Some(value.as_str()) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&conf).unwrap_or_default();
+            let next = colors::toolkits::ini_set(&text, "Appearance", &[("style", &value)]);
+            guard_test_write(&conf);
+            paths::backup(&conf, keep)?;
+            paths::write_atomic(&conf, &next)?;
+            styled.push(paths::contract(&conf));
+        }
+        self.refresh_desk();
+        let mut msg = format!("Took {} out of {}", qt_style::VAR, files.join(", "));
+        if !styled.is_empty() {
+            msg.push_str(&format!(" and set the style to {value} in {}", styled.join(", ")));
+        }
+        msg.push_str(". Log out and back in for it to take effect");
+        Ok(Some(msg))
+    }
+
+    /// Put back the `QT_STYLE_OVERRIDE` lines [`Self::take_out_qt_style`]
+    /// took out. qt5ct's and qt6ct's style can stay: the variable wins
+    /// over it again.
+    fn put_back_qt_style(&mut self) -> Result<Option<String>> {
+        use colors::qt_style;
+        let sources = self.qt_style_sources();
+        let taken: Vec<qt_style::Setting> =
+            qt_style::find(&sources).into_iter().filter(|s| s.taken).collect();
+        let mut files = Vec::new();
+        for src in sources.iter().filter(|src| taken.iter().any(|s| s.path == src.path)) {
+            let text = paths::read_to_string(&src.path)?;
+            let next = qt_style::put_back(src.kind, &text);
+            if next != text {
+                guard_test_write(&src.path);
+                paths::backup(&src.path, self.settings.backups_to_keep)?;
+                paths::write_atomic(&src.path, &next)?;
+                files.push(paths::contract(&src.path));
+            }
+        }
+        self.refresh_desk();
+        if files.is_empty() {
+            return Ok(Some(format!(
+                "hyprcustard has not taken {} out of anything",
+                qt_style::VAR
+            )));
+        }
+        Ok(Some(format!(
+            "Put {} back in {}. Log out and back in for it to take effect",
+            qt_style::VAR,
+            files.join(", ")
+        )))
+    }
+
     fn own_colors_target(
         &self,
         id: &str,
@@ -1683,6 +1793,11 @@ impl Session {
                 "taken": self.own_colors_view(t.id, true),
             })).collect::<Vec<_>>(),
             "colorChoices": colors::adopt::CHOICES,
+            "qtStyle": {
+                "note": self.desk.qt_style_advice.note,
+                "warn": self.desk.qt_style_advice.warn,
+                "action": self.desk.qt_style_advice.action,
+            },
             // What each choice is in the scheme applied last, for swatches.
             "choiceColors": self.colors_applied.as_ref().map(|s| {
                 colors::adopt::CHOICES
@@ -2418,6 +2533,31 @@ const SWATCH: [usize; 10] = [0x0, 0x2, 0x5, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE];
 /// The choices that decide what a build produces. Opacity, which apps are
 /// on and how the watcher runs only matter later, so changing them keeps
 /// the build.
+/// qt6ct's and qt5ct's configs, where they are installed or set up, with
+/// the style each chooses.
+fn qt_ct_configs(config_home: &Path) -> Vec<(&'static str, PathBuf, Option<String>)> {
+    ["qt6ct", "qt5ct"]
+        .iter()
+        .filter_map(|id| {
+            let conf = config_home.join(id).join(format!("{id}.conf"));
+            let text = std::fs::read_to_string(&conf).ok();
+            if text.is_none() && (cfg!(test) || paths::which(id).is_none()) {
+                return None;
+            }
+            let style = text.and_then(|t| colors::toolkits::ini_get(&t, "Appearance", "style"));
+            Some((*id, conf, style))
+        })
+        .collect()
+}
+
+/// A unit test writes only under the temp folder: the Hyprland config it
+/// is pointed at, or the throwaway config home.
+fn guard_test_write(path: &Path) {
+    if cfg!(test) {
+        assert!(path.starts_with(std::env::temp_dir()), "a test would write {}", path.display());
+    }
+}
+
 fn colors_shape(c: &colors::ColorSettings) -> colors::ColorSettings {
     colors::ColorSettings {
         opacity: 1.0,
@@ -2859,6 +2999,27 @@ mod tests {
         s.command("app.autostart", &json!({ "on": false })).unwrap();
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
         assert_eq!(s.state()["autostart"], false);
+    }
+
+    #[test]
+    fn qt_style_override_is_taken_out_and_put_back() {
+        let mine = "hl.env(\"QT_QPA_PLATFORMTHEME\", \"qt6ct\")\n\
+                    hl.env(\"QT_STYLE_OVERRIDE\", \"kvantum-dark\")\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        let msg = s.command("colors.qtStyle", &json!({ "take": true })).unwrap().unwrap();
+        assert!(msg.starts_with("Took QT_STYLE_OVERRIDE out of"), "{msg}");
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(text.contains("-- [hyprcustard took this out"), "{text}");
+        assert!(text.starts_with("hl.env(\"QT_QPA_PLATFORMTHEME\""), "{text}");
+        assert_eq!(s.state()["colors"]["qtStyle"]["action"], "put");
+
+        let msg = s.command("colors.qtStyle", &json!({ "take": false })).unwrap().unwrap();
+        assert!(msg.starts_with("Put QT_STYLE_OVERRIDE back"), "{msg}");
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+        assert_ne!(s.state()["colors"]["qtStyle"]["action"], "put");
+        let msg = s.command("colors.qtStyle", &json!({ "take": false })).unwrap().unwrap();
+        assert!(msg.contains("has not taken"), "{msg}");
     }
 
     /// Flipping a toggle on the Settings page writes that toggle alone:

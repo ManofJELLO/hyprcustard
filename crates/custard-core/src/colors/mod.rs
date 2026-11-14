@@ -17,6 +17,7 @@ pub mod adopt;
 pub mod extract;
 pub mod follow;
 pub mod named;
+pub mod qt_style;
 pub mod scheme;
 pub mod targets;
 pub mod toolkits;
