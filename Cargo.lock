@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "custard-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "dirs",
@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "custard-gui"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "custard-core",
  "cxx",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "custard-watch"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "chrono",
  "custard-core",
