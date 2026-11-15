@@ -754,6 +754,7 @@ Item {
                                           : row.t.id === "dunst" ? "Needs its own dunstrc"
                                           : row.t.replaces ? "Its gtk.css is a theme"
                                           : row.t.id === "kvantum" ? "Not the Kvantum theme"
+                                          : row.t.id === "starship" ? "Not on the palette"
                                           : (row.t.id === "qt6ct" || row.t.id === "qt5ct") ? "Needs a setting" : "Needs one line"
                                     tint: row.t.wired ? Theme.ok : Theme.warn
                                 }

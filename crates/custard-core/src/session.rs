@@ -1735,6 +1735,8 @@ impl Session {
             format!("Set Kvantum to the {} theme in {config}", colors::toolkits::KVANTUM_THEME)
         } else if matches!(t.id, "qt6ct" | "qt5ct") {
             format!("Set {} to the hyprcustard colors in {config}", t.id)
+        } else if t.id == "starship" {
+            format!("Pointed Starship at the hyprcustard palette in {config}")
         } else {
             format!("Added the colors line to {config}")
         };

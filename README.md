@@ -514,7 +514,7 @@ service that starts a wallpaper is pointed out, but left alone.
 ## Colors for the whole desktop
 
 The **Colors** page (under *Desktop*) makes one color scheme and writes it for every app you
-turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty, Ghostty, and GTK and Qt
+turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt
 apps (through qt6ct, qt5ct or Kvantum). Nothing
 changes until you press **Apply**, and the preview shows the scheme first.
 
@@ -551,6 +551,7 @@ a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and 
 | Dunst | `dunst/dunstrc.d/90-hyprcustard-colors.conf` | backgrounds, text, frames | nothing — a drop-in, read when you have your own `dunstrc` |
 | kitty | `kitty/hyprcustard-colors.conf` | palette, cursor, selection, tabs | `include hyprcustard-colors.conf` at the end of `kitty.conf` |
 | Ghostty | `ghostty/hyprcustard-colors` | palette, cursor, selection | `config-file = ?hyprcustard-colors` at the end of its config |
+| Starship | `hyprcustard-starship-colors.toml`, copied into `starship.toml` | a `hyprcustard` palette, and Starship's own colors (`red`, `bright-blue`…) | `palette = "hyprcustard"` at the top of `starship.toml` (or `$STARSHIP_CONFIG`), with a copy of the palette |
 | GTK 3, GTK 4 | `gtk-3.0/hyprcustard-colors.css`, `gtk-4.0/…` | GTK's named colors (`window_bg_color`, `accent_bg_color`, `theme_bg_color`…), and libadwaita's CSS variables for GTK 4 | `@import "hyprcustard-colors.css";` at the end of `gtk.css` |
 | Qt 6, Qt 5 | `qt6ct/colors/hyprcustard.conf`, `qt5ct/…` | the whole Qt palette | `color_scheme_path=` and `custom_palette=true` under `[Appearance]` in `qt6ct.conf` / `qt5ct.conf` |
 | Kvantum | `Kvantum/HyprCustard/` | a recolored copy of your Kvantum theme | `theme=HyprCustard` under `[General]` in `kvantum.kvconfig` |
@@ -560,6 +561,19 @@ its config loads the file yet, the one line it needs, and an **Add it for me** b
 backs the config up first. In Rofi the import has to come after your `@theme` line, so where
 your theme defines one of the same names (`background`, say), the scheme's color is the one
 used.
+
+Starship is the exception: it cannot load a second file, so **Add it for me** points
+`starship.toml` at the `hyprcustard` palette and copies the palette in as
+`[palettes.hyprcustard]`, and every Apply after that refreshes the copy. Nothing else in the
+file changes. Starship lowercases the names in a style before it looks them up, so the
+palette spells them in lowercase: `fg:primary`, `bg:surface_container`, `base0d`. The names
+your old palette defined (`color_orange`, `color_bg1`…) are copied in too, so your styles keep
+finding them, each paired with a scheme color the way a hand-over pairs them (below) and the
+pairing written in a comment — `color_orange = "#d08770"  # scheme: base09`. Change the name in
+the comment to pair it differently. A name with no comment keeps the value written there, so
+colors you add yourself stay yours. Your old palette stays in the file, so setting `palette`
+back to it undoes everything. Starship reads its config for every prompt, so there is
+nothing to reload.
 
 ### Your own colors
 

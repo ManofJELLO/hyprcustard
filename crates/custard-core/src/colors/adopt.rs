@@ -294,7 +294,7 @@ fn marked(line: &str) -> Option<(&str, &str)> {
 /// A color written out: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(…)` or
 /// `rgba(…)`. `None` for anything else — a name, a reference, a function of
 /// another color.
-fn color(value: &str) -> Option<(Rgb, f64)> {
+pub(crate) fn color(value: &str) -> Option<(Rgb, f64)> {
     let v = value.trim();
     if let Some(h) = v.strip_prefix('#') {
         if !h.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -340,15 +340,22 @@ fn color(value: &str) -> Option<(Rgb, f64)> {
 /// Whether the file's own colors are a dark theme: its background, if it
 /// names one, else most of its grays.
 fn is_dark(found: &[(usize, String, String, Rgb, f64)]) -> bool {
+    dark(found.iter().map(|(_, n, _, c, _)| (n.as_str(), *c)))
+}
+
+/// Whether a set of named colors is a dark theme: its background, if it
+/// names one, else most of its grays.
+pub(crate) fn dark<'a>(colors: impl Iterator<Item = (&'a str, Rgb)>) -> bool {
+    let colors: Vec<(&str, Rgb)> = colors.collect();
     let tone = |c: Rgb| Hct::new(c).get_tone();
-    if let Some((.., c, _)) = found.iter().find(|(_, n, ..)| {
+    if let Some((_, c)) = colors.iter().find(|(n, _)| {
         let n = n.to_ascii_lowercase();
         n == "background" || n == "bg" || n == "base"
     }) {
         return tone(*c) < 50.0;
     }
     let grays: Vec<f64> =
-        found.iter().filter(|(.., c, _)| !is_colorful(*c)).map(|(.., c, _)| tone(*c)).collect();
+        colors.iter().filter(|(_, c)| !is_colorful(*c)).map(|(_, c)| tone(*c)).collect();
     grays.is_empty() || grays.iter().filter(|t| **t < 50.0).count() * 2 >= grays.len()
 }
 

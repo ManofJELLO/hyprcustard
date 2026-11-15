@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::scheme::Scheme;
+use super::starship;
 use super::toolkits::{self, Desktop, KVANTUM_THEME};
 use crate::error::{Error, Result};
 use crate::look::{config_call, LookValue};
@@ -83,6 +84,7 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
         .find(|p| p.is_file())
         .unwrap_or_else(|| ghostty_dir.join("config.ghostty"));
     let dunst_base = config_home.join("dunst").join("dunstrc");
+    let starship_config = starship::config_path(config_home);
 
     let mut list = vec![
         Target {
@@ -186,10 +188,33 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
             fix: String::new(),
             replaces: false,
         },
+        Target {
+            id: "starship",
+            name: "Starship",
+            installed: installed("starship"),
+            file: starship_config.with_file_name("hyprcustard-starship-colors.toml"),
+            config: starship_config,
+            line: format!("palette = \"{}\"", starship::PALETTE),
+            place: "at the top, with a copy of the scheme's [palettes.hyprcustard] table, of",
+            wired: false,
+            usage: "Starship cannot load another file, so your starship.toml holds a copy of \
+                    the palette, which every Apply refreshes; nothing else in it changes. Use \
+                    the names in your styles, in lowercase as Starship reads them: fg:primary, \
+                    bg:surface_container, base0d. Its own colors (red, bright-blue…) follow the \
+                    scheme too. The names your old palette defined are copied in, each paired \
+                    with a scheme color in a comment you can change. The old palette stays, so \
+                    pointing palette back at it undoes this."
+                .into(),
+            warning: String::new(),
+            fix: String::new(),
+            replaces: false,
+        },
     ];
     list.extend(toolkit_targets(config_home, desk));
     for t in &mut list {
-        if !t.line.is_empty() && !matches!(t.id, "qt6ct" | "qt5ct" | "kvantum") {
+        if t.id == "starship" {
+            t.wired = starship::wired(&std::fs::read_to_string(&t.config).unwrap_or_default());
+        } else if !t.line.is_empty() && !matches!(t.id, "qt6ct" | "qt5ct" | "kvantum") {
             t.wired = loads(&t.config, &t.file);
         }
         // An import before rofi's `@theme` is thrown away by it.
@@ -521,6 +546,7 @@ pub fn render(id: &str, scheme: &Scheme, opacity: f64) -> String {
             }
             out
         }
+        "starship" => starship::render(scheme, &header("#"), &terminal),
         "gtk3" | "gtk4" => toolkits::gtk_css(scheme, id == "gtk4", &header(" *")),
         "qt6ct" => format!("{}{}", header(";"), toolkits::qt_palette(scheme, 22)),
         "qt5ct" => format!("{}{}", header(";"), toolkits::qt_palette(scheme, 21)),
@@ -559,7 +585,17 @@ pub fn write(target: &Target, scheme: &Scheme, opacity: f64) -> Result<()> {
         let taken = super::adopt::taken(kind, &config);
         text.push_str(&super::adopt::lines_for(kind, &taken, |name| color_of(scheme, name)));
     }
-    crate::paths::write_atomic(&target.file, &text)
+    crate::paths::write_atomic(&target.file, &text)?;
+    // Starship cannot load the file, so a config using the palette gets the
+    // new copy of it.
+    if target.id == "starship" && target.wired {
+        let config = std::fs::read_to_string(&target.config).unwrap_or_default();
+        let next = starship::splice(&config, &text)?;
+        if next != config {
+            crate::paths::write_atomic(&target.config, &next)?;
+        }
+    }
+    Ok(())
 }
 
 /// A scheme color by the name a colors file gives it: a role, or
@@ -610,6 +646,18 @@ pub fn wire(target: &Target, keep: usize) -> Result<Option<PathBuf>> {
         // that only loads the colors takes its place.
         let backup = crate::paths::backup(&target.config, keep.max(1))?;
         crate::paths::write_atomic(&target.config, &format!("{}\n", target.line))?;
+        return Ok(backup);
+    }
+    if target.id == "starship" {
+        let Ok(colors) = std::fs::read_to_string(&target.file) else {
+            return Err(Error::other(
+                "there is no palette to copy into starship.toml yet: apply a scheme first",
+            ));
+        };
+        let text = std::fs::read_to_string(&target.config).unwrap_or_default();
+        let next = starship::splice(&text, &colors)?;
+        let backup = crate::paths::backup(&target.config, keep)?;
+        crate::paths::write_atomic(&target.config, &next)?;
         return Ok(backup);
     }
     if target.id == "dunst" {

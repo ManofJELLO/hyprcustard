@@ -19,6 +19,7 @@ pub mod follow;
 pub mod named;
 pub mod qt_style;
 pub mod scheme;
+pub mod starship;
 pub mod targets;
 pub mod toolkits;
 pub mod wallpaper;
