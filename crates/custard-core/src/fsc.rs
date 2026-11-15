@@ -42,6 +42,9 @@ pub const REPO_SERVER: &str =
     "https://github.com/ManofJELLO/fishsticks-and-custard/releases/download/repo";
 /// pacman's own config.
 pub const PACMAN_CONF: &str = "/etc/pacman.conf";
+/// The popup's window class (its GTK application id), which the window rule
+/// matches.
+pub const WINDOW_CLASS: &str = "dev.fsc.FishsticksAndCustard";
 
 /// The managed block's markers.
 pub const MARKERS: Markers = Markers {
@@ -73,12 +76,24 @@ pub enum Action {
     Stop,
     /// Mute or unmute the wake word.
     Mute,
+    /// Allow what Claude is asking permission for.
+    Allow,
+    /// Refuse what Claude is asking permission for.
+    Deny,
 }
 
 impl Action {
     /// Every action, in the order the page lists them.
-    pub const ALL: [Action; 6] =
-        [Action::Type, Action::Talk, Action::Toggle, Action::New, Action::Stop, Action::Mute];
+    pub const ALL: [Action; 8] = [
+        Action::Type,
+        Action::Talk,
+        Action::Toggle,
+        Action::New,
+        Action::Stop,
+        Action::Mute,
+        Action::Allow,
+        Action::Deny,
+    ];
 
     /// What the page calls it.
     pub fn label(self) -> &'static str {
@@ -89,11 +104,13 @@ impl Action {
             Action::New => "New conversation",
             Action::Stop => "Stop",
             Action::Mute => "Mute the wake word",
+            Action::Allow => "Allow a request",
+            Action::Deny => "Refuse a request",
         }
     }
 
     /// The `fsc` command a key press runs.
-    fn press(self) -> &'static str {
+    pub(crate) fn press(self) -> &'static str {
         match self {
             Action::Type => "fsc type",
             Action::Talk => "fsc listen",
@@ -101,17 +118,19 @@ impl Action {
             Action::New => "fsc new",
             Action::Stop => "fsc stop",
             Action::Mute => "fsc mute",
+            Action::Allow => "fsc allow",
+            Action::Deny => "fsc deny",
         }
     }
 
     /// The `fsc` command letting go of the key runs, for hold-to-talk.
-    fn release(self) -> Option<&'static str> {
+    pub(crate) fn release(self) -> Option<&'static str> {
         (self == Action::Talk).then_some("fsc release")
     }
 
     /// The key FSC's own Hyprland snippet suggests, and whether it is on
     /// unless someone says otherwise.
-    fn default_key(self) -> (&'static str, bool) {
+    pub(crate) fn default_key(self) -> (&'static str, bool) {
         match self {
             Action::Type => ("SUPER + A", true),
             Action::Talk => ("SUPER + SHIFT + A", true),
@@ -197,12 +216,13 @@ pub fn body(s: &FscSettings) -> String {
         out.push_str("hl.on(\"hyprland.start\", function()\n    hl.exec_cmd(\"fscd\")\nend)\n");
     }
     if s.window_rule {
-        out.push_str(
-            "hl.window_rule({\n    name  = \"fsc-window\",\n    \
-             match = { class = \"^(dev\\\\.fsc\\\\.FishsticksAndCustard)$\" },\n    \
+        let class = WINDOW_CLASS.replace('.', r"\\.");
+        out.push_str(&format!(
+            "hl.window_rule({{\n    name  = \"fsc-window\",\n    \
+             match = {{ class = \"^({class})$\" }},\n    \
              float = true,\n    pin   = true,\n    \
-             move  = \"(monitor_w*0.5-window_w*0.5) 80\",\n})\n",
-        );
+             move  = \"(monitor_w*0.5-window_w*0.5) 80\",\n}})\n",
+        ));
     }
     for k in s.keys.iter().filter(|k| k.enabled && !k.key.is_empty()) {
         let key = lua_quote(&k.key);
@@ -325,6 +345,8 @@ fn classify(t: &str) -> Option<Does> {
             (Some("stop"), 2, false) => Some(Action::Stop),
             (Some("mute"), 2, false) => Some(Action::Mute),
             (Some("mute"), 3, false) if words[2] == "toggle" => Some(Action::Mute),
+            (Some("allow"), 2, false) => Some(Action::Allow),
+            (Some("deny"), 2, false) => Some(Action::Deny),
             _ => None,
         };
         return Some(match action {
@@ -837,7 +859,7 @@ pub const FIELDS: &[Field] = &[
     f("voice", "speech_rate", "Speaking speed", "Above 1 is faster", Kind::Float(0.5, 2.0), "1.0"),
     f("voice", "speak", "Speak replies", "voice: to spoken questions only. always. never", Kind::Choice(&["voice", "always", "never"]), "\"voice\""),
     f("voice", "input_device", "Microphone", "Part of its name, such as C920; empty is the system default", Kind::Text, "\"\""),
-    f("voice", "end_silence_ms", "Pause that ends a sentence", "Milliseconds", Kind::Int(100, 5000), "800"),
+    f("voice", "end_silence_ms", "Pause that ends a sentence", "Milliseconds", Kind::Int(100, 5000), "1500"),
     f("voice", "no_speech_timeout_ms", "Give up listening after", "Milliseconds with no speech", Kind::Int(1000, 60000), "6000"),
     f("voice", "max_utterance_secs", "Longest question", "Seconds", Kind::Int(1, 300), "30"),
     f("voice", "hold_mic_while_speaking", "Keep the mic open while speaking", "Needed for Bluetooth headsets", Kind::Bool, "true"),

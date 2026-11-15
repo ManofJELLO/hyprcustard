@@ -734,6 +734,9 @@ impl Session {
             "durationStaged": draft.is_some_and(|d| d.duration_staged()),
             // The plugin's own fallback when a shader declares no duration.
             "effectiveDuration": duration.unwrap_or(0.3),
+            // `// @settle`: how long a motion shader keeps playing after the
+            // motion stops. Read only; a rule's `@seconds` overrides it.
+            "settle": s.settle,
             "overlay": overlay,
             "savedOverlay": s.overlay,
             "overlayStaged": draft.is_some_and(|d| d.overlay_staged()),
@@ -2137,7 +2140,7 @@ impl Session {
                             .get("duration")
                             .and_then(Value::as_f64)
                             .map(|d| (d as f32).clamp(0.0, 5.0))
-                            .filter(|_| info.takes_duration);
+                            .filter(|_| info.seconds.any());
                         let is_default =
                             payload.get("isDefault").and_then(Value::as_bool).unwrap_or(false)
                                 && info.supports_default;
@@ -2687,7 +2690,8 @@ pub fn tag_catalog() -> Value {
                     "label": info.label,
                     "help": info.help,
                     "kind": match info.kind { TagKind::Path => "path", TagKind::Flag => "flag" },
-                    "takesDuration": info.takes_duration,
+                    "takesDuration": info.seconds.any(),
+                    "seconds": info.seconds,
                     "supportsDefault": info.supports_default,
                     "defaultDocumented": info.default_documented,
                     "group": info.group,
@@ -2795,11 +2799,27 @@ mod tests {
         let id = s.config.rules[0].id.clone();
         s.command(
             "rule.setTag",
-            &json!({ "id": id, "slot": "shader_move", "path": "/p/x.glsl", "duration": 2.0 }),
+            &json!({ "id": id, "slot": "shader_active", "path": "/p/x.glsl", "duration": 2.0 }),
         )
         .unwrap();
         match &s.config.rules[0].tags[0].value {
             TagValue::Path(r) => assert_eq!(r.duration, None),
+            _ => panic!("expected a path"),
+        }
+    }
+
+    #[test]
+    fn seconds_on_a_motion_slot_are_its_settle_tail_and_kept() {
+        let mut s = session();
+        s.command("rule.add", &json!({})).unwrap();
+        let id = s.config.rules[0].id.clone();
+        s.command(
+            "rule.setTag",
+            &json!({ "id": id, "slot": "shader_move", "path": "/p/x.glsl", "duration": 0.4 }),
+        )
+        .unwrap();
+        match &s.config.rules[0].tags[0].value {
+            TagValue::Path(r) => assert_eq!(r.duration, Some(0.4)),
             _ => panic!("expected a path"),
         }
     }

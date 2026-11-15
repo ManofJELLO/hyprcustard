@@ -163,6 +163,10 @@ pub struct ShaderInfo {
     /// Zero-based line of the `// @duration` comment, for in-place edits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_line: Option<usize>,
+    /// `// @settle`, if present: how long a motion shader keeps playing
+    /// after the motion stops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settle: Option<f32>,
     /// Whether `// @overlay` is present.
     pub overlay: bool,
     /// Zero-based line of `// @overlay`.
@@ -256,6 +260,7 @@ pub fn parse(path: &str, source: &str, mtime: u64) -> ShaderInfo {
         description: None,
         duration: None,
         duration_line: None,
+        settle: None,
         overlay: false,
         overlay_line: None,
         uniforms: Vec::new(),
@@ -289,6 +294,14 @@ pub fn parse(path: &str, source: &str, mtime: u64) -> ShaderInfo {
                         None => info
                             .notes
                             .push(format!("line {}: // @duration has no number after it", i + 1)),
+                    }
+                }
+                "settle" => {
+                    match rest.split_whitespace().next().and_then(|t| t.parse::<f32>().ok()) {
+                        Some(v) => info.settle = Some(v.clamp(0.0, 5.0)),
+                        None => info
+                            .notes
+                            .push(format!("line {}: // @settle has no number after it", i + 1)),
                     }
                 }
                 "overlay" => {
@@ -773,6 +786,15 @@ void main() {
 
     fn info() -> ShaderInfo {
         parse("/s/reading_mode.glsl", SRC, 0)
+    }
+
+    #[test]
+    fn reads_settle() {
+        let i = parse("/s/wobble.glsl", "// @settle 0.4\nuniform float settle;\n", 0);
+        assert_eq!(i.settle, Some(0.4));
+        let i = parse("/s/wobble.glsl", "// @settle\n", 0);
+        assert_eq!(i.settle, None);
+        assert!(i.notes.iter().any(|n| n.contains("@settle")));
     }
 
     #[test]

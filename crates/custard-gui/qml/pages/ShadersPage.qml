@@ -411,6 +411,22 @@ Item {
                                     }
                                 }
 
+                                // Read only: the file's own `// @settle`. A rule's
+                                // seconds on a motion tag override it.
+                                Text {
+                                    width: parent.width
+                                    visible: page.selected && page.selected.settle !== null
+                                             && page.selected.settle !== undefined
+                                    text: page.selected && page.selected.settle !== undefined
+                                          && page.selected.settle !== null
+                                          ? "Settles for " + App.seconds(page.selected.settle)
+                                            + " after the motion stops (// @settle in the file)."
+                                          : ""
+                                    color: Theme.fgDim
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    wrapMode: Text.WordWrap
+                                }
+
                                 FieldRow {
                                     width: parent.width
                                     label: "Composite on close"

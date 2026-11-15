@@ -2,8 +2,11 @@ import QtQuick
 import QtQuick.Layouts
 import dev.hyprcustard.gui
 
-// Pick a shader from the shader folder, with an optional duration override and
-// an optional "fallback" switch for tags that support `_default`.
+// Pick a shader from the shader folder, with an optional `@seconds` override and
+// an optional "fallback" switch for tags that support `_default`. What the
+// seconds set depends on the tag: `secondsMeaning` is "duration" for a one-shot
+// animation, or "settle" for a motion one, whose own clock is Hyprland's
+// animation and whose seconds are how long it keeps playing after it stops.
 //
 // Emits one `changed` with the whole new value, so the caller sends one command.
 RowLayout {
@@ -13,6 +16,7 @@ RowLayout {
     property var duration: null          // null means "use the shader's own"
     property bool isDefault: false
     property bool showDuration: false
+    property string secondsMeaning: "duration"
     property bool showDefault: false
     property string placeholder: "not set"
 
@@ -51,16 +55,26 @@ RowLayout {
         }
     }
 
+    Text {
+        visible: durationField.visible && picker.secondsMeaning === "settle"
+        text: "settle"
+        color: Theme.muted
+        font.pixelSize: Theme.fontSizeSmall
+    }
+
     LineEdit {
         id: durationField
         visible: picker.showDuration && picker.path !== ""
         Layout.preferredWidth: 86
         mono: true
+        // The shader's own value, else the plugin's: 0.3 s for a duration,
+        // none for a settle tail.
         placeholderText: {
             var s = App.shaderByPath(picker.path)
-            if (s && s.duration !== null && s.duration !== undefined)
-                return String(Math.round(s.duration * 1000) / 1000) + "s"
-            return "0.3s"
+            var own = s ? (picker.secondsMeaning === "settle" ? s.settle : s.duration) : null
+            if (own !== null && own !== undefined)
+                return String(Math.round(own * 1000) / 1000) + "s"
+            return picker.secondsMeaning === "settle" ? "0s" : "0.3s"
         }
         // A 32-bit float widened to a JSON double shows up as 0.20000000298;
         // three decimals is all the plugin's @sec override is worth anyway.

@@ -471,6 +471,7 @@ Item {
                                                 isDefault: tagRow.tag
                                                            ? tagRow.tag.isDefault === true : false
                                                 showDuration: tagRow.modelData.takesDuration
+                                                secondsMeaning: tagRow.modelData.seconds
                                                 showDefault: tagRow.modelData.supportsDefault
                                                 onPicked: function (path, duration, isDefault) {
                                                     if (path === "") {

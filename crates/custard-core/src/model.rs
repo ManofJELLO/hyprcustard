@@ -68,6 +68,27 @@ pub enum TagKind {
     Flag,
 }
 
+/// What the plugin does with an `@seconds` suffix on a tag's value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Seconds {
+    /// Nothing: the slot takes no suffix.
+    None,
+    /// How long a one-shot animation plays, over the shader's `// @duration`.
+    Duration,
+    /// How long a motion animation keeps playing after the motion stops,
+    /// over the shader's `// @settle`. Hyprland's own animation is the clock
+    /// for the motion itself.
+    Settle,
+}
+
+impl Seconds {
+    /// Whether the slot takes an `@seconds` suffix at all.
+    pub fn any(self) -> bool {
+        self != Seconds::None
+    }
+}
+
 /// Static description of a tag slot, used to drive the UI.
 #[derive(Debug, Clone, Copy)]
 pub struct TagInfo {
@@ -80,8 +101,8 @@ pub struct TagInfo {
     pub help: &'static str,
     /// Path-valued or flag-valued.
     pub kind: TagKind,
-    /// Whether an `@seconds` duration override does anything for this slot.
-    pub takes_duration: bool,
+    /// What an `@seconds` suffix on this slot's value sets, if anything.
+    pub seconds: Seconds,
     /// Whether a `_default` fallback form exists.
     pub supports_default: bool,
     /// Whether the plugin README explicitly documents the `_default` form for
@@ -120,12 +141,12 @@ impl TagGroup {
 
 macro_rules! tag_table {
     ($($slot:ident => $key:literal, $label:literal, $help:literal,
-       $kind:ident, $dur:literal, $def:literal, $defdoc:literal, $group:ident;)*) => {
+       $kind:ident, $dur:ident, $def:literal, $defdoc:literal, $group:ident;)*) => {
         /// Every tag slot, in the order the UI should present them.
         pub const TAGS: &[(TagSlot, TagInfo)] = &[
             $((TagSlot::$slot, TagInfo {
                 key: $key, label: $label, help: $help,
-                kind: TagKind::$kind, takes_duration: $dur,
+                kind: TagKind::$kind, seconds: Seconds::$dur,
                 supports_default: $def, default_documented: $defdoc,
                 group: TagGroup::$group,
             }),)*
@@ -136,71 +157,71 @@ macro_rules! tag_table {
 tag_table! {
     Shader => "shader", "Always",
         "Applied regardless of focus. The base layer of the stack.",
-        Path, false, true, true, Persistent;
+        Path, None, true, true, Persistent;
     Active => "shader_active", "While focused",
         "Applies only when the window has focus.",
-        Path, false, true, true, State;
+        Path, None, true, true, State;
     Inactive => "shader_inactive", "While unfocused",
         "Applies only when the window does not have focus. Cheaper than Always \
          for effects you do not want while working in the window.",
-        Path, false, true, true, State;
+        Path, None, true, true, State;
     Floating => "shader_floating", "While floating",
         "Applies only while the window is floating.",
-        Path, false, true, true, State;
+        Path, None, true, true, State;
     Tiled => "shader_tiled", "While tiled",
         "Applies only while the window is tiled.",
-        Path, false, true, true, State;
+        Path, None, true, true, State;
     Fullscreen => "shader_fullscreen", "While fullscreen",
         "The one shader that applies while fullscreen. Without it, a fullscreen \
          window renders unshaded unless you also set 'Keep stack fullscreen'.",
-        Path, false, true, true, State;
+        Path, None, true, true, State;
     Open => "shader_open", "On open",
         "Plays once as the window opens, on top of the window's normal shader.",
-        Path, true, true, true, Animation;
+        Path, Duration, true, true, Animation;
     Close => "shader_close", "On close",
         "Plays once as the window closes. Must end fully transparent.",
-        Path, true, true, true, Animation;
+        Path, Duration, true, true, Animation;
     Move => "shader_move", "While moving",
         "Plays while the window is being moved. Hyprland's windowsMove animation \
-         is the clock, so a duration override does nothing here.",
-        Path, false, true, false, Animation;
+         is the clock; seconds here are how long it settles after the window stops.",
+        Path, Settle, true, false, Animation;
     Resize => "shader_resize", "While resizing",
         "Plays while the window is being resized. Drive it from size_velocity — \
          velocity is near zero during a corner drag.",
-        Path, false, true, false, Animation;
+        Path, Settle, true, false, Animation;
     Workspace => "shader_workspace", "Workspace slide",
         "Plays while the window's workspace slides in or out.",
-        Path, false, true, false, Animation;
+        Path, Settle, true, false, Animation;
     FullscreenEnter => "shader_fullscreen_enter", "Entering fullscreen",
         "Opt-in. Setting it also suppresses the generic move/resize shader for \
          that transition.",
-        Path, true, true, false, Animation;
+        Path, Settle, true, false, Animation;
     FullscreenExit => "shader_fullscreen_exit", "Leaving fullscreen",
         "Opt-in, same as entering.",
-        Path, true, true, false, Animation;
+        Path, Settle, true, false, Animation;
     Float => "shader_float", "Becoming floating",
         "Plays when the window is toggled to floating.",
-        Path, true, true, false, Animation;
+        Path, Settle, true, false, Animation;
     Tile => "shader_tile", "Becoming tiled",
         "Plays when the window is toggled back to tiled.",
-        Path, true, true, false, Animation;
+        Path, Settle, true, false, Animation;
     Urgent => "shader_urgent", "On urgent",
         "One-shot cue when the window is marked urgent.",
-        Path, true, true, false, Animation;
+        Path, Duration, true, false, Animation;
     Focus => "shader_focus", "On gaining focus",
         "One-shot cue when the window gains focus. Distinct from 'While focused'.",
-        Path, true, true, false, Animation;
+        Path, Duration, true, false, Animation;
     Unfocus => "shader_unfocus", "On losing focus",
         "One-shot cue when the window loses focus.",
-        Path, true, true, false, Animation;
+        Path, Duration, true, false, Animation;
     Replace => "shader_replace", "Opt out of stacking",
         "First matching tag wins and the rest are ignored, the pre-stacking \
          behavior. Has no _default form.",
-        Flag, false, false, false, Behavior;
+        Flag, None, false, false, Behavior;
     FullscreenStack => "shader_fullscreen_stack", "Keep stack fullscreen",
         "Keeps the window's normal shader stack while fullscreen instead of \
          dropping everything. Has no _default form.",
-        Flag, false, false, false, Behavior;
+        Flag, None, false, false, Behavior;
 }
 
 impl TagSlot {
