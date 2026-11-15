@@ -28,8 +28,9 @@ Item {
     readonly property bool blocked: !page.fsc.managed && page.handLines.length > 0
 
     // Settings changed here and not yet written: name -> value, or null to
-    // go back to FSC's default.
-    property var pending: ({})
+    // go back to FSC's default. Staged in the backend, so the header's
+    // unsaved badge and the quit check count them too.
+    readonly property var pending: page.fsc.pending || ({})
     readonly property int pendingCount: Object.keys(page.pending).length
     property bool savedSinceRestart: false
 
@@ -46,9 +47,7 @@ Item {
     }
 
     function stage(name, value) {
-        var copy = Object.assign({}, page.pending)
-        copy[name] = value
-        page.pending = copy
+        App.run("fsc.stage", { name: name, value: value })
     }
 
     // What a field shows: a staged change, else what the file says, else
@@ -118,6 +117,12 @@ Item {
             width: Math.min(scroll.availableWidth, Theme.contentMax)
             x: Math.round((scroll.availableWidth - width) / 2)
             spacing: Theme.pad
+
+            SaveNote {
+                Layout.fillWidth: true
+                label: "Two ways"
+                text: "Start and keys are written to your Hyprland config as soon as you change them. Its settings below wait for their own Save."
+            }
 
             // ---------------------------------------------------------------
             // What is installed
@@ -458,16 +463,16 @@ Item {
                     PillButton {
                         text: "Revert"
                         enabled: page.pendingCount > 0
-                        onClicked: page.pending = ({})
+                        onClicked: App.run("fsc.revert")
                     }
                     PillButton {
                         text: "Save"
                         primary: true
                         enabled: page.pendingCount > 0 && !page.fsc.configError
                         onClicked: {
-                            App.run("fsc.config", { changes: page.pending })
-                            page.pending = ({})
-                            page.savedSinceRestart = true
+                            App.run("fsc.config")
+                            // Staged changes stay when the write fails.
+                            page.savedSinceRestart = page.pendingCount === 0
                             App.run("fsc.refresh")
                         }
                     }

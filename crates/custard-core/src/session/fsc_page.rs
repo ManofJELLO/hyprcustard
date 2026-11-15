@@ -3,7 +3,7 @@
 //! Its start and key choices live in the app's settings and are written to
 //! a managed block of their own in the Hyprland config, at once rather than
 //! on Save, like the autostart block. Its config is FSC's own file, edited in
-//! place. Installing is a job the UI runs ([`crate::fsc::job`]), so it is not
+//! place on the page's own Save; changes to it are staged here until then. Installing is a job the UI runs ([`crate::fsc::job`]), so it is not
 //! here at all.
 
 use serde_json::{json, Map, Value};
@@ -74,16 +74,34 @@ impl Session {
                 self.write_config_text(&path, &text, &written)?;
                 Ok(Some("Your own Fishsticks & Custard lines are back as they were".into()))
             }
+            "fsc.stage" => {
+                let field = payload
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| Error::other("fsc.stage needs a name"))?;
+                let value = payload.get("value").cloned().unwrap_or(Value::Null);
+                self.fsc_pending.insert(field.to_string(), value);
+                Ok(None)
+            }
+            "fsc.revert" => {
+                self.fsc_pending.clear();
+                Ok(None)
+            }
+            // Write what is staged, plus any `changes` passed along. What is
+            // staged stays staged when the write fails, so nothing is lost.
             "fsc.config" => {
-                let changes: Map<String, Value> = payload
-                    .get("changes")
-                    .and_then(Value::as_object)
-                    .cloned()
-                    .ok_or_else(|| Error::other("fsc.config takes an object of changes"))?;
+                let mut changes = self.fsc_pending.clone();
+                if let Some(more) = payload.get("changes") {
+                    let more = more
+                        .as_object()
+                        .ok_or_else(|| Error::other("fsc.config takes an object of changes"))?;
+                    changes.extend(more.clone());
+                }
                 let path = fsc::config_path();
                 let text = fsc::read_config(&path)?;
                 let written = fsc::edit_config(&text, &changes)?;
                 if written == text {
+                    self.fsc_pending.clear();
                     return Ok(Some("Nothing to change in FSC's config".into()));
                 }
                 let backup = if path.exists() {
@@ -92,6 +110,7 @@ impl Session {
                     None
                 };
                 paths::write_atomic(&path, &written)?;
+                self.fsc_pending.clear();
                 let mut msg = format!("Saved {}", paths::contract(&path));
                 if let Some(b) = backup {
                     msg.push_str(&format!(" (backup: {})", paths::contract(&b)));
@@ -151,6 +170,7 @@ impl Session {
             "configPath": paths::contract(&path),
             "configExists": path.exists(),
             "configError": self.desk.fsc_config_error,
+            "pending": self.fsc_pending,
             "fields": fsc::fields_view(&self.desk.fsc_values),
             "homePage": fsc::HOME_PAGE,
         })

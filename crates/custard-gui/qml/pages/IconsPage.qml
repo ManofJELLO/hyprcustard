@@ -59,6 +59,12 @@ Item {
             x: Math.round((scroll.availableWidth - width) / 2)
             spacing: Theme.pad
 
+            SaveNote {
+                Layout.fillWidth: true
+                label: "Saves at once"
+                text: "An icon or cursor theme is written to your apps' settings as soon as you pick it. The Save button at the top is only for the Hyprland pages."
+            }
+
             // ---------------------------------------------------------------
             // Icons
             // ---------------------------------------------------------------

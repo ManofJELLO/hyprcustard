@@ -16,8 +16,8 @@ For **Hyprland itself**, it:
 * **Edits animations and their curves** — every leaf of Hyprland's animation tree, with where
   its values come from, an editor for dragging a curve's control points, and a preview playing
   on that curve at that speed. See [Animations](#animations).
-* **Saves and switches themes** — the whole look, animations and curves under a name, applied
-  with one click, and shareable as a file. See [Themes](#themes-for-hyprland).
+* **Saves and switches themes** — the whole look, animations and curves, and optionally the
+  shaders, colors and wallpaper, under a name, applied with one click, and shareable as a file. See [Themes](#themes-for-hyprland).
 
 For the **HyprWindowShade** plugin, it:
 
@@ -68,9 +68,17 @@ Seven pages down the left:
 | **Plugin** | Installs, updates and reloads the plugin itself through `hyprpm`, and shows what it prints. |
 | **Settings** | Paths, how the block is written, theme, backups. |
 
-Nothing is written until you press **Save**. Shaders are their own files, so they have their
-own save: the header **Save** writes your Hyprland config, and **Save shader** writes the
-`.glsl` you are looking at.
+Pages save one of three ways, and the header says which beside its **Save** button:
+
+* **Wait for Save** — Look, Look rules, Animation, Rules, Layers, Keybinds and Preview. Look,
+  Look rules and Animation show a change on the desktop straight away, but only the header
+  **Save** (or Ctrl+S) writes it to your Hyprland config.
+* **Their own Save** — Shaders (**Save shader** writes the `.glsl` you are looking at) and
+  Fishsticks' settings (written to its `config.toml`).
+* **At once** — Wallpaper, Colors, Icons and Settings, and Fishsticks' start and keys. These
+  pages say so at the top.
+
+Anything waiting for a Save is counted in the header, and closing the window asks first.
 
 ![Shaders](docs/shaders.png)
 
@@ -459,6 +467,23 @@ theme's over it; **Keep both** leaves yours alone and adds the theme's beside it
 `crt-<theme name>.glsl`, which the theme's rules then use. **Look only** applies the look and
 animations and leaves your shader setup as it is. A theme without shaders never touches them.
 The shader rules, like any other, take effect when you save.
+
+### Colors and wallpaper in a theme
+
+With **Include colors** on, a theme carries the color scheme last applied on the Colors page —
+the scheme itself, so it comes back exactly, even when it was read from a wallpaper — and the
+choices that made it. With **Include wallpaper** on, it carries the wallpaper on screen (the
+first monitor's) and how it is fitted. The wallpaper is kept as a path, not copied in, since
+wallpapers can be large videos: on a machine without that file the theme says so and leaves
+the wallpaper alone. Which apps get colors, and how the watcher runs, stay your own.
+
+Neither lives in `hyprland.lua`, so applying a theme puts its colors and wallpaper on at once,
+as their own pages do; only its look waits for Save. A theme that brings colors keeps them, even
+if picking a wallpaper normally recolors the desktop. **Look only** leaves both alone.
+
+**Update** on one of your themes overwrites it with what is on the desktop now, keeping its
+name, description and file; the Include switches say what goes in, and it warns before
+dropping a part the theme had.
 
 The app's own colors are a separate thing, under Settings → This app's colors.
 

@@ -275,12 +275,17 @@ impl Session {
         // rather than after the watcher's minimum gap — or when the user
         // asked for that here, with the Colors page's choices read from this
         // wallpaper. Neither changes the page or what is followed.
-        let recolor = colors::follow::following().or_else(|| {
-            self.settings.wallpaper.recolor.then(|| colors::ColorSettings {
-                source: "wallpaper".into(),
-                ..self.settings.colors.clone()
+        // A theme that brings its own colors along with the wallpaper keeps
+        // them: reading new ones from the wallpaper would undo them.
+        let keep_colors = payload.get("keepColors").and_then(Value::as_bool) == Some(true);
+        let recolor = colors::follow::following()
+            .or_else(|| {
+                self.settings.wallpaper.recolor.then(|| colors::ColorSettings {
+                    source: "wallpaper".into(),
+                    ..self.settings.colors.clone()
+                })
             })
-        });
+            .filter(|_| !keep_colors);
         self.wall_busy = true;
         Ok(WallJob { steps, program: program.id, path, monitor, recolor })
     }

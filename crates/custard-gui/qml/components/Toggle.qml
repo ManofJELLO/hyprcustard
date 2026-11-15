@@ -5,6 +5,9 @@ import dev.hyprcustard.gui
 Switch {
     id: control
 
+    // Shown on hover, when set.
+    property string tooltip: ""
+
     implicitHeight: 26
     font.pixelSize: Theme.fontSize
 
@@ -40,5 +43,10 @@ Switch {
         font: control.font
         leftPadding: control.indicator.width + Theme.gap
         verticalAlignment: Text.AlignVCenter
+    }
+
+    Tip {
+        text: control.tooltip
+        visible: control.tooltip !== "" && control.hovered
     }
 }

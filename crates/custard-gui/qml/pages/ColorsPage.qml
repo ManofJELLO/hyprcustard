@@ -74,6 +74,12 @@ Item {
             x: Math.round((scroll.availableWidth - width) / 2)
             spacing: Theme.pad
 
+            SaveNote {
+                Layout.fillWidth: true
+                label: "Saves at once"
+                text: "Your choices here are kept as you make them; Apply is what writes the scheme to your apps. The Save button at the top is only for the Hyprland pages."
+            }
+
             // -----------------------------------------------------------
             Card {
                 Layout.fillWidth: true

@@ -4,12 +4,15 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import dev.hyprcustard.gui
 
-// Themes: the whole look — Look options, animations and curves — saved under
-// a name and put back with one click.
+// Themes: the whole look — Look options, animations and curves, and if asked
+// for the shaders, the colors and the wallpaper — saved under a name and put
+// back with one click.
 //
 // Applying a theme makes the look block set everything the theme holds, so
 // the desktop looks the way the theme was saved whatever the user's own
-// config says. Like any other change it is live at once and written on Save.
+// config says. Like any other change to the look it is live at once and
+// written on Save. Colors and wallpaper are not in the Hyprland config, so
+// they go on, and stay, at once — as they do on their own pages.
 Item {
     id: page
 
@@ -26,6 +29,68 @@ Item {
 
     // The theme an export dialog was opened for.
     property var exporting: null
+
+    // What a save takes from the desktop besides the look, as a phrase.
+    function partsSaved() {
+        var parts = ["the look, animations and look rules"]
+        if (withShaders.checked)
+            parts.push("shaders")
+        if (withColors.checked)
+            parts.push("colors")
+        if (withWallpaper.checked)
+            parts.push("wallpaper")
+        if (parts.length === 1)
+            return parts[0]
+        return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1]
+    }
+
+    function saveOptions() {
+        return {
+            includeShaders: withShaders.checked,
+            includeColors: withColors.checked,
+            includeWallpaper: withWallpaper.checked
+        }
+    }
+
+    // Overwrite one of the user's themes with what is on the desktop now,
+    // keeping its name, description and file.
+    function update(theme) {
+        var lost = []
+        if (theme.hasShaders && !withShaders.checked)
+            lost.push("shaders")
+        if (theme.colors && !withColors.checked)
+            lost.push("colors")
+        if (theme.wallpaper && !withWallpaper.checked)
+            lost.push("wallpaper")
+        var body = "Replace it with what is on the desktop now: " + page.partsSaved()
+                   + ", unsaved changes included. Its name and description stay."
+        if (lost.length > 0)
+            body += " It will no longer carry its " + lost.join(" or ")
+                    + " — turn on Include above to keep them."
+        App.confirm("Update " + theme.name + "?", body, "Update", lost.length > 0,
+                    function () {
+                        var opts = page.saveOptions()
+                        opts.name = theme.name
+                        opts.file = theme.file
+                        App.run("preset.save", opts)
+                    })
+    }
+
+    // What Apply does with a theme, for its tooltip.
+    function applyTip(theme) {
+        var parts = []
+        if (theme.hasShaders)
+            parts.push("its shaders")
+        if (theme.colors)
+            parts.push("its colors")
+        if (theme.wallpaper)
+            parts.push("its wallpaper")
+        if (parts.length === 0)
+            return ""
+        return "The look, and " + parts.join(", ") + "."
+            + (theme.colors || theme.wallpaper
+               ? " Colors and wallpaper change at once; the look waits for Save." : "")
+    }
 
     // Apply a theme, asking first if it would change shaders the user
     // already has different versions of.
@@ -94,10 +159,17 @@ Item {
                 Layout.fillWidth: true
                 title: "Themes"
                 subtitle: "A theme is the whole look: every Look option, the animations and "
-                          + "their curves, your look rules — and, if you include them, the HyprWindowShade rules, "
-                          + "layer shaders and the shader files they use. Applying one puts it on the desktop straight away; "
-                          + "Save writes it to hyprland.lua. Themes are files in "
-                          + page.presetDir + "."
+                          + "their curves, your look rules — and, if you include them, the "
+                          + "HyprWindowShade rules and shader files, the desktop's colors and the "
+                          + "wallpaper. Themes are files in " + page.presetDir + "."
+
+                SaveNote {
+                    width: parent.width
+                    label: "Two ways"
+                    text: "Saving, updating and deleting a theme happen at once. Applying one "
+                          + "shows its look straight away but keeps it only when you press Save "
+                          + "at the top; its colors and wallpaper go on, and stay, at once."
+                }
 
                 RowLayout {
                     width: parent.width
@@ -119,8 +191,8 @@ Item {
                         text: "Save as theme"
                         primary: true
                         enabled: nameEdit.text.trim() !== ""
-                        tooltip: "Save what is on the desktop now, unsaved changes included, "
-                                 + "as a theme."
+                        tooltip: "Save " + page.partsSaved() + " as they are now, unsaved "
+                                 + "changes included, as a new theme."
                         onClicked: {
                             var name = nameEdit.text.trim()
                             var taken = false
@@ -128,10 +200,11 @@ Item {
                                 if (!page.presets[i].builtin && page.presets[i].name === name)
                                     taken = true
                             var save = function (replace) {
-                                App.run("preset.save", {
-                                    name: name, description: descEdit.text, replace: replace,
-                                    includeShaders: withShaders.checked
-                                })
+                                var opts = page.saveOptions()
+                                opts.name = name
+                                opts.description = descEdit.text
+                                opts.replace = replace
+                                App.run("preset.save", opts)
                                 nameEdit.text = ""
                                 descEdit.text = ""
                             }
@@ -145,13 +218,27 @@ Item {
                     }
                 }
 
-                Row {
+                Flow {
+                    width: parent.width
                     spacing: Theme.gap
                     Toggle {
                         id: withShaders
                         text: "Include shaders"
                         checked: true
-                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Toggle {
+                        id: withColors
+                        text: "Include colors"
+                        checked: true
+                        tooltip: "The scheme last applied on the Colors page, and the choices "
+                                 + "that made it."
+                    }
+                    Toggle {
+                        id: withWallpaper
+                        text: "Include wallpaper"
+                        checked: true
+                        tooltip: "The wallpaper on screen, kept as a path to the file: a theme "
+                                 + "shared with someone else has no wallpaper on their machine."
                     }
                     PillButton {
                         text: "Import…"
@@ -210,10 +297,13 @@ Item {
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                             }
-                            Row {
+                            Flow {
+                                width: parent.width
                                 spacing: Theme.gapSmall
                                 visible: themeCard.modelData.active || themeCard.modelData.builtin
                                          || themeCard.modelData.hasShaders
+                                         || !!themeCard.modelData.colors
+                                         || !!themeCard.modelData.wallpaper
 
                                 Badge {
                                     visible: themeCard.modelData.active
@@ -228,6 +318,37 @@ Item {
                                     visible: themeCard.modelData.hasShaders
                                     text: "Shaders"
                                     tint: Theme.accentAlt
+                                }
+                                Badge {
+                                    visible: !!themeCard.modelData.colors
+                                    text: "Colors"
+                                    tint: Theme.accentAlt
+                                }
+                                Badge {
+                                    visible: !!themeCard.modelData.wallpaper
+                                    text: "Wallpaper"
+                                    tint: themeCard.modelData.wallpaper
+                                          && themeCard.modelData.wallpaper.missing
+                                          ? Theme.warn : Theme.accentAlt
+                                }
+                            }
+
+                            // The theme's colors: background, then accents.
+                            Row {
+                                visible: !!themeCard.modelData.colors
+                                spacing: 3
+                                Repeater {
+                                    model: themeCard.modelData.colors
+                                           ? themeCard.modelData.colors.swatches : []
+                                    Rectangle {
+                                        required property var modelData
+                                        width: 16
+                                        height: 16
+                                        radius: 4
+                                        color: modelData
+                                        border.width: 1
+                                        border.color: Theme.wash(Theme.fg, 0.15)
+                                    }
                                 }
                             }
 
@@ -252,28 +373,54 @@ Item {
                                            + " · " + App.plural(themeCard.modelData.layerCount, "layer")
                                            + " · " + App.plural(themeCard.modelData.shaderFiles, "shader")
                                          : "")
+                                      + (themeCard.modelData.colors
+                                         ? " · colors: " + themeCard.modelData.colors.name : "")
                                 color: Theme.muted
                                 font.pixelSize: Theme.fontSizeSmall
                             }
+                            Text {
+                                width: parent.width
+                                visible: !!themeCard.modelData.wallpaper
+                                wrapMode: Text.WrapAnywhere
+                                text: !themeCard.modelData.wallpaper ? ""
+                                      : "Wallpaper: " + themeCard.modelData.wallpaper.name
+                                        + (themeCard.modelData.wallpaper.missing
+                                           ? " — not on this machine, so it is left out" : "")
+                                color: themeCard.modelData.wallpaper
+                                       && themeCard.modelData.wallpaper.missing
+                                       ? Theme.warn : Theme.muted
+                                font.pixelSize: Theme.fontSizeSmall
+                            }
 
-                            Row {
+                            Flow {
+                                width: parent.width
                                 spacing: Theme.gapSmall
 
                                 PillButton {
                                     text: "Apply"
                                     primary: true
                                     compact: true
-                                    tooltip: themeCard.modelData.hasShaders
-                                             ? "The look and the shaders." : ""
+                                    tooltip: page.applyTip(themeCard.modelData)
                                     onClicked: page.apply(themeCard.modelData, false)
                                 }
                                 PillButton {
                                     text: "Look only"
                                     compact: true
                                     visible: themeCard.modelData.hasShaders
+                                             || !!themeCard.modelData.colors
+                                             || !!themeCard.modelData.wallpaper
                                     tooltip: "Apply the look and animations, and leave your "
-                                             + "shaders as they are."
+                                             + "shaders, colors and wallpaper as they are."
                                     onClicked: page.apply(themeCard.modelData, true)
+                                }
+                                PillButton {
+                                    text: "Update"
+                                    compact: true
+                                    visible: !themeCard.modelData.builtin
+                                    tooltip: "Overwrite this theme with what is on the desktop "
+                                             + "now, keeping its name. The Include switches "
+                                             + "above say what goes in."
+                                    onClicked: page.update(themeCard.modelData)
                                 }
                                 PillButton {
                                     text: "Export…"

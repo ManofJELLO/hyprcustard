@@ -220,6 +220,12 @@ Item {
             x: Math.round((scroll.availableWidth - width) / 2)
             spacing: Theme.pad
 
+            SaveNote {
+                Layout.fillWidth: true
+                label: "Saves at once"
+                text: "A wallpaper goes up, and your choices here are kept, as soon as you pick them. The Save button at the top is only for the Hyprland pages."
+            }
+
             // -----------------------------------------------------------
             Card {
                 Layout.fillWidth: true

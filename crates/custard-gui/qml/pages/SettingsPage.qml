@@ -23,6 +23,12 @@ Item {
             x: Math.round((scroll.availableWidth - width) / 2)
             spacing: Theme.pad
 
+            SaveNote {
+                Layout.fillWidth: true
+                label: "Saves at once"
+                text: "Settings are kept as soon as you change them."
+            }
+
             // ---------------------------------------------------------------
             Card {
                 Layout.fillWidth: true

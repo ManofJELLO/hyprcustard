@@ -33,6 +33,10 @@ QtObject {
     // config, `dirtyShaders` is how many .glsl files have staged edits.
     readonly property bool dirty: state.dirty === true
     readonly property int dirtyShaders: state.dirtyShaders || 0
+    // Fishsticks & Custard settings staged on its page, for its config.toml.
+    readonly property int dirtyFsc: state.dirtyFsc || 0
+    // Anything at all that a Save button somewhere has yet to write.
+    readonly property bool anyUnsaved: dirty || dirtyShaders > 0 || dirtyFsc > 0
 
     readonly property var rules: state.rules || []
     readonly property var layers: state.layers || []

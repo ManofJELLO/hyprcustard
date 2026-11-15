@@ -16,7 +16,7 @@ ApplicationWindow {
     // Started with --tray, the window waits for the icon to be clicked.
     visible: !Backend.startInTray
     title: "HyprCustard"
-           + (App.dirty || App.dirtyShaders > 0 ? " — unsaved changes" : "")
+           + (App.anyUnsaved ? " — unsaved changes" : "")
     color: Theme.bg
     opacity: Theme.windowOpacity
 
@@ -47,22 +47,31 @@ ApplicationWindow {
     // then the app's. A heading is drawn wherever the section changes, so the
     // order here is the order on screen.
     readonly property var pages: [
-        { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland" },
-        { label: "Look rules", hint: "Per app and workspace", section: "Hyprland" },
-        { label: "Animation", hint: "Curves and speeds",   section: "Hyprland" },
-        { label: "Themes",    hint: "Save and switch looks", section: "Hyprland" },
-        { label: "Wallpaper", hint: "Pick and put up",     section: "Desktop" },
-        { label: "Colors",    hint: "One scheme, every app", section: "Desktop" },
-        { label: "Icons",     hint: "Icon and cursor themes", section: "Desktop" },
-        { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade" },
-        { label: "Shaders",   hint: "Files",               section: "HyprWindowShade" },
-        { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade" },
-        { label: "Keybinds",  hint: "And startup",         section: "HyprWindowShade" },
-        { label: "Preview",   hint: "And import",          section: "HyprWindowShade" },
-        { label: "Plugin",    hint: "Install, update",     section: "HyprWindowShade" },
-        { label: "Fishsticks", hint: "Voice assistant",     section: "Apps" },
-        { label: "Settings",  hint: "",                    section: "" }
+        { label: "Look",      hint: "Borders, blur, gaps", section: "Hyprland", saves: "save" },
+        { label: "Look rules", hint: "Per app and workspace", section: "Hyprland", saves: "save" },
+        { label: "Animation", hint: "Curves and speeds",   section: "Hyprland", saves: "save" },
+        { label: "Themes",    hint: "Save and switch looks", section: "Hyprland", saves: "mixed" },
+        { label: "Wallpaper", hint: "Pick and put up",     section: "Desktop", saves: "now" },
+        { label: "Colors",    hint: "One scheme, every app", section: "Desktop", saves: "now" },
+        { label: "Icons",     hint: "Icon and cursor themes", section: "Desktop", saves: "now" },
+        { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade", saves: "save" },
+        { label: "Shaders",   hint: "Files",               section: "HyprWindowShade", saves: "own" },
+        { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade", saves: "save" },
+        { label: "Keybinds",  hint: "And startup",         section: "HyprWindowShade", saves: "save" },
+        { label: "Preview",   hint: "And import",          section: "HyprWindowShade", saves: "save" },
+        { label: "Plugin",    hint: "Install, update",     section: "HyprWindowShade", saves: "" },
+        { label: "Fishsticks", hint: "Voice assistant",     section: "Apps", saves: "mixed" },
+        { label: "Settings",  hint: "",                    section: "", saves: "now" }
     ]
+
+    // How the page showing keeps its changes, for the line by the header's
+    // Save: pages differ, and nothing else on screen says which is which.
+    readonly property var savesText: ({
+        save: "Changes here wait for Save",
+        now: "Changes here save at once",
+        own: "This page has its own Save",
+        mixed: "This page saves two ways — see the note"
+    })
 
     property int currentPage: 0
 
@@ -150,7 +159,7 @@ ApplicationWindow {
                         })
             return
         }
-        if ((App.dirty || App.dirtyShaders > 0) && !window.quitConfirmed) {
+        if (App.anyUnsaved && !window.quitConfirmed) {
             close.accepted = false
             confirm.ask("Close without saving?",
                         window.unsavedSummary(),
@@ -184,7 +193,7 @@ ApplicationWindow {
         window.quitting = true
         // Unsaved work, or hyprpm still running, are asked about on the way
         // out, in the window, as when it is closed.
-        if (App.dirty || App.dirtyShaders > 0 || App.hyprpmBusy) {
+        if (App.anyUnsaved || App.hyprpmBusy) {
             window.bringUp()
             window.close()
             return
@@ -243,17 +252,20 @@ ApplicationWindow {
     }
     property bool hyprpmCloseConfirmed: false
 
-    // Two kinds of unsaved work, written by two different buttons to two
-    // different places, so the warning has to name whichever ones apply.
+    // Three kinds of unsaved work, written by three different buttons to
+    // three different places, so the warning has to name whichever apply.
     function unsavedSummary() {
         var parts = []
         if (App.dirty)
-            parts.push("Your rules, layers and keybinds have not been written to "
+            parts.push("Your look, rules, layers and keybinds have not been written to "
                        + App.configPathDisplay + ".")
         if (App.dirtyShaders > 0)
             parts.push(App.plural(App.dirtyShaders, "shader")
                        + (App.dirtyShaders === 1 ? " has" : " have")
                        + " changes that were never written to the file.")
+        if (App.dirtyFsc > 0)
+            parts.push("Fishsticks has " + App.plural(App.dirtyFsc, "setting")
+                       + " not saved to its config.")
         return parts.join(" ")
     }
 
@@ -355,6 +367,19 @@ ApplicationWindow {
                     text: App.plural(App.dirtyShaders, "shader") + " edited"
                     tint: Theme.warn
                 }
+                Badge {
+                    visible: App.dirtyFsc > 0
+                    text: "Fishsticks " + App.plural(App.dirtyFsc, "setting") + " unsaved"
+                    tint: Theme.warn
+                }
+            }
+
+            Text {
+                readonly property string saves: window.pages[window.currentPage].saves || ""
+                visible: text !== ""
+                text: window.savesText[saves] || ""
+                color: saves === "save" && App.dirty ? Theme.warn : Theme.muted
+                font.pixelSize: Theme.fontSizeSmall
             }
 
             PillButton {

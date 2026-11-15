@@ -381,6 +381,12 @@ impl qobject::Backend {
                 self.as_mut().notify(&m, true);
             }
         }
+
+        // A theme with a wallpaper: putting it up is a job of its own.
+        let wall = self.as_mut().rust_mut().session.as_mut().and_then(|s| s.take_theme_wallpaper());
+        if let Some(wall) = wall {
+            self.as_mut().wallpaper_set(&QString::from(&wall.to_string()));
+        }
     }
 
     /// Answer a read-only question.

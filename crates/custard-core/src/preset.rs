@@ -1,5 +1,6 @@
 //! Themes: the whole look — every Look option, the animations and the curves
-//! they run on — saved under a name, and put back with one click.
+//! they run on, and, if asked for, the shaders, the desktop's colors and the
+//! wallpaper — saved under a name, and put back with one click.
 //!
 //! A theme is complete rather than a list of changes. Applying one makes the
 //! look block set everything it holds, so the result is that theme whatever
@@ -57,6 +58,94 @@ pub struct Preset {
     /// config are never touched.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<crate::rules::Rule>,
+    /// The desktop's colors, if the theme carries them. A theme without them
+    /// leaves the colors alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colors: Option<ThemeColors>,
+    /// The wallpaper, if the theme carries one. A theme without it leaves
+    /// the wallpaper alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wallpaper: Option<ThemeWallpaper>,
+}
+
+/// The colors side of a theme.
+///
+/// The scheme itself is kept, not only the choices that made it, so the
+/// theme puts back exactly the colors it was saved with — even when they
+/// were read from a wallpaper this machine does not have.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeColors {
+    /// The scheme the apps were given.
+    pub scheme: crate::colors::Scheme,
+    /// The Colors page's choices that made it, when they are known, so the
+    /// page shows them again after applying.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<ColorChoices>,
+}
+
+/// The Colors page's choices that shape a scheme. Which apps are written,
+/// the monitor and how the watcher runs belong to the machine, not to a
+/// theme, so they are left out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColorChoices {
+    /// `scheme:<id>`, `wallpaper`, or `color:#rrggbb`.
+    pub source: String,
+    /// How a seed becomes a scheme.
+    pub style: String,
+    /// Dark surfaces rather than light.
+    pub dark: bool,
+    /// -1 (softer) to 1 (sharper).
+    pub contrast: f64,
+    /// Which of a wallpaper's colors to build on.
+    pub pick: String,
+    /// Read a whole wallpaper folder rather than what is showing.
+    #[serde(default)]
+    pub whole_folder: bool,
+    /// Opacity for bar and popup backgrounds.
+    pub opacity: f64,
+}
+
+impl ColorChoices {
+    /// The choices in `settings` that a theme keeps.
+    pub fn of(settings: &crate::colors::ColorSettings) -> Self {
+        Self {
+            source: settings.source.clone(),
+            style: settings.style.clone(),
+            dark: settings.dark,
+            contrast: settings.contrast,
+            pick: settings.pick.clone(),
+            whole_folder: settings.whole_folder,
+            opacity: settings.opacity,
+        }
+    }
+
+    /// `settings` with these choices laid over it, and the machine's own
+    /// left as they were.
+    pub fn over(&self, settings: &crate::colors::ColorSettings) -> crate::colors::ColorSettings {
+        crate::colors::ColorSettings {
+            source: self.source.clone(),
+            style: self.style.clone(),
+            dark: self.dark,
+            contrast: self.contrast,
+            pick: self.pick.clone(),
+            whole_folder: self.whole_folder,
+            opacity: self.opacity,
+            ..settings.clone()
+        }
+        .sanitized()
+    }
+}
+
+/// The wallpaper side of a theme: one file or folder, put up on every
+/// monitor. It is kept as a path, not copied in, since wallpapers can be
+/// large videos; a theme taken to another machine leaves it out there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThemeWallpaper {
+    /// The file or folder, `~` for the home folder.
+    pub path: String,
+    /// `fill`, `fit` or `stretch`, as on the Wallpaper page.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub fit: String,
 }
 
 /// What a path to a shader inside a theme starts with: the shader folder,
@@ -335,6 +424,8 @@ pub fn snapshot(
         animations,
         shaders: None,
         rules: current.rules.clone(),
+        colors: None,
+        wallpaper: None,
     }
 }
 
@@ -541,6 +632,8 @@ pub fn builtin() -> Vec<Preset> {
         animations: BTreeMap::new(),
         shaders: None,
         rules: Vec::new(),
+        colors: None,
+        wallpaper: None,
     };
     for o in look::OPTIONS.iter().filter(|o| themed(o.key) && o.follows.is_empty()) {
         defaults.options.insert(o.key.to_string(), look::default_of(o).to_json());

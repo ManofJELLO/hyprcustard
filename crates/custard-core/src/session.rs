@@ -183,6 +183,13 @@ pub struct Session {
     pub colors_building: bool,
     /// The scheme last applied, as `current.json` has it.
     colors_applied: Option<colors::Scheme>,
+    /// A wallpaper a theme asked for, waiting for the UI to put it up.
+    theme_wallpaper: Option<Value>,
+    /// Changes to Fishsticks & Custard's config staged on its page and not
+    /// yet written: name to value, or null to go back to FSC's default. Kept
+    /// here rather than in the page so the header and the quit check can
+    /// count them, like shader drafts.
+    fsc_pending: serde_json::Map<String, Value>,
     /// Whether this session runs under systemd's graphical session target,
     /// so the watcher could be a user service. Asked once, at start.
     systemd_session: bool,
@@ -252,6 +259,8 @@ impl Session {
             colors_built: None,
             colors_building: false,
             colors_applied: colors::current(),
+            theme_wallpaper: None,
+            fsc_pending: serde_json::Map::new(),
             systemd_session: colors::follow::systemd_available(),
             wall_scan: None,
             wall_busy: false,
@@ -307,6 +316,15 @@ impl Session {
                         "curveCount": e.preset.curves.len(),
                         "animationCount": e.preset.animations.len(),
                         "lookRuleCount": e.preset.rules.len(),
+                        "colors": e.preset.colors.as_ref().map(theme_colors_view),
+                        "wallpaper": e.preset.wallpaper.as_ref().map(|w| json!({
+                            "path": w.path,
+                            "name": std::path::Path::new(&w.path)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                            "missing": !paths::expand(&w.path).exists(),
+                        })),
                     })
                 })
                 .collect(),
@@ -320,6 +338,141 @@ impl Session {
         Ok(entry.preset.shaders.as_ref().map_or_else(Vec::new, |setup| {
             preset::shader_conflicts(setup, &paths::expand(&self.config.shader_dir))
         }))
+    }
+
+    /// Save what is on the desktop as a theme: a new one, or, given the
+    /// `file` of one of the user's, over that one in place.
+    fn save_preset(&mut self, payload: &Value) -> Result<Option<String>> {
+        let flag =
+            |key: &str, default: bool| payload.get(key).and_then(Value::as_bool).unwrap_or(default);
+        let updating = payload
+            .get("file")
+            .and_then(Value::as_str)
+            .filter(|f| !f.is_empty())
+            .map(|_| self.preset_named(payload).cloned())
+            .transpose()?;
+        let (name, description) = match &updating {
+            Some(old) => (
+                old.preset.name.clone(),
+                payload
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| old.preset.description.clone()),
+            ),
+            None => (
+                payload.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+                payload.get("description").and_then(Value::as_str).unwrap_or_default().to_string(),
+            ),
+        };
+        if updating.as_ref().is_some_and(|e| e.path.is_none()) {
+            return Err(Error::other("built-in themes cannot be changed; save a copy instead"));
+        }
+        if updating.is_none()
+            && self.presets.iter().any(|e| e.path.is_none() && e.preset.name == name.trim())
+        {
+            return Err(Error::other(format!("{name} is a built-in theme's name")));
+        }
+        let mut p = preset::snapshot(
+            &name,
+            &description,
+            &self.look,
+            &self.live.look,
+            &self.live.motion,
+            &self.config_curves,
+        );
+        let mut left_out = Vec::new();
+        if flag("includeShaders", true) {
+            p.shaders = preset::capture_shaders(&self.config);
+        }
+        if flag("includeColors", false) {
+            p.colors = self.capture_colors();
+            if p.colors.is_none() {
+                left_out.push("no colors have been applied yet, so it has none");
+            }
+        }
+        if flag("includeWallpaper", false) {
+            p.wallpaper = self.capture_wallpaper();
+            if p.wallpaper.is_none() {
+                left_out.push("no wallpaper was found on screen, so it has none");
+            }
+        }
+        let path = match updating.and_then(|e| e.path) {
+            Some(path) => {
+                let text = serde_json::to_string_pretty(&p)?;
+                paths::write_atomic(&path, &format!("{text}\n"))?;
+                path
+            }
+            None => {
+                let replace = flag("replace", false);
+                preset::save_into(&preset::dir(), &p, replace)?
+            }
+        };
+        self.rescan_presets();
+        let mut msg = format!("Saved the theme {} to {}", p.name, paths::contract(&path));
+        if !left_out.is_empty() {
+            msg.push_str(&format!(". But {}", left_out.join(", and ")));
+        }
+        Ok(Some(msg))
+    }
+
+    /// The colors on the desktop now, for a theme: the scheme last applied,
+    /// and the Colors page's choices when they are what made it.
+    fn capture_colors(&self) -> Option<preset::ThemeColors> {
+        let scheme = self.colors_applied.clone()?;
+        let choices = match &self.colors_built {
+            Some(Ok(b)) if b.scheme == scheme => {
+                Some(preset::ColorChoices::of(&self.settings.colors))
+            }
+            _ => None,
+        };
+        Some(preset::ThemeColors { scheme, choices })
+    }
+
+    /// The wallpaper on screen now, for a theme: the first monitor's.
+    fn capture_wallpaper(&self) -> Option<preset::ThemeWallpaper> {
+        let found = match &self.wall_scan {
+            Some(scan) if !scan.found.wallpapers.is_empty() => scan.found.clone(),
+            _ => colors::wallpaper::detect(),
+        };
+        let wall = found.for_monitor("")?;
+        Some(preset::ThemeWallpaper {
+            path: paths::contract(&wall.path),
+            fit: self.settings.wallpaper.fit.clone(),
+        })
+    }
+
+    /// Put a theme's colors on the desktop, and its choices on the Colors
+    /// page. Following the wallpaper goes on only if the theme's colors came
+    /// from one; otherwise it stops, as it does when applying on the page.
+    fn apply_theme_colors(&mut self, theme: &preset::ThemeColors) -> Result<()> {
+        let choices = match &theme.choices {
+            Some(c) => c.over(&self.settings.colors),
+            None => self.settings.colors.clone(),
+        };
+        self.apply_scheme(&theme.scheme, &choices)?;
+        if choices != self.settings.colors {
+            self.settings.colors = choices;
+            self.settings.save()?;
+            self.colors_built = None;
+        }
+        if let Some(following) = colors::follow::following() {
+            if self.settings.colors.source == "wallpaper" && theme.choices.is_some() {
+                colors::follow::write_snapshot(&colors::ColorSettings {
+                    start_with: following.start_with,
+                    ..self.settings.colors.clone()
+                })?;
+            } else {
+                self.stop_following()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The wallpaper a theme just applied asked for, for the UI to put up:
+    /// that runs on a thread, so the session cannot do it itself.
+    pub fn take_theme_wallpaper(&mut self) -> Option<Value> {
+        self.theme_wallpaper.take()
     }
 
     fn apply_preset(&mut self, payload: &Value) -> Result<Option<String>> {
@@ -370,7 +523,32 @@ impl Session {
         if self.look_is_live() {
             self.resync_look()?;
         }
-        let mut msg = format!("Applied {} — Save to keep it", entry.preset.name);
+        let mut msg = format!("Applied {} — Save to keep its look", entry.preset.name);
+
+        // Colors and wallpaper are not in the Hyprland config, so they are
+        // not held for Save: they go on the desktop, and stay, at once.
+        let mut problems = problems;
+        if let (Some(c), false) = (&entry.preset.colors, look_only) {
+            match self.apply_theme_colors(c) {
+                Ok(()) => msg.push_str(". Its colors are on your apps"),
+                Err(e) => problems.push(format!("its colors ({e})")),
+            }
+        }
+        if let (Some(w), false) = (&entry.preset.wallpaper, look_only) {
+            let path = paths::expand(&w.path);
+            if path.exists() {
+                if !w.fit.is_empty() && w.fit != self.settings.wallpaper.fit {
+                    self.settings.wallpaper.fit = w.fit.clone();
+                    self.settings.save()?;
+                }
+                self.theme_wallpaper = Some(json!({
+                    "path": path.to_string_lossy(),
+                    "keepColors": entry.preset.colors.is_some(),
+                }));
+            } else {
+                problems.push(format!("its wallpaper, {}, which is not on this machine", w.path));
+            }
+        }
         if shaders_applied {
             msg.push_str(". Its shader rules take effect when you save");
             if !shader_notes.is_empty() {
@@ -684,6 +862,7 @@ impl Session {
                 .map(|s| self.shader_view(s, &referenced))
                 .collect::<Vec<_>>(),
             "dirtyShaders": self.dirty_shaders(),
+            "dirtyFsc": self.fsc_pending.len(),
             "missingShaders": shader::missing(&referenced)
                 .iter()
                 .map(|p| json!({ "path": p, "name": base_name(p) }))
@@ -1150,31 +1329,7 @@ impl Session {
                 }
                 Ok(Some("Cleared every animation and curve set here".into()))
             }
-            "preset.save" => {
-                let name = payload.get("name").and_then(Value::as_str).unwrap_or_default();
-                let description =
-                    payload.get("description").and_then(Value::as_str).unwrap_or_default();
-                let replace = payload.get("replace").and_then(Value::as_bool).unwrap_or(false);
-                let with_shaders =
-                    payload.get("includeShaders").and_then(Value::as_bool).unwrap_or(true);
-                if self.presets.iter().any(|e| e.path.is_none() && e.preset.name == name.trim()) {
-                    return Err(Error::other(format!("{name} is a built-in theme's name")));
-                }
-                let mut p = preset::snapshot(
-                    name,
-                    description,
-                    &self.look,
-                    &self.live.look,
-                    &self.live.motion,
-                    &self.config_curves,
-                );
-                if with_shaders {
-                    p.shaders = preset::capture_shaders(&self.config);
-                }
-                let path = preset::save_into(&preset::dir(), &p, replace)?;
-                self.rescan_presets();
-                Ok(Some(format!("Saved the theme {} to {}", p.name, paths::contract(&path))))
-            }
+            "preset.save" => self.save_preset(payload),
             "preset.apply" => self.apply_preset(payload),
             "preset.delete" => {
                 let entry = self.preset_named(payload)?.clone();
@@ -2612,6 +2767,16 @@ fn scheme_view(s: &colors::Scheme) -> Value {
     })
 }
 
+/// A theme's colors for its card: the scheme's name, and its background
+/// then its accents as swatches.
+fn theme_colors_view(c: &preset::ThemeColors) -> Value {
+    let swatches: Vec<&String> = [0usize, 8, 9, 10, 11, 12, 13, 14]
+        .into_iter()
+        .filter_map(|n| c.scheme.base16.get(n))
+        .collect();
+    json!({ "name": c.scheme.name, "swatches": swatches })
+}
+
 fn id_of(payload: &Value) -> Result<&str> {
     payload.get("id").and_then(Value::as_str).ok_or_else(|| Error::other("no id given"))
 }
@@ -2754,6 +2919,8 @@ mod tests {
             colors_built: None,
             colors_building: false,
             colors_applied: None,
+            theme_wallpaper: None,
+            fsc_pending: serde_json::Map::new(),
             systemd_session: false,
             wall_scan: None,
             wall_busy: false,
@@ -3118,7 +3285,7 @@ mod tests {
     }
 
     #[test]
-    fn fishsticks_config_is_edited_in_place() {
+    fn fishsticks_config_is_edited_in_place_and_staged_until_saved() {
         let (_dir, _cfg, mut s) = rule_session("");
         let path = crate::fsc::config_path();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -3137,6 +3304,25 @@ mod tests {
             "# mine\n[voice]\nlanguage = \"de\" # spoken\n"
         );
         assert!(s.command("fsc.config", &json!({ "changes": { "voice.speak": "loud" } })).is_err());
+
+        // Changes made on the page are staged until its Save.
+        s.command("fsc.stage", &json!({ "name": "voice.language", "value": "fr" })).unwrap();
+        assert_eq!(s.state()["dirtyFsc"], 1);
+        assert_eq!(s.state()["fsc"]["pending"]["voice.language"], "fr");
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("fr"), "not written yet");
+        s.command("fsc.revert", &json!({})).unwrap();
+        assert_eq!(s.state()["dirtyFsc"], 0);
+
+        // A write that fails keeps what was staged.
+        s.command("fsc.stage", &json!({ "name": "voice.speak", "value": "loud" })).unwrap();
+        assert!(s.command("fsc.config", &json!({})).is_err());
+        assert_eq!(s.state()["dirtyFsc"], 1);
+        s.command("fsc.revert", &json!({})).unwrap();
+
+        s.command("fsc.stage", &json!({ "name": "voice.language", "value": "fr" })).unwrap();
+        s.command("fsc.config", &json!({})).unwrap();
+        assert_eq!(s.state()["dirtyFsc"], 0);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("\"fr\""));
         let _ = std::fs::remove_file(&path);
     }
 
@@ -3555,6 +3741,119 @@ mod tests {
         look_only["lookOnly"] = json!(true);
         s.command("preset.apply", &look_only).unwrap();
         assert!(s.config.rules.is_empty());
+    }
+
+    #[test]
+    fn a_theme_carries_colors_and_wallpaper_when_asked_and_puts_them_back() {
+        // Applying writes the shared applied-colors file other tests read.
+        let _lock = colors::follow::SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = colors::follow::clear_snapshot();
+        let dir = tempfile::tempdir().unwrap();
+        let wall = dir.path().join("dunes.png");
+        std::fs::write(&wall, b"png").unwrap();
+        let mut s = session();
+        let gruvbox = colors::build(&s.settings.colors, &s.palettes).unwrap();
+        s.colors_applied = Some(gruvbox.scheme.clone());
+        s.colors_built = Some(Ok(gruvbox.clone()));
+        s.settings.wallpaper.fit = "fit".into();
+        s.wall_scan = Some(walls::Scan {
+            found: colors::wallpaper::Found {
+                wallpapers: vec![colors::wallpaper::Wallpaper {
+                    program: "swaybg".into(),
+                    monitor: None,
+                    path: wall.clone(),
+                    showing: None,
+                }],
+                unreadable: Vec::new(),
+                monitors: vec!["DP-1".into()],
+            },
+            ..Default::default()
+        });
+
+        // Off unless asked for.
+        s.command("preset.save", &json!({ "name": "Plain theme test" })).unwrap();
+        let plain = s.presets.iter().find(|e| e.preset.name == "Plain theme test").unwrap();
+        assert!(plain.preset.colors.is_none() && plain.preset.wallpaper.is_none());
+
+        s.command(
+            "preset.save",
+            &json!({ "name": "Dunes theme test", "includeColors": true, "includeWallpaper": true }),
+        )
+        .unwrap();
+        let entry = s.presets.iter().find(|e| e.preset.name == "Dunes theme test").unwrap().clone();
+        let c = entry.preset.colors.as_ref().unwrap();
+        assert_eq!(c.scheme, gruvbox.scheme);
+        assert_eq!(c.choices.as_ref().unwrap().source, "scheme:gruvbox-dark");
+        let w = entry.preset.wallpaper.as_ref().unwrap();
+        assert_eq!(paths::expand(&w.path), wall);
+        assert_eq!(w.fit, "fit");
+
+        // Somewhere else, then back with the theme.
+        s.settings.colors.source = "color:#336699".into();
+        s.settings.wallpaper.fit = "fill".into();
+        s.colors_applied = None;
+        let file = entry.path.as_ref().unwrap().to_string_lossy().into_owned();
+        s.command("preset.apply", &json!({ "name": entry.preset.name, "file": file })).unwrap();
+        assert_eq!(s.colors_applied.as_ref(), Some(&gruvbox.scheme));
+        assert_eq!(s.settings.colors.source, "scheme:gruvbox-dark");
+        assert_eq!(s.settings.wallpaper.fit, "fit");
+        let asked = s.take_theme_wallpaper().unwrap();
+        assert_eq!(asked["path"], wall.to_string_lossy().as_ref());
+        assert_eq!(asked["keepColors"], true, "the wallpaper must not recolor over the theme");
+        assert!(s.take_theme_wallpaper().is_none());
+
+        // Look only leaves both alone.
+        s.colors_applied = None;
+        s.command(
+            "preset.apply",
+            &json!({ "name": entry.preset.name, "file": file, "lookOnly": true }),
+        )
+        .unwrap();
+        assert!(s.colors_applied.is_none());
+        assert!(s.take_theme_wallpaper().is_none());
+
+        // A wallpaper gone from this machine is left out, and said so.
+        std::fs::remove_file(&wall).unwrap();
+        let msg = s
+            .command("preset.apply", &json!({ "name": entry.preset.name, "file": file }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.contains("not on this machine"), "{msg}");
+        assert!(s.take_theme_wallpaper().is_none());
+        for e in [plain_path(&s, "Plain theme test"), entry.path.clone()] {
+            let _ = std::fs::remove_file(e.unwrap());
+        }
+    }
+
+    fn plain_path(s: &Session, name: &str) -> Option<PathBuf> {
+        s.presets.iter().find(|e| e.preset.name == name).and_then(|e| e.path.clone())
+    }
+
+    #[test]
+    fn updating_a_theme_overwrites_its_own_file() {
+        let mut s = session();
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 3 })).unwrap();
+        s.command("preset.save", &json!({ "name": "Update theme test", "description": "first" }))
+            .unwrap();
+        let entry =
+            s.presets.iter().find(|e| e.preset.name == "Update theme test").unwrap().clone();
+        let file = entry.path.clone().unwrap();
+        let count = s.presets.len();
+
+        s.command("look.set", &json!({ "key": "decoration.rounding", "value": 9 })).unwrap();
+        s.command("preset.save", &json!({ "name": "ignored", "file": file.to_string_lossy() }))
+            .unwrap();
+        assert_eq!(s.presets.len(), count, "no second theme");
+        let again = s.presets.iter().find(|e| e.path.as_ref() == Some(&file)).unwrap();
+        assert_eq!(again.preset.name, "Update theme test", "the name stays");
+        assert_eq!(again.preset.description, "first", "so does the description");
+        assert_eq!(again.preset.options["decoration.rounding"], json!(9));
+
+        // A built-in one is not overwritten.
+        assert!(s
+            .command("preset.save", &json!({ "name": "Soft glass", "file": "/nope.json" }))
+            .is_err());
+        let _ = std::fs::remove_file(&file);
     }
 
     #[test]

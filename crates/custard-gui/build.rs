@@ -20,6 +20,7 @@ fn main() {
         "qml/components/PasswordDialog.qml",
         "qml/components/PillButton.qml",
         "qml/components/Raised.qml",
+        "qml/components/SaveNote.qml",
         "qml/components/ShaderPicker.qml",
         "qml/components/ShaderPreview.qml",
         "qml/components/Tip.qml",
