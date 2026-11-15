@@ -1,0 +1,6 @@
+# The upstream versions hyprcustard was last checked against, by
+# `make upstream-check` (scripts/upstream-check). Written by it; commit it
+# with the release.
+hws = "c84e9bae0503773e647eee50ef3e2ea484660fd4"
+hws_hyprland = "0.57.2"
+fsc = "v0.6.6"
