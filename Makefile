@@ -9,7 +9,8 @@ WATCH := custard-watch
 QMLLINT ?= qmllint
 QML_FILES := $(shell find crates/custard-gui/qml -name '*.qml')
 
-.PHONY: all build release test check install uninstall clean shots aur-bin icons shaders local-pkg
+.PHONY: all build release test check install uninstall clean shots aur-bin icons shaders local-pkg \
+	upstream-check bump
 
 all: release
 
@@ -64,6 +65,22 @@ ICONS := crates/custard-gui/icons
 icons:
 	rsvg-convert -w 64 -h 64 $(ICONS)/hyprcustard-tray.svg -o $(ICONS)/hyprcustard-tray.png
 	rsvg-convert -w 128 -h 128 $(ICONS)/hyprcustard.svg -o $(ICONS)/hyprcustard.png
+
+# Before every release: the HyprWindowShade and Fishsticks & Custard people
+# actually get, against what hyprcustard writes for them and mirrors of them.
+# Lists what is gone, changed or new, and fails until each is adjusted or
+# acknowledged. See scripts/upstream-check and crates/custard-core/src/upstream.rs.
+upstream-check:
+	scripts/upstream-check
+
+# A release's version bump, once the upstream check passes:
+# `make bump VERSION=0.9.2`, then commit (with packaging/upstream.toml), push
+# and tag.
+bump: upstream-check
+	@test -n "$(VERSION)" || { echo "usage: make bump VERSION=x.y.z"; exit 1; }
+	sed -i 's/^version = ".*"$$/version = "$(VERSION)"/' Cargo.toml
+	sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' packaging/PKGBUILD
+	$(CARGO) update -w -q
 
 # The app's shape shader, compiled for every graphics API Qt can use.
 # Committed, so building does not need qsb (qt6-shadertools); run this after

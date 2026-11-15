@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Check hyprcustard against the HyprWindowShade and Fishsticks & Custard that
+# people actually get, before a release. Run as `make upstream-check`.
+#
+# - HyprWindowShade: hyprpm builds the plugin commit pinned for the newest
+#   Hyprland in its hyprpm.toml, so that is the one checked. Commits on main
+#   past it are listed: they reach people when the pin moves.
+# - Fishsticks & Custard: its pacman repository is built from the newest
+#   v* tag, so that is the one checked. Commits on main past it are listed.
+#
+# The comparison itself is crates/custard-core/src/upstream.rs. When it
+# passes, the versions checked are written to packaging/upstream.toml, so the
+# next run can show what changed upstream since; commit that file with the
+# release.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+cache=target/upstream
+record=packaging/upstream.toml
+mkdir -p "$cache"
+
+hws_url=https://github.com/ManofJELLO/HyprWindowShade
+fsc_url=https://github.com/ManofJELLO/fishsticks-and-custard
+
+fetch() { # url dir
+    if [ -d "$2/.git" ]; then
+        git -C "$2" fetch -q --tags --force origin
+    else
+        git clone -q --filter=blob:none "$1" "$2"
+    fi
+}
+
+recorded() { # key
+    [ -f "$record" ] || return 0
+    sed -n "s/^$1 = \"\\(.*\\)\"$/\\1/p" "$record"
+}
+
+since() { # dir old new label
+    local old=$2 new=$3
+    if [ -z "$old" ]; then
+        echo "  (first check: nothing recorded yet)"
+    elif [ "$(git -C "$1" rev-parse "$old^{commit}" 2>/dev/null)" = "$(git -C "$1" rev-parse "$new^{commit}")" ]; then
+        echo "  unchanged since the last check ($old)"
+    else
+        echo "  changed since the last check ($old):"
+        git -C "$1" log --oneline --no-decorate "$old..$new" | sed 's/^/    /'
+    fi
+}
+
+echo "Fetching HyprWindowShade and Fishsticks & Custard..."
+fetch "$hws_url" "$cache/HyprWindowShade"
+fetch "$fsc_url" "$cache/fishsticks-and-custard"
+hws=$cache/HyprWindowShade
+fsc=$cache/fishsticks-and-custard
+
+# --- HyprWindowShade: the newest pin --------------------------------------
+manifest=$(git -C "$hws" show origin/HEAD:hyprpm.toml)
+pin_line=$(printf '%s\n' "$manifest" | grep -E '^\s*\["[0-9a-f]{40}",\s*"[0-9a-f]{40}"\]' | tail -1)
+hws_pin=$(printf '%s\n' "$pin_line" | sed -E 's/.*"[0-9a-f]{40}",\s*"([0-9a-f]{40})".*/\1/')
+hypr_ver=$(printf '%s\n' "$pin_line" | sed -nE 's/.*#\s*(.*)$/\1/p')
+hws_release=$(git -C "$hws" tag -l 'v*' --sort=-v:refname | head -1)
+git -C "$hws" checkout -q --detach "$hws_pin"
+
+echo
+echo "HyprWindowShade ${hws_pin:0:7} (pinned for Hyprland ${hypr_ver:-?}; newest release tag ${hws_release:-none})"
+since "$hws" "$(recorded hws)" "$hws_pin"
+ahead=$(git -C "$hws" log --oneline --no-decorate "$hws_pin..origin/HEAD" -- '*.cpp' '*.hpp' | wc -l)
+if [ "$ahead" -gt 0 ]; then
+    echo "  on main, not pinned yet ($ahead touching the source):"
+    git -C "$hws" log --oneline --no-decorate "$hws_pin..origin/HEAD" -- '*.cpp' '*.hpp' | sed 's/^/    /'
+fi
+
+# --- Fishsticks & Custard: the newest tag ---------------------------------
+fsc_tag=$(git -C "$fsc" tag -l 'v*' --sort=-v:refname | head -1)
+git -C "$fsc" checkout -q --detach "$fsc_tag"
+
+echo
+echo "Fishsticks & Custard $fsc_tag"
+since "$fsc" "$(recorded fsc)" "$fsc_tag"
+ahead=$(git -C "$fsc" log --oneline "$fsc_tag..origin/HEAD" | wc -l)
+if [ "$ahead" -gt 0 ]; then
+    echo "  on main, not released yet ($ahead):"
+    git -C "$fsc" log --oneline --no-decorate "$fsc_tag..origin/HEAD" | sed 's/^/    /'
+fi
+
+# --- Compare ----------------------------------------------------------------
+echo
+echo "Comparing..."
+log=$cache/check.log
+if HYPRCUSTARD_UPSTREAM_HWS="$PWD/$hws" HYPRCUSTARD_UPSTREAM_FSC="$PWD/$fsc" \
+    cargo test -q -p custard-core --lib upstream:: -- --ignored --nocapture --test-threads=1 \
+    >"$log" 2>&1; then
+    grep -E 'nothing to adjust' "$log" | sed 's/^\.*//'
+    cat >"$record" <<EOF
+# The upstream versions hyprcustard was last checked against, by
+# \`make upstream-check\` (scripts/upstream-check). Written by it; commit it
+# with the release.
+hws = "$hws_pin"
+hws_hyprland = "$hypr_ver"
+fsc = "$fsc_tag"
+EOF
+    echo
+    echo "All clear. Recorded the versions in $record."
+else
+    # The report is the panic message of each failing test.
+    sed -n '/to adjust$/,/^$/p; /nothing to adjust/p' "$log" | sed 's/^\.*//; /^thread /d'
+    if ! grep -q 'to adjust' "$log"; then
+        cat "$log"
+    fi
+    echo
+    echo "Adjust hyprcustard, or list what is left out on purpose in an ACK table"
+    echo "in crates/custard-core/src/upstream.rs, then run this again."
+    exit 1
+fi

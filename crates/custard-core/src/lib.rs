@@ -45,6 +45,10 @@ pub mod shader;
 pub mod theme;
 pub mod walls;
 
+// Run by `make upstream-check` before a release.
+#[cfg(test)]
+mod upstream;
+
 pub use error::{Error, Result};
 pub use session::Session;
 
