@@ -34,7 +34,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn comment(self) -> &'static str {
+    pub(super) fn comment(self) -> &'static str {
         match self {
             Kind::Lua => "-- ",
             _ => "# ",
@@ -89,6 +89,13 @@ pub fn sources(config_home: &Path, home: Option<&Path>, hypr_config: &Path) -> V
         }
     }
     out.retain(|s| s.path.is_file());
+    out
+}
+
+/// The Hyprland config and the files it sources.
+pub(crate) fn hypr_sources(hypr_config: &Path) -> Vec<Source> {
+    let mut out = Vec::new();
+    hypr_files(hypr_config, &mut out, 0);
     out
 }
 
@@ -148,14 +155,14 @@ fn resolve(path: &str, dir: &Path) -> PathBuf {
 }
 
 /// A quoted string at the start of `s`, and what follows it.
-fn quoted(s: &str) -> Option<(String, &str)> {
+pub(super) fn quoted(s: &str) -> Option<(String, &str)> {
     let q = s.chars().next().filter(|c| *c == '"' || *c == '\'')?;
     let end = s[1..].find(q)? + 1;
     Some((s[1..end].to_string(), &s[end + 1..]))
 }
 
 /// An unquoted or quoted shell word, with the quotes taken off.
-fn word(s: &str) -> Option<(String, &str)> {
+pub(super) fn word(s: &str) -> Option<(String, &str)> {
     let s = s.trim_start();
     if let Some(q) = quoted(s) {
         return Some(q);
@@ -165,7 +172,7 @@ fn word(s: &str) -> Option<(String, &str)> {
 }
 
 /// What's left is nothing but an end of statement or a comment.
-fn ends(rest: &str, kind: Kind) -> bool {
+pub(super) fn ends(rest: &str, kind: Kind) -> bool {
     let rest = rest.trim_start();
     let rest = rest.strip_prefix(';').unwrap_or(rest).trim_start();
     rest.is_empty()
@@ -221,7 +228,7 @@ pub fn value_of(kind: Kind, line: &str) -> Option<String> {
 }
 
 /// Split a line into its indent and the rest.
-fn indent(line: &str) -> (&str, &str) {
+pub(super) fn indent(line: &str) -> (&str, &str) {
     let at = line.len() - line.trim_start().len();
     line.split_at(at)
 }
@@ -275,7 +282,7 @@ pub fn put_back(kind: Kind, text: &str) -> String {
 }
 
 /// Replace lines, keeping the file's line endings and final newline.
-fn map_lines(text: &str, f: impl Fn(&str) -> Option<String>) -> String {
+pub(super) fn map_lines(text: &str, f: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len() + 64);
     for piece in text.split_inclusive('\n') {
         let (line, end) = match piece.strip_suffix("\r\n") {

@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::pins::{self, Pin};
 use super::scheme::Scheme;
 use super::starship;
 use super::toolkits::{self, Desktop, KVANTUM_THEME};
@@ -211,7 +212,8 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
             replaces: false,
         },
     ];
-    list.extend(toolkit_targets(config_home, desk));
+    let pins = super::pins::find(&super::qt_style::hypr_sources(hypr_config));
+    list.extend(toolkit_targets(config_home, desk, &pins));
     for t in &mut list {
         if t.id == "starship" {
             t.wired = starship::wired(&std::fs::read_to_string(&t.config).unwrap_or_default());
@@ -228,7 +230,7 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
 }
 
 /// GTK 3, GTK 4, qt6ct, qt5ct and Kvantum. See [`toolkits`].
-fn toolkit_targets(config_home: &Path, desk: &Desktop) -> Vec<Target> {
+fn toolkit_targets(config_home: &Path, desk: &Desktop, pins: &[Pin]) -> Vec<Target> {
     let lib = |name: &str| {
         [
             "/usr/lib",
@@ -263,6 +265,17 @@ fn toolkit_targets(config_home: &Path, desk: &Desktop) -> Vec<Target> {
                  the adw-gtk3 theme. Applying also sets the desktop's light or dark \
                  preference to match.",
             );
+            let set = pins::live(pins, "color-scheme");
+            if let Some(first) = set.first() {
+                warning = format!(
+                    "Your Hyprland config sets the light or dark preference to {} at {} each \
+                     time Hyprland runs it, over the one Applying sets, so apps keep that \
+                     whatever the scheme is.",
+                    first.value,
+                    pins::places(&set)
+                );
+                fix = "Take it out".into();
+            }
         } else if !follows {
             warning = format!(
                 "Your GTK theme, {}, draws with fixed colors of its own, so GTK 3 apps keep \
@@ -274,6 +287,29 @@ fn toolkit_targets(config_home: &Path, desk: &Desktop) -> Vec<Target> {
             } else {
                 warning.push_str(" Install it to use it (on Arch, the adw-gtk-theme package).");
             }
+            let set = pins::live(pins, "gtk-theme");
+            if !set.is_empty() && !fix.is_empty() {
+                warning.push_str(&format!(
+                    " Your Hyprland config sets the theme each time Hyprland runs it, at {}; \
+                     switching takes that line out too, or it would switch back.",
+                    pins::places(&set)
+                ));
+            }
+        } else if let Some(first) = pins::live(pins, "gtk-theme").first() {
+            // The theme follows now, but a line will put its own back, or
+            // undo the light or dark version Applying chooses.
+            let set = pins::live(pins, "gtk-theme");
+            warning = format!(
+                "Your Hyprland config sets the GTK theme to {} at {} each time Hyprland runs it",
+                first.value,
+                pins::places(&set)
+            );
+            warning.push_str(&if first.value != desk.gtk_theme {
+                format!(", over {}.", desk.gtk_theme)
+            } else {
+                ", so the light or dark version Applying chooses does not last.".to_string()
+            });
+            fix = "Take it out".into();
         }
         if replaces {
             if !warning.is_empty() {

@@ -1902,25 +1902,72 @@ impl Session {
     }
 
     /// Make the change a target's row offers to let the scheme show: for
-    /// GTK 3, switching to adw-gtk3.
+    /// GTK 3, switching to adw-gtk3; for either, taking out the lines in
+    /// the Hyprland config that set the GTK theme or the light or dark
+    /// preference back each time Hyprland runs them.
     fn fix_colors(&mut self, payload: &Value) -> Result<Option<String>> {
         let id = id_of(payload)?;
-        if id != "gtk3" {
-            return Err(Error::other(format!("there is nothing to fix for `{id}`")));
-        }
+        let key = match id {
+            "gtk3" => "gtk-theme",
+            "gtk4" => "color-scheme",
+            _ => return Err(Error::other(format!("there is nothing to fix for `{id}`"))),
+        };
         let home = paths::apps_config_home();
-        let desk = colors::toolkits::Desktop::read(&home);
         let dark = match (&self.colors_applied, &self.colors_built) {
             (Some(s), _) => s.dark,
             (None, Some(Ok(b))) => b.scheme.dark,
             _ => self.settings.colors.dark,
         };
-        let was =
-            colors::toolkits::use_adw_gtk3(&home, &desk, dark, self.settings.backups_to_keep)?;
-        let now = desk.adw_gtk3(dark).unwrap_or("adw-gtk3");
-        Ok(Some(format!(
-            "Switched the GTK theme to {now} (it was {was}). Apps opened from now on use it"
-        )))
+        let took = self.take_out_pins(key)?;
+        let took = (!took.is_empty()).then(|| took.join(", "));
+        let desk = colors::toolkits::Desktop::read(&home);
+        let msg = if id == "gtk3" && !desk.gtk_theme_follows() {
+            let was =
+                colors::toolkits::use_adw_gtk3(&home, &desk, dark, self.settings.backups_to_keep)?;
+            let now = desk.adw_gtk3(dark).unwrap_or("adw-gtk3");
+            let mut m = format!("Switched the GTK theme to {now} (it was {was})");
+            if let Some(files) = &took {
+                m.push_str(&format!(" and took the line that set it back out of {files}"));
+            }
+            m.push_str(". Apps opened from now on use it");
+            m
+        } else if let Some(files) = took {
+            // Put the preference, and adw-gtk3's version, where the scheme
+            // wants them now the line is out.
+            let note = colors::toolkits::gtk_follow(&home, dark)
+                .map(|n| format!(" ({n})"))
+                .unwrap_or_default();
+            let what = if id == "gtk3" { "GTK theme" } else { "light or dark preference" };
+            format!(
+                "Took the line that set the {what} out of {files}, and set it to match the \
+                 scheme{note}"
+            )
+        } else {
+            "There was nothing to change".to_string()
+        };
+        self.refresh_desk();
+        Ok(Some(msg))
+    }
+
+    /// Comment out the lines in the Hyprland config, and the files it
+    /// sources, that set `key` with gsettings. Returns the files changed.
+    fn take_out_pins(&self, key: &str) -> Result<Vec<String>> {
+        use colors::pins;
+        let sources = colors::qt_style::hypr_sources(&self.settings.resolved_config_path());
+        let all = pins::find(&sources);
+        let live = pins::live(&all, key);
+        let mut files = Vec::new();
+        for src in sources.iter().filter(|src| live.iter().any(|p| p.path == src.path)) {
+            let text = paths::read_to_string(&src.path)?;
+            let next = pins::take_out(src.kind, &text, &[key]);
+            if next != text {
+                guard_test_write(&src.path);
+                paths::backup(&src.path, self.settings.backups_to_keep)?;
+                paths::write_atomic(&src.path, &next)?;
+                files.push(paths::contract(&src.path));
+            }
+        }
+        Ok(files)
     }
 
     fn colors_view(&self) -> Value {
@@ -3345,6 +3392,33 @@ mod tests {
         assert_ne!(s.state()["colors"]["qtStyle"]["action"], "put");
         let msg = s.command("colors.qtStyle", &json!({ "take": false })).unwrap().unwrap();
         assert!(msg.contains("has not taken"), "{msg}");
+    }
+
+    /// A config line that sets the light or dark preference each reload is
+    /// shown on the GTK 4 row, and its fix takes out that line alone.
+    #[test]
+    fn gsettings_lines_that_undo_the_scheme_are_taken_out() {
+        let mine = "hl.exec_cmd(\"gsettings set org.gnome.desktop.interface icon-theme 'I'\")\n\
+                    hl.exec_cmd(\"gsettings set org.gnome.desktop.interface gtk-theme 'G'\")\n\
+                    hl.exec_cmd(\"gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'\")\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        let row =
+            |s: &Session, id: &str| s.desk.targets.iter().find(|t| t.id == id).cloned().unwrap();
+        let g4 = row(&s, "gtk4");
+        assert_eq!(g4.fix, "Take it out");
+        assert!(g4.warning.contains("prefer-dark") && g4.warning.contains(":3"), "{}", g4.warning);
+
+        let msg = s.command("colors.fix", &json!({ "id": "gtk4" })).unwrap().unwrap();
+        assert!(msg.starts_with("Took the line that set the light or dark preference"), "{msg}");
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].starts_with("hl.exec_cmd") && lines[1].starts_with("hl.exec_cmd"));
+        assert!(lines[2].starts_with("-- [hyprcustard took this out"), "{text}");
+        assert_eq!(row(&s, "gtk4").fix, "");
+
+        let msg = s.command("colors.fix", &json!({ "id": "gtk4" })).unwrap().unwrap();
+        assert_eq!(msg, "There was nothing to change");
     }
 
     /// Flipping a toggle on the Settings page writes that toggle alone:
