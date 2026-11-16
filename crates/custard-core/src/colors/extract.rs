@@ -10,9 +10,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use material_colors::color::Rgb;
+use material_colors::hct::Hct;
 use material_colors::quantize::{Quantizer, QuantizerCelebi};
 use material_colors::score::Score;
 
+use super::scheme::Cast;
 use crate::error::{Error, Result};
 
 /// The side of the square each frame is shrunk to. Colors, not detail, are
@@ -225,6 +227,28 @@ pub fn candidates(pixels: &[Rgb]) -> Vec<Rgb> {
     Score::score(&q.color_to_count, Some(5), None, None)
 }
 
+/// The cast of the half of the wallpaper a scheme's surfaces stand for: its
+/// darker half for a dark scheme, its lighter half for a light one.
+///
+/// The pixels are averaged in RGB before the hue is read, so scattered
+/// colors cancel out and what is left is the picture's overall tint there —
+/// the cool of a night street, the warm of a sunlit wall.
+pub fn cast(pixels: &[Rgb], dark: bool) -> Cast {
+    if pixels.is_empty() {
+        return Cast { hue: 0.0, chroma: 0.0 };
+    }
+    let mut toned: Vec<(f64, Rgb)> = pixels.iter().map(|p| (Hct::new(*p).get_tone(), *p)).collect();
+    toned.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let half = toned.len().div_ceil(2);
+    let side = if dark { &toned[..half] } else { &toned[toned.len() - half..] };
+    let n = side.len() as f64;
+    let mean = |f: fn(&Rgb) -> u8| {
+        (side.iter().map(|(_, p)| f64::from(f(p))).sum::<f64>() / n).round() as u8
+    };
+    let h = Hct::new(Rgb::new(mean(|p| p.red), mean(|p| p.green), mean(|p| p.blue)));
+    Cast { hue: h.get_hue(), chroma: h.get_chroma() }
+}
+
 /// Which candidate to build on.
 ///
 /// `prominent` takes the best-ranked one; `colorful`, the most saturated of
@@ -268,6 +292,19 @@ mod tests {
         let c = candidates(&vec![Rgb::from_u32(0x808080); 1000]);
         assert_eq!(c.len(), 1);
         assert_eq!(pick(&c, "prominent"), Rgb::from_u32(0x4285f4));
+    }
+
+    #[test]
+    fn the_cast_comes_from_the_matching_half() {
+        // Cool teal shadows under a warm, bright top half.
+        let mut pixels = vec![Rgb::new(0x10, 0x18, 0x18); 60];
+        pixels.extend(vec![Rgb::new(0xf0, 0xc0, 0x80); 40]);
+        let dark = cast(&pixels, true);
+        assert!((160.0..230.0).contains(&dark.hue), "dark hue {}", dark.hue);
+        let light = cast(&pixels, false);
+        assert!((40.0..100.0).contains(&light.hue), "light hue {}", light.hue);
+        assert!(cast(&[Rgb::new(0x20, 0x20, 0x20); 10], true).chroma < 1.0);
+        assert_eq!(cast(&[], true).chroma, 0.0);
     }
 
     #[test]

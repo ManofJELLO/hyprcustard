@@ -271,6 +271,27 @@ Item {
                         }
                     }
                 }
+                Toggle {
+                    visible: page.mode === "wallpaper"
+                    text: "Tint surfaces from the wallpaper itself, not the seed"
+                    tooltip: "Material, like matugen, gives backgrounds the seed's hue, so an "
+                             + "orange seed makes brown darks. This takes their tint from the "
+                             + "wallpaper's shadows (or its highlights, when light) instead."
+                    checked: page.choice.wallpaper_surfaces === true
+                    onToggled: page.set({ wallpaper_surfaces: checked })
+                }
+                LabeledSlider {
+                    visible: page.mode === "wallpaper"
+                    width: parent.width
+                    label: "Nudge the seed's hue (degrees)"
+                    from: -90
+                    to: 90
+                    stepSize: 5
+                    integer: true
+                    value: page.choice.hue_nudge || 0
+                    markValue: 0
+                    onSettled: function (v) { page.set({ hue_nudge: Math.round(v) }) }
+                }
                 FieldRow {
                     id: monitorRow
                     readonly property var monitors: (page.built && page.built.monitors) || []

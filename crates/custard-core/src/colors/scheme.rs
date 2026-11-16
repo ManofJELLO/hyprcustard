@@ -12,6 +12,7 @@ use material_colors::blend::harmonize;
 use material_colors::color::Rgb;
 use material_colors::dynamic_color::{DynamicScheme, Variant};
 use material_colors::hct::Hct;
+use material_colors::palette::TonalPalette;
 use serde::{Deserialize, Serialize};
 
 /// Every Material role a scheme carries, in the order matugen lists them.
@@ -136,11 +137,52 @@ pub fn variant(style: &str) -> Variant {
     }
 }
 
+/// The cast of a wallpaper's neutral areas, for surfaces to take on: its
+/// hue, and how strong it is in HCT chroma.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Cast {
+    /// HCT hue, 0 to 360.
+    pub hue: f64,
+    /// HCT chroma; near 0 for a gray.
+    pub chroma: f64,
+}
+
+/// The chroma at which a wallpaper's cast tints surfaces fully. Below it the
+/// tint fades, so a wallpaper with truly gray shadows gets gray surfaces
+/// rather than a hue read out of noise.
+const FULL_CAST: f64 = 4.0;
+
 /// Build a scheme from one seed color.
 ///
 /// `contrast` runs from -1 (softer) through 0 (as designed) to 1 (sharper).
 pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) -> Scheme {
-    let s = DynamicScheme::by_variant(seed, &variant(style), dark, Some(contrast.clamp(-1.0, 1.0)));
+    from_seed_cast(name, seed, style, dark, contrast, None)
+}
+
+/// [`from_seed`], with the surfaces optionally tinted by `cast` instead of
+/// the seed.
+///
+/// Material gives every surface the seed's hue at low chroma, so an orange
+/// seed makes brown backgrounds even when the wallpaper's darks are cool.
+/// With a cast the accents still come from the seed, but the neutral
+/// palettes take the cast's hue. Their chroma stays the style's own, faded
+/// when the cast is weaker than [`FULL_CAST`].
+pub fn from_seed_cast(
+    name: &str,
+    seed: Rgb,
+    style: &str,
+    dark: bool,
+    contrast: f64,
+    cast: Option<Cast>,
+) -> Scheme {
+    let mut s =
+        DynamicScheme::by_variant(seed, &variant(style), dark, Some(contrast.clamp(-1.0, 1.0)));
+    if let Some(c) = cast {
+        let keep = (c.chroma / FULL_CAST).clamp(0.0, 1.0);
+        s.neutral_palette = TonalPalette::of(c.hue, s.neutral_palette.chroma() * keep);
+        s.neutral_variant_palette =
+            TonalPalette::of(c.hue, s.neutral_variant_palette.chroma() * keep);
+    }
     let mut roles = BTreeMap::new();
     for name in ROLES {
         let rgb = if *name == "source_color" { seed } else { role_of(&s, name) };
@@ -366,6 +408,16 @@ pub fn chroma(c: Rgb) -> f64 {
     Hct::new(c).get_chroma()
 }
 
+/// `c` with its hue turned by `degrees`, its chroma and tone kept as far as
+/// the screen's colors allow.
+pub fn turn_hue(c: Rgb, degrees: f64) -> Rgb {
+    if degrees == 0.0 {
+        return c;
+    }
+    let h = Hct::new(c);
+    Hct::from((h.get_hue() + degrees).rem_euclid(360.0), h.get_chroma(), h.get_tone()).into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,6 +507,34 @@ mod tests {
         assert_eq!(n.len(), ROLES.len() + 16);
         assert_eq!(n[0].0, "background");
         assert_eq!(n.last().unwrap(), &("base0F".to_string(), "#d65d0e".to_string()));
+    }
+
+    #[test]
+    fn a_cast_tints_the_surfaces_but_not_the_accents() {
+        let seed = Rgb::from_u32(0xdd882d);
+        let plain = from_seed("p", seed, "tonal-spot", true, 0.0);
+        let teal = Cast { hue: 190.0, chroma: 6.0 };
+        let cast = from_seed_cast("c", seed, "tonal-spot", true, 0.0, Some(teal));
+        assert_eq!(plain.role("primary"), cast.role("primary"));
+        let hue = |s: &Scheme, r: &str| Hct::new(parse(s.role(r)).unwrap()).get_hue();
+        assert!(hue(&plain, "surface_container") < 90.0);
+        assert!((150.0..230.0).contains(&hue(&cast, "surface_container")));
+        // A gray cast makes gray surfaces, not ones tinted by noise.
+        let gray = Cast { hue: 300.0, chroma: 0.0 };
+        let g = from_seed_cast("g", seed, "tonal-spot", true, 0.0, Some(gray));
+        assert!(chroma(parse(g.role("surface_container")).unwrap()) < 1.0);
+    }
+
+    #[test]
+    fn turning_the_hue_keeps_tone() {
+        let c = Rgb::from_u32(0xdd882d);
+        assert_eq!(turn_hue(c, 0.0), c);
+        let (a, b) = (Hct::new(c), Hct::new(turn_hue(c, 25.0)));
+        assert!((b.get_hue() - a.get_hue() - 25.0).abs() < 2.0);
+        assert!((b.get_tone() - a.get_tone()).abs() < 1.0);
+        assert!(
+            (Hct::new(turn_hue(c, -90.0)).get_hue() - (a.get_hue() + 270.0) % 360.0).abs() < 2.0
+        );
     }
 
     #[test]

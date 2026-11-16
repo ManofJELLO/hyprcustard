@@ -54,6 +54,14 @@ pub struct ColorSettings {
     /// When the wallpaper plays from a folder, read the whole folder rather
     /// than only what is showing — one scheme that suits every clip.
     pub whole_folder: bool,
+    /// For the wallpaper, tint the surfaces with the wallpaper's own cast —
+    /// its shadows for a dark scheme, its highlights for a light one —
+    /// rather than with the seed's hue, as Material and matugen do.
+    pub wallpaper_surfaces: bool,
+    /// For the wallpaper, turn the seed's hue by this many degrees before
+    /// building, -180 to 180: a photo's grading can make a yellow read as
+    /// orange.
+    pub hue_nudge: f64,
     /// Opacity for bar and popup backgrounds, 0.3 to 1.
     pub opacity: f64,
     /// Targets turned off. Everything else that is installed is written.
@@ -76,6 +84,8 @@ impl Default for ColorSettings {
             pick: "prominent".into(),
             monitor: String::new(),
             whole_folder: false,
+            wallpaper_surfaces: false,
+            hue_nudge: 0.0,
             opacity: 1.0,
             off: Vec::new(),
             min_minutes: 5,
@@ -89,6 +99,8 @@ impl ColorSettings {
     pub fn sanitized(mut self) -> Self {
         self.contrast =
             if self.contrast.is_finite() { self.contrast.clamp(-1.0, 1.0) } else { 0.0 };
+        self.hue_nudge =
+            if self.hue_nudge.is_finite() { self.hue_nudge.clamp(-180.0, 180.0) } else { 0.0 };
         self.opacity = if self.opacity.is_finite() { self.opacity.clamp(0.3, 1.0) } else { 1.0 };
         if !scheme::STYLES.iter().any(|(id, ..)| *id == self.style) {
             self.style = "tonal-spot".into();
@@ -188,10 +200,16 @@ pub fn build_from(settings: &ColorSettings, found: &wallpaper::Found) -> Result<
         }
     };
     let ranked = extract::candidates(&pixels);
-    let seed = extract::pick(&ranked, &s.pick);
+    let picked = extract::pick(&ranked, &s.pick);
+    let seed = scheme::turn_hue(picked, s.hue_nudge);
+    let cast = s.wallpaper_surfaces.then(|| extract::cast(&pixels, s.dark));
+    let mut built = scheme::from_seed_cast(&what, seed, &s.style, s.dark, s.contrast, cast);
+    // The page marks the candidate the scheme came from, so the source stays
+    // the one picked; `source_color` is the seed actually built on.
+    built.source = scheme::hex(picked);
     let on = w.monitor.clone().map(|m| format!(" on {m}")).unwrap_or_default();
     Ok(Built {
-        scheme: scheme::from_seed(&what, seed, &s.style, s.dark, s.contrast),
+        scheme: built,
         candidates: ranked.into_iter().map(scheme::hex).collect(),
         from: format!("{what}, shown by {}{on}", w.program),
         wallpaper: Some(w),

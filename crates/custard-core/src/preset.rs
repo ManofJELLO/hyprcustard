@@ -101,6 +101,12 @@ pub struct ColorChoices {
     /// Read a whole wallpaper folder rather than what is showing.
     #[serde(default)]
     pub whole_folder: bool,
+    /// Tint surfaces with the wallpaper's own cast, not the seed's hue.
+    #[serde(default)]
+    pub wallpaper_surfaces: bool,
+    /// Degrees to turn the wallpaper seed's hue.
+    #[serde(default)]
+    pub hue_nudge: f64,
     /// Opacity for bar and popup backgrounds.
     pub opacity: f64,
 }
@@ -115,6 +121,8 @@ impl ColorChoices {
             contrast: settings.contrast,
             pick: settings.pick.clone(),
             whole_folder: settings.whole_folder,
+            wallpaper_surfaces: settings.wallpaper_surfaces,
+            hue_nudge: settings.hue_nudge,
             opacity: settings.opacity,
         }
     }
@@ -129,6 +137,8 @@ impl ColorChoices {
             contrast: self.contrast,
             pick: self.pick.clone(),
             whole_folder: self.whole_folder,
+            wallpaper_surfaces: self.wallpaper_surfaces,
+            hue_nudge: self.hue_nudge,
             opacity: self.opacity,
             ..settings.clone()
         }
