@@ -621,8 +621,101 @@ pub fn models_dir() -> PathBuf {
     dirs::data_dir().unwrap_or_else(|| paths::expand("~/.local/share")).join("fsc").join("models")
 }
 
+/// The languages FSC talks in, from fsc-core's `lang.rs`: its code, and
+/// its Piper voices as `(region, voice)`. The first whose region is the
+/// locale's is used, else the one with region "".
+pub const LANGUAGES: &[(&str, &[(&str, &str)])] = &[
+    ("en", &[("", "en_GB-alan-medium")]),
+    ("de", &[("", "de_DE-thorsten-medium")]),
+    ("fr", &[("", "fr_FR-siwis-medium")]),
+    ("es", &[("ES", "es_ES-davefx-medium"), ("", "es_MX-ald-medium")]),
+    ("it", &[("", "it_IT-paola-medium")]),
+    ("pt", &[("PT", "pt_PT-tug\u{e3}o-medium"), ("", "pt_BR-faber-medium")]),
+    ("nl", &[("BE", "nl_BE-nathalie-medium"), ("", "nl_NL-pim-medium")]),
+    ("pl", &[("", "pl_PL-darkman-medium")]),
+    ("sv", &[("", "sv_SE-nst-medium")]),
+    ("da", &[("", "da_DK-talesyntese-medium")]),
+    ("no", &[("", "no_NO-talesyntese-medium")]),
+    ("fi", &[("", "fi_FI-harri-medium")]),
+    ("cs", &[("", "cs_CZ-jirka-medium")]),
+    ("ru", &[("", "ru_RU-dmitri-medium")]),
+    ("uk", &[("", "uk_UA-tetiana-high")]),
+    ("tr", &[("", "tr_TR-dfki-medium")]),
+    ("hu", &[("", "hu_HU-anna-medium")]),
+    ("ro", &[("", "ro_RO-mihai-medium")]),
+];
+
+/// A language of [`LANGUAGES`] by code; Norwegian answers to nb and nn.
+fn language(
+    code: &str,
+) -> Option<&'static (&'static str, &'static [(&'static str, &'static str)])> {
+    let code = code.trim();
+    let code = if matches!(code, "nb" | "nn") { "no" } else { code };
+    LANGUAGES.iter().find(|(c, _)| c.eq_ignore_ascii_case(code))
+}
+
+/// The desktop's language, as FSC reads it: LC_ALL, else LC_MESSAGES, else
+/// LANG.
+pub fn locale() -> String {
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .find(|v| !v.trim().is_empty())
+        .unwrap_or_default()
+}
+
+/// The Piper voice FSC speaks with, as its `VoiceConfig::voice` works it
+/// out: `piper_voice` when set, unless it is for another of the listed
+/// languages; else the language's usual one. An empty `language` follows
+/// the locale ("de_DE.UTF-8"), whose region picks a regional voice.
+pub fn voice_for(language_setting: &str, piper_voice: &str, locale: &str) -> String {
+    let base = locale.split(['.', '@']).next().unwrap_or("").trim();
+    let (loc_lang, region) = match base {
+        "" | "C" | "POSIX" => (String::new(), String::new()),
+        _ => {
+            let mut parts = base.splitn(2, ['_', '-']);
+            let lang = parts.next().unwrap_or("").to_lowercase();
+            (lang, parts.next().unwrap_or("").to_uppercase())
+        }
+    };
+    let en = &LANGUAGES[0];
+    let setting = language_setting.trim().to_lowercase();
+    // The language's table, its region, and whether it is listed (a code
+    // FSC does not list, such as ja or auto, goes to whisper with English
+    // for the rest, and any voice goes with it).
+    let (lang, region, listed) = if setting.is_empty() {
+        (language(&loc_lang).unwrap_or(en), region, true)
+    } else {
+        match language(&setting) {
+            Some(l) => {
+                let same = language(&loc_lang).is_some_and(|m| m.0 == l.0);
+                (l, if same { region } else { String::new() }, true)
+            }
+            None => (en, String::new(), false),
+        }
+    };
+    let chosen = piper_voice.trim();
+    let chosen_lang = chosen.split(['_', '-']).next().unwrap_or("");
+    if !chosen.is_empty() && (!listed || chosen_lang == lang.0) {
+        return chosen.to_string();
+    }
+    let voices = lang.1;
+    voices
+        .iter()
+        .find(|(r, _)| !r.is_empty() && r.eq_ignore_ascii_case(&region))
+        .or_else(|| voices.iter().find(|(r, _)| r.is_empty()))
+        .map(|(_, v)| *v)
+        .unwrap_or(voices[0].1)
+        .to_string()
+}
+
 /// The model files a config needs, by file name.
 pub fn needed_models(config: &Map<String, Value>) -> Vec<String> {
+    needed_models_in(config, &locale())
+}
+
+/// [`needed_models`], for the desktop language `locale`.
+pub fn needed_models_in(config: &Map<String, Value>, locale: &str) -> Vec<String> {
     let get = |section: &str, key: &str| {
         config
             .get(&format!("{section}.{key}"))
@@ -630,7 +723,7 @@ pub fn needed_models(config: &Map<String, Value>) -> Vec<String> {
             .map(str::to_string)
             .unwrap_or_else(|| default_of(section, key).as_str().unwrap_or("").to_string())
     };
-    let voice = get("voice", "piper_voice");
+    let voice = voice_for(&get("voice", "language"), &get("voice", "piper_voice"), locale);
     vec![
         format!("ggml-{}.bin", get("voice", "whisper_model")),
         "silero_vad.onnx".into(),
@@ -941,12 +1034,12 @@ pub const FIELDS: &[Field] = &[
     f("ui", "block_percent", "Bar block size", "Each bar lights in blocks of this many percent", Kind::Int(1, 50), "10"),
     f("ui", "notify_when_hidden", "Notify when hidden", "A notification when a reply finishes while the popup is hidden", Kind::Bool, "true"),
     f("voice", "whisper_model", "Speech recognition model", "A whisper.cpp model; Download models fetches it", Kind::Text, "\"large-v3-turbo-q5_0\""),
-    f("voice", "language", "Language", "en, another language code, or auto", Kind::Text, "\"en\""),
+    f("voice", "language", "Language", "Spoken and heard. Empty follows your desktop's. en, de, fr, es, it, pt, nl, pl, sv, da, no, fi, cs, ru, uk, tr, hu or ro; another code, such as ja or auto, is heard in that language with English for the rest. FSC's tray switches it too", Kind::Text, "\"\""),
     f("voice", "gpu", "Recognize on the GPU", "whisper on Vulkan", Kind::Bool, "true"),
-    f("voice", "piper_voice", "Voice", "Any voice from huggingface.co/rhasspy/piper-voices", Kind::Text, "\"en_GB-alan-medium\""),
+    f("voice", "piper_voice", "Voice", "Empty is the language's usual one. Any voice from huggingface.co/rhasspy/piper-voices, such as en_US-amy-medium; one for another language gives way to that one's. FSC's tray lists them", Kind::Text, "\"\""),
     f("voice", "speech_rate", "Speaking speed", "Above 1 is faster", Kind::Float(0.5, 2.0), "1.0"),
     f("voice", "speak", "Speak replies", "voice: to spoken questions only. always. never", Kind::Choice(&["voice", "always", "never"]), "\"voice\""),
-    f("voice", "input_device", "Microphone", "Part of its name, such as C920; empty is the system default", Kind::Text, "\"\""),
+    f("voice", "input_device", "Microphone", "Its name or part of it, such as C920; empty is the system default. fsc mic lists them, and FSC's tray switches it", Kind::Text, "\"\""),
     f("voice", "end_silence_ms", "Pause that ends a sentence", "Milliseconds", Kind::Int(100, 5000), "1500"),
     f("voice", "no_speech_timeout_ms", "Give up listening after", "Milliseconds with no speech", Kind::Int(1000, 60000), "6000"),
     f("voice", "max_utterance_secs", "Longest question", "Seconds", Kind::Int(1, 300), "30"),
@@ -1459,7 +1552,7 @@ input_device = \"C920\"
             assert!(checked(f, &v).is_ok(), "{}.{} = {}", f.section, f.key, f.default);
         }
         assert_eq!(
-            needed_models(&Map::new()),
+            needed_models_in(&Map::new(), "en_US.UTF-8"),
             vec![
                 "ggml-large-v3-turbo-q5_0.bin",
                 "silero_vad.onnx",
@@ -1467,6 +1560,31 @@ input_device = \"C920\"
                 "en_GB-alan-medium.onnx.json"
             ]
         );
+    }
+
+    /// FSC's own cases, from `lang.rs` and `config.rs`.
+    #[test]
+    fn the_voice_follows_the_language_as_fsc_works_it_out() {
+        // Empty follows the locale, and its region picks a regional voice.
+        assert_eq!(voice_for("", "", "de_DE.UTF-8"), "de_DE-thorsten-medium");
+        assert_eq!(voice_for("", "", "pt_PT.UTF-8"), "pt_PT-tug\u{e3}o-medium");
+        assert_eq!(voice_for("", "", "nb_NO.UTF-8"), "no_NO-talesyntese-medium");
+        // No locale, or one not listed: English.
+        assert_eq!(voice_for("", "", ""), "en_GB-alan-medium");
+        assert_eq!(voice_for("", "", "ja_JP.UTF-8"), "en_GB-alan-medium");
+        assert_eq!(voice_for("", "", "C.UTF-8"), "en_GB-alan-medium");
+        // Set: the locale's region only counts for the same language.
+        assert_eq!(voice_for("pt", "", "en_GB.UTF-8"), "pt_BR-faber-medium");
+        assert_eq!(voice_for(" ES ", "", "es_ES.UTF-8"), "es_ES-davefx-medium");
+        // A chosen voice is kept, unless it is another listed language's.
+        assert_eq!(voice_for("en", "en_US-amy-medium", ""), "en_US-amy-medium");
+        assert_eq!(voice_for("de", "en_US-amy-medium", ""), "de_DE-thorsten-medium");
+        // An unlisted language keeps any voice.
+        assert_eq!(voice_for("ja", "ja_JP-x-medium", ""), "ja_JP-x-medium");
+        assert_eq!(voice_for("auto", "", ""), "en_GB-alan-medium");
+        let mut c = Map::new();
+        c.insert("voice.language".into(), json!("fr"));
+        assert_eq!(needed_models_in(&c, "en_US.UTF-8")[2], "fr_FR-siwis-medium.onnx");
     }
 
     #[test]

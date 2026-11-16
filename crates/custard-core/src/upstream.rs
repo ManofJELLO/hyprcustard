@@ -64,6 +64,11 @@ const FSC_ACK_COMMANDS: &[(&str, &str)] = &[
     ("model", "takes a model id; the agent's Model setting and FSC's tray cover it"),
     ("mode", "takes a mode; the agent's Mode setting and FSC's tray cover it"),
     ("wake", "takes a phrase; the page's wake phrase setting covers it"),
+    ("language", "takes a language code; the page's Language setting and FSC's tray cover it"),
+    ("voice", "takes a voice; the page's Voice setting and FSC's tray cover it"),
+    ("mic", "takes a microphone's name; the page's Microphone setting and FSC's tray cover it"),
+    ("speak", "takes when to speak; the page's Speak replies setting and FSC's tray cover it"),
+    ("settings", "opens hyprcustard itself, from FSC's tray"),
 ];
 
 /// Plugin uniforms that are not for shaders to declare.
@@ -240,6 +245,7 @@ fn fishsticks_and_custard() {
     fsc_config(&root, &mut r);
     fsc_commands(&root, &mut r);
     fsc_desktop(&root, &mut r);
+    fsc_languages(&root, &mut r);
     fsc_packaging(&root, &mut r);
 
     r.finish();
@@ -434,16 +440,54 @@ fn fsc_desktop(root: &Path, r: &mut Report) {
     let models = read(root, "crates/fsc-core/src/models.rs");
     let theirs = caps1(r#"models_dir\(\)\.join\((?:format!\()?"([^"]+)""#, &models);
     let whisper = fsc::FIELDS.iter().find(|f| f.key == "whisper_model").unwrap().default;
-    let piper = fsc::FIELDS.iter().find(|f| f.key == "piper_voice").unwrap().default;
-    let mine: BTreeSet<String> = fsc::needed_models(&Map::new())
+    let voice = fsc::voice_for("", "", "en_US.UTF-8");
+    let mine: BTreeSet<String> = fsc::needed_models_in(&Map::new(), "en_US.UTF-8")
         .into_iter()
-        .map(|m| m.replace(whisper.trim_matches('"'), "{}").replace(piper.trim_matches('"'), "{}"))
+        .map(|m| m.replace(whisper.trim_matches('"'), "{}").replace(&voice, "{voice}"))
         .collect();
     for m in mine.difference(&theirs) {
         r.gone(format!("model file {m}: the page counts it, FSC no longer downloads it"));
     }
     for m in theirs.difference(&mine) {
         r.new_item(format!("model file {m}: FSC downloads it, the page does not count it"));
+    }
+}
+
+/// The languages and their usual voices, which decide the voice files the
+/// page counts, against `lang.rs`.
+fn fsc_languages(root: &Path, r: &mut Report) {
+    let lang = read(root, "crates/fsc-core/src/lang.rs");
+    let entry = Regex::new(r#"(?s)\bcode:\s*"([a-z]+)",.*?\bvoices:\s*&\[(.*?)\],\s*\n\s*answers"#)
+        .unwrap();
+    let pair = Regex::new(r#"\(\s*"([A-Z]*)",\s*"([^"]+)"\s*\)"#).unwrap();
+    let theirs: BTreeMap<String, Vec<(String, String)>> = entry
+        .captures_iter(&lang)
+        .map(|c| {
+            let voices = pair.captures_iter(&c[2]).map(|p| (p[1].to_string(), p[2].to_string()));
+            (c[1].to_string(), voices.collect())
+        })
+        .collect();
+    assert!(!theirs.is_empty(), "found no languages in lang.rs");
+    let mine: BTreeMap<String, Vec<(String, String)>> = fsc::LANGUAGES
+        .iter()
+        .map(|(code, voices)| {
+            let v = voices.iter().map(|(r, v)| (r.to_string(), v.to_string())).collect();
+            (code.to_string(), v)
+        })
+        .collect();
+    for (code, voices) in &theirs {
+        match mine.get(code) {
+            None => {
+                r.new_item(format!("language {code}: FSC speaks it, the page does not know it"))
+            }
+            Some(m) if m != voices => r.changed(format!(
+                "language {code}: FSC's voices are {voices:?}, the page has {m:?}"
+            )),
+            _ => {}
+        }
+    }
+    for code in mine.keys().filter(|c| !theirs.contains_key(*c)) {
+        r.gone(format!("language {code}: the page knows it, FSC no longer speaks it"));
     }
 }
 
