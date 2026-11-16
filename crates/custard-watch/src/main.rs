@@ -109,6 +109,10 @@ fn main() {
     // Set when follow.toml changed: read it again before anything else. A
     // wake that says so is never dropped, whichever wait it arrives in.
     let mut reread = false;
+    // When a program playing from a folder was first seen with no clip open
+    // — starting up, as at login — and whether it is still being waited for.
+    let mut clip_since: Option<Instant> = None;
+    let mut holding = false;
 
     loop {
         if reread {
@@ -129,7 +133,21 @@ fn main() {
         if look {
             let found = wallpaper::detect();
             let w = found.for_monitor(&snap.monitor);
-            follower.saw(w.map(|w| follow::key(w, snap.whole_folder)));
+            // At login the watcher and the wallpaper program start together,
+            // and it can look before mpv has opened its first clip. Taking
+            // that for the wallpaper would apply the whole folder's colors,
+            // and the clip's would then wait out the minimum gap. Wait for
+            // the clip instead — up to a limit, for a program that never
+            // shows which file it is playing.
+            let starting = w.is_some_and(|w| follow::clip_pending(w, snap.whole_folder));
+            holding = starting
+                && clip_since.get_or_insert_with(Instant::now).elapsed() < follow::CLIP_GRACE;
+            if !starting {
+                clip_since = None;
+            }
+            if !holding {
+                follower.saw(w.map(|w| follow::key(w, snap.whole_folder)));
+            }
             // Watch where the wallpaper comes from, and nowhere else.
             let want: Vec<PathBuf> = w.map(watched_folders).unwrap_or_default();
             folders.retain(|(dir, wd)| {
@@ -182,6 +200,9 @@ fn main() {
                 poll
             }
         };
+        // The clip's opening wakes it through inotify, unless that happened
+        // before the folder was watched: look again soon either way.
+        let wait = if holding { wait.min(Duration::from_secs(1)) } else { wait };
 
         match rx.recv_timeout(wait) {
             Ok(Wake::Wallpaper) => look = true,

@@ -91,6 +91,19 @@ pub fn key(w: &Wallpaper, whole_folder: bool) -> String {
     format!("{}|{}|{}|{showing}", w.program, w.monitor.as_deref().unwrap_or("*"), w.path.display())
 }
 
+/// How long a program playing from a folder may go without a clip open
+/// before the whole folder is sampled instead — long enough for a cold
+/// login, where mpv can take seconds to open its first file.
+pub const CLIP_GRACE: Duration = Duration::from_secs(30);
+
+/// Whether the clip a folder-playing program shows is still unknown, which
+/// is how it looks while it is starting up. Following then would sample
+/// the whole folder — not the clip that is about to be on screen — and the
+/// clip's own colors would wait out the minimum gap behind it.
+pub fn clip_pending(w: &Wallpaper, whole_folder: bool) -> bool {
+    !whole_folder && w.showing.is_none() && w.folder().is_some()
+}
+
 /// What the watcher should do next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Next {
@@ -431,6 +444,23 @@ mod tests {
         };
         assert_ne!(key(&w("a.mp4"), false), key(&w("b.mp4"), false));
         assert_eq!(key(&w("a.mp4"), true), key(&w("b.mp4"), true));
+    }
+
+    #[test]
+    fn a_folder_with_no_clip_open_yet_is_still_starting() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.png");
+        std::fs::write(&file, b"").unwrap();
+        let w = |path: &Path, showing: Option<&Path>| Wallpaper {
+            program: "mpvpaper".into(),
+            monitor: None,
+            path: path.to_path_buf(),
+            showing: showing.map(Path::to_path_buf),
+        };
+        assert!(clip_pending(&w(dir.path(), None), false));
+        assert!(!clip_pending(&w(dir.path(), None), true), "the whole folder needs no clip");
+        assert!(!clip_pending(&w(dir.path(), Some(&file)), false));
+        assert!(!clip_pending(&w(&file, None), false), "a single file is known at once");
     }
 
     #[test]
