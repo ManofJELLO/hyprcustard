@@ -1,132 +1,54 @@
 # hyprcustard
 
-A theming GUI for Hyprland, written in Qt Quick.
+A theming app for Hyprland. Set how Hyprland looks and moves, save the result as a theme, pick
+a wallpaper, and give your bar, launcher, terminal, notifications and GTK and Qt apps one color
+scheme, all from one window, without hand-editing config files.
 
-It grows out of [hyprwindowshade-gui](https://github.com/ManofJELLO/HyprWindowShade-GUI)
-and does everything that did, with the rest of Hyprland theming to follow. Today
-that means [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade), the
-Hyprland plugin that applies GLSL fragment shaders to individual windows and layers.
+![The Look page](docs/look.png)
 
-For **Hyprland itself**, it:
+What you can do with it:
 
-* **Sets Hyprland's own look** — gaps, borders and their gradients, rounding, opacity, dimming,
-  shadow, glow, blur, the desktop background and cursor hiding — live on your desktop as you
-  drag, saved into a block of its own that holds only what you changed. See
-  [The Look page](#the-look-page).
-* **Edits animations and their curves** — every leaf of Hyprland's animation tree, with where
-  its values come from, an editor for dragging a curve's control points, and a preview playing
-  on that curve at that speed. See [Animations](#animations).
-* **Saves and switches themes** — the whole look, animations and curves, and optionally the
-  shaders, colors and wallpaper, under a name, applied with one click, and shareable as a file. See [Themes](#themes-for-hyprland).
+* **Hyprland's look**: gaps, borders and their gradients, rounding, opacity, dimming, shadow,
+  glow and blur. Changes show on your desktop as you drag.
+* **Look rules**: change the look for some windows, layers or workspaces only, such as a
+  see-through terminal, blur behind the bar, or no gaps when a workspace has one window.
+* **Animations**: every Hyprland animation, its speed, style and curve, with a curve editor and
+  a preview.
+* **Themes**: save the whole look under a name, switch between themes with one click, and share
+  them as files.
+* **Wallpaper**: browse your wallpapers and put one up, through the wallpaper program you
+  already use.
+* **Colors**: one color scheme, from a palette, your wallpaper or a color you pick, written for
+  Hyprland, Waybar, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt apps. It can keep
+  following your wallpaper as it changes.
+* **Icons and cursors**: choose an icon theme and a cursor theme for every app at once.
+* **Window shaders**: if you use the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade)
+  plugin, set up its shaders on windows, bars and launchers, tune them with sliders, and preview
+  them on a real window before you save.
 
-For the **HyprWindowShade** plugin, it:
-
-* **Writes the plugin's section of `hyprland.lua` for you** — window rules and their shader
-  tags, layer shaders, open and close animations, keybinds and startup calls — into a block
-  between two marker comments. The rest of your config is never touched.
-* **Edits the shaders themselves** — the `const` values inside a `.glsl`, its `// @duration`
-  and its `// @overlay`. Edits are staged, not written: move what you like, put any single
-  value back, then save that shader when you mean it. The plugin reloads a shader when its
-  mtime changes, so saving is the moment it reaches the screen.
-
-It wears your Qt colors by default, so it looks like the rest of your desktop.
-Gruvbox dark and light are built in if you would rather it did not; any other
-palette is a small TOML file.
+hyprcustard edits your config in clearly marked blocks of its own, backs up every file before
+it writes, and can undo each thing it does.
 
 ---
 
 ## Contents
 
-- [What it looks like](#what-it-looks-like)
-- [Requirements](#requirements) · [Install](#install) · [Build from source](#build-from-source)
-- [How it writes your config](#how-it-writes-your-config) · [The Look page](#the-look-page) · [Look rules](#look-rules) · [Animations](#animations) · [Themes](#themes-for-hyprland)
-- [Wallpaper](#wallpaper) · [Colors for the whole desktop](#colors-for-the-whole-desktop)
-- [Shader parameters](#shader-parameters) · [Seeing a shader before you save it](#seeing-a-shader-before-you-save-it)
-- [Themes](#themes)
-- [Importing rules you already wrote](#importing-rules-you-already-wrote)
-- [Installing the plugin](#installing-the-plugin)
-- [Settings](#settings)
-- [Command line](#command-line)
-- [How it is put together](#how-it-is-put-together)
-- [Things worth knowing](#things-worth-knowing)
+- [Install](#install) · [What you need](#what-you-need)
+- [First steps](#first-steps) · [How saving works](#how-saving-works) · [What it changes in your files](#what-it-changes-in-your-files)
+- Hyprland: [Look](#look) · [Look rules](#look-rules) · [Animation](#animation) · [Themes](#themes)
+- Desktop: [Wallpaper](#wallpaper) · [Colors](#colors) · [Icons](#icons)
+- HyprWindowShade: [Rules and Layers](#rules-and-layers) · [Shaders](#shaders) · [Keybinds](#keybinds) · [Preview and import](#preview-and-import) · [Plugin](#plugin)
+- [Fishsticks & Custard](#fishsticks--custard) · [Settings](#settings) · [Command line](#command-line)
+- [Undoing things](#undoing-things) · [Good to know](#good-to-know)
 
 ---
-
-## What it looks like
-
-![Rules](docs/rules.png)
-
-Seven pages down the left:
-
-| Page | What it does |
-|---|---|
-| **Rules** | Window rules. Match by class or title, then fill any of the plugin's twenty shader tags. |
-| **Shaders** | Everything in your shader folder: what each one declares, and sliders for its tunable constants. Each shader is saved — or reverted, value by value — on its own, and previewed on a real window without leaving the page. |
-| **Layers** | `layershader`, `layeropenanim`, `layercloseanim` by namespace, with live namespaces offered. |
-| **Keybinds** | Toggle binds and session-start calls. |
-| **Preview** | Exactly the Lua that will be written, and the importer. |
-| **Plugin** | Installs, updates and reloads the plugin itself through `hyprpm`, and shows what it prints. |
-| **Settings** | Paths, how the block is written, theme, backups. |
-
-Pages save one of three ways, and the header says which beside its **Save** button:
-
-* **Wait for Save** — Look, Look rules, Animation, Rules, Layers, Keybinds and Preview. Look,
-  Look rules and Animation show a change on the desktop straight away, but only the header
-  **Save** (or Ctrl+S) writes it to your Hyprland config.
-* **Their own Save** — Shaders (**Save shader** writes the `.glsl` you are looking at) and
-  Fishsticks' settings (written to its `config.toml`).
-* **At once** — Wallpaper, Colors, Icons and Settings, and Fishsticks' start and keys. These
-  pages say so at the top.
-
-Anything waiting for a Save is counted in the header, and closing the window asks first.
-
-![Shaders](docs/shaders.png)
-
-*The Shaders page: what a shader declares, its timing, and sliders for the constants inside it.*
-
----
-
-## Requirements
-
-* **Rust 1.82+** and a C++ compiler — the UI is Qt Quick, reached through
-  [CXX-Qt](https://github.com/KDAB/cxx-qt).
-* **Qt 6.4 or newer**, with Qt Quick and Qt Quick Controls. On Arch that is
-  `qt6-base` and `qt6-declarative`.
-* **HyprWindowShade** itself, and a Lua Hyprland config (`~/.config/hypr/hyprland.lua`).
-  Hyprland 0.57 dropped `hyprland.conf` altogether, and so has the plugin.
-* **ffmpeg**, which the Colors page reads wallpapers with — stills and videos alike — and the
-  Wallpaper page makes its previews with.
-* **adw-gtk3** (`adw-gtk-theme` on Arch), the GTK theme that lets GTK 3 apps take the Colors
-  page's scheme. The app never switches to it unasked; the Colors page offers to.
-* For the **Wallpaper** page, a wallpaper program: awww (or swww), hyprpaper, swaybg, or
-  mpvpaper for videos. Whichever you already use is fine.
-
-Hyprland does not have to be running. Without it the app still edits your config and your
-shaders; it just cannot offer you the list of open window classes or live layer namespaces,
-and the "Try it" buttons and the shader preview are disabled.
-
-The preview additionally wants two small tools, neither of which is used anywhere else in
-the app, and both in the Arch repositories:
-
-* `grim`, to read frames out of the compositor it starts. Without it there is no preview.
-* `swaybg`, to draw your wallpaper behind the preview window. Without it the preview still
-  runs, on the flat color of the pane. If swaybg is also what sets your own wallpaper, it
-  costs nothing at all — see [below](#where-the-wallpaper-behind-it-comes-from).
-
-It also opens a terminal as its demo window — kitty, foot, alacritty, ghostty, wezterm or
-xterm, whichever it finds.
-
-
-
-The **Plugin** page needs `hyprpm`, which on Arch is a package of its own rather than part
-of `hyprland`.
 
 ## Install
 
-### Arch: the pacman repository
+### Arch Linux: the pacman repository
 
-Signed packages are built by GitHub Actions for every release and published to this
-repository's [`repo` release](https://github.com/ManofJELLO/hyprcustard/releases/tag/repo).
+Signed packages are published for every release. Set it up once, and hyprcustard then updates
+with the rest of your system.
 
 1. Trust the packaging key:
 
@@ -143,575 +65,378 @@ repository's [`repo` release](https://github.com/ManofJELLO/hyprcustard/releases
    Server = https://github.com/ManofJELLO/hyprcustard/releases/download/repo
    ```
 
-3. Install it, and from then on update it with the rest of the system:
+3. Install it:
 
    ```sh
    sudo pacman -Sy hyprcustard
    ```
 
-The package replaces `hyprcustard-bin` and the local `hyprcustard-git` build if either is
-installed. To build the same package yourself: `cd packaging && makepkg -si`.
+Open it from your app launcher, or run `hyprcustard`.
 
-### The release tarball
+### Other distributions: the release download
 
 Every [release](https://github.com/ManofJELLO/hyprcustard/releases) has a
-`hyprcustard-<version>-x86_64.tar.gz` holding the two binaries (`hyprcustard`, and
-`custard-watch`, which follows the wallpaper), the desktop entry, the license and this
-README, with a `.sha256` beside it. The binaries need nothing but Qt 6 and ffmpeg, because
-the QML is compiled into them (adw-gtk3 is a theme the GTK rows use, not a library).
+`hyprcustard-<version>-x86_64.tar.gz` with a `.sha256` beside it. It holds the two programs,
+`hyprcustard` and `custard-watch` (which keeps colors following the wallpaper), plus a desktop
+entry. Put both programs somewhere on your `PATH`, and the desktop entry in
+`~/.local/share/applications/` if you want it in your launcher. They need Qt 6 (Qt Quick and
+Qt Quick Controls) and ffmpeg.
 
-On Arch, the package for it is `hyprcustard-bin`. Until it is on the AUR, build it from
-this repository — it downloads the release and checks it against the checksum in the
-PKGBUILD:
+### Building it yourself
 
-```sh
-cd packaging/aur-bin && makepkg -si
-```
-
-### Coming from hyprwindowshade-gui
-
-hyprcustard reads and writes the same managed block in `hyprland.lua`, so your
-rules, layers and keybinds show up as they are. The first time it starts it copies
-`settings.toml` and `themes/` from `~/.config/hyprwindowshade-gui/` into
-`~/.config/hyprcustard/`, and leaves the old directory alone. The two apps can be
-installed side by side, but don't edit with both at once.
-
-## Build from source
+You need Rust 1.82 or newer, a C++ compiler and Qt 6.4 or newer.
 
 ```sh
 git clone https://github.com/ManofJELLO/hyprcustard
 cd hyprcustard
-cargo build --release
+cargo build --release          # if Qt is not found: QMAKE=/usr/bin/qmake6 cargo build --release
+make install PREFIX=~/.local   # or: sudo make install   (/usr/local)
 ```
 
-If `cargo` cannot find Qt, point it at qmake:
+Build as yourself before running `make install`, which only copies what was built.
 
-```sh
-QMAKE=/usr/bin/qmake6 cargo build --release
-```
+### Coming from hyprwindowshade-gui
 
-Then either run `./target/release/hyprcustard`, or install it with the desktop entry:
+hyprcustard takes over where hyprwindowshade-gui left off. On first start it copies your
+settings and themes across, and your shader rules, layers and keybinds show up as they were.
+Your old settings are left alone. You can keep both installed, but don't edit with both at the
+same time.
 
-```sh
-sudo make install          # /usr/local by default
-make install PREFIX=~/.local
-```
+## What you need
 
-`make install` only copies what is already in `target/release`; it never builds.
-Build as yourself first, or root's artifacts end up in `target/` and your next
-`cargo build` cannot clean them.
+* **Hyprland 0.57 or newer, with a Lua config** (`~/.config/hypr/hyprland.lua`). Hyprland 0.57
+  replaced `hyprland.conf` with Lua.
+* **ffmpeg**, to read wallpapers for colors and make wallpaper previews.
+* **adw-gtk3** (`adw-gtk-theme` on Arch), so GTK 3 apps can take on your color scheme. The app
+  only switches to it when you ask.
 
-Two `PKGBUILD`s live in `packaging/`: `aur-bin/` installs a released
-binary, and the one beside it builds from
-source instead.
+Each of these is optional, and only matters for the page that uses it:
+
+| For | Install |
+|---|---|
+| The Wallpaper page | a wallpaper program: awww (or swww), hyprpaper, swaybg, or mpvpaper for videos. Keep using the one you have. |
+| Window shaders | the HyprWindowShade plugin, which the **Plugin** page installs for you through `hyprpm` (on Arch, the `hyprpm` package) |
+| The shader preview | `grim`; `swaybg` to show your wallpaper behind it; a terminal such as kitty, foot, alacritty, ghostty, wezterm or xterm |
+| SVG icon previews | `qt6-svg` |
+
+Hyprland doesn't have to be running. Without it you can still edit your config and shaders,
+but nothing is shown live and the list of open windows is empty.
 
 ---
 
-## How it writes your config
+## First steps
 
-Everything the app generates lives between two marker lines:
+1. **Open the app and look around.** Each page shows what your desktop is using right now.
+   Nothing is written until you save or apply something.
+2. **Try a change on the Look page.** It appears on your desktop straight away. Press **Save**
+   (or Ctrl+S) to keep it, or **Discard changes** to put everything back.
+3. **Save the result as a theme** on the Themes page, so you can come back to it after trying
+   something else.
 
-```lua
--- >>> HyprWindowShade (managed by hyprwindowshade-gui) >>>
-...
--- <<< HyprWindowShade (managed by hyprwindowshade-gui) <<<
-```
+The bar along the top shows whether Hyprland is running and the shader plugin is loaded, and
+how the page you're on saves its changes.
 
-The markers still name hyprwindowshade-gui on purpose: they are how the block is found,
-and keeping them means a config written by either app opens in the other.
+## How saving works
 
-Anything above or below is preserved byte for byte. Before every write the file is copied to
-`~/.config/hyprcustard/backups/` with a timestamp, and the write itself is atomic —
-a crash mid-save cannot leave you with half a config, which on Hyprland means a session that
-will not start.
+There are three kinds of page, and each says which it is at the top:
 
-One line inside the block is a comment carrying the whole configuration as JSON. That is what
-the app reads back on the next run, so it never has to parse Lua to know what it wrote. If you
-delete the markers, the app forgets everything and leaves your hand-written Lua alone.
+* **Waits for Save**: Look, Look rules, Animation, Rules, Layers, Keybinds and Preview. Look,
+  Look rules and Animation show a change on your desktop straight away, but only the **Save**
+  button at the top writes it to your config. The header counts what is waiting, and closing
+  the window with something unsaved asks first.
+* **Has its own Save**: Shaders (**Save shader** writes the one file you are looking at), and
+  the settings on the Fishsticks page.
+* **Saves at once**: Wallpaper, Colors, Icons and Settings. On Colors, **Apply** is the moment
+  your apps change.
 
-**Removing it.** *Preview → Remove managed block* deletes the block and nothing else.
+Themes mix the two: saving or deleting a theme happens at once, and applying one shows its look
+straight away. Its colors and wallpaper go on at once too, but its look stays only if you press
+Save.
 
-### What the generated Lua looks like
+## What it changes in your files
 
-```lua
-local hws_shaders = "/home/you/.config/hypr/shaders"
-
-hl.window_rule({
-    name  = "chrome-reading-base",
-    match = { class = "google-chrome" },
-    tag   = "+shader:" .. hws_shaders .. "/reading_mode.glsl",
-})
-
-hl.on("hyprland.start", function()
-    local hws = hl.plugin.HyprWindowShade
-    if not hws then
-        hl.notification.create({ text = "[HyprWindowShade] plugin not loaded", … })
-        return
-    end
-    hws.layershader("rofi", hws_shaders .. "/blur.glsl")
-end)
-
-hl.bind("SUPER + W", function()
-    local hws = hl.plugin.HyprWindowShade
-    if not hws then … end
-    hws.togglewindowshader(hws_shaders .. "/pixelate.glsl")
-end)
-```
-
-Three deliberate choices in there:
-
-* **One `hl.window_rule` per tag.** Hyprland's Lua rule takes one `tag`, and the plugin stacks
-  tags that match the same window. A rule with four tags becomes four calls sharing a match.
-* **The plugin table is looked up inside the closure.** It loads at session start, long after
-  the config is parsed, so looking it up at parse time would give you `nil`. The generated
-  binds also *say so* with a notification rather than failing silently.
-* **Paths go through a local.** One place to change if you move your shader folder. Turn it
-  off in Settings if you would rather see full paths.
-
-### Loading the plugin
-
-Settings can add the loader to the same start handler — `hyprpm reload -n`, or
-`hyprctl plugin load …`. Both run at session start rather than at parse time, which is what
-keeps a corrupt `.so` from taking your desktop with it. The plugin's README has the full
-explanation; it is worth reading once.
-
-### If your plugin loads slowly
-
-Startup calls (layer shaders, class shaders) run inside the `hyprland.start` handler, right
-after the loader. If the plugin has not finished loading by then they are skipped and you get
-a notification. Settings has a **startup delay**: set it above zero and those calls are
-re-issued instead through a shell-delayed `hyprctl dispatch`, which runs once the plugin is
-certainly up. Leave it at zero unless you actually see the problem.
-
----
-
-## The Look page
-
-Every value on the page is what Hyprland is running with right now, read with `hyprctl`, so it
-is right whether your settings live in `hyprland.lua`, in a sourced file, or were changed at
-runtime. Change one and it goes onto the desktop straight away (`hyprctl eval`); turn
-*Show changes on the desktop as you make them* off to change values without that.
-
-**Save** writes the changed values, and only those, into a second managed block at the end of
-`hyprland.lua`:
+**Your own lines are never edited.** Everything hyprcustard writes to `hyprland.lua` goes
+between two marker comments of its own, like this:
 
 ```lua
 -- >>> HyprCustard look (managed by hyprcustard) >>>
--- custard-look-v1 {...}
-
-hl.config({
-    general = {
-        col = {
-            active_border = { colors = { "rgba(33ccffee)", "rgba(00ff99ee)" }, angle = 45 },
-        },
-    },
-    decoration = {
-        rounding = 10,
-    },
-})
+...
 -- <<< HyprCustard look (managed by hyprcustard) <<<
 ```
 
-Hyprland merges repeated `hl.config` calls key by key, so your own `hl.config` stays exactly
-as you wrote it and everything not set here still comes from it. That only works while the
-block comes *after* your own settings; if something later in the file sets the same option
-again, Save says which options did not stick.
+There is one block for each feature you use: **look** (Look, Look rules and Animation),
+**HyprWindowShade** (shader rules), **wallpaper**, **colors**, **cursor**, **autostart** and
+**Fishsticks & Custard**. Everything above and below them stays exactly as you wrote it. The
+**Preview** page shows the HyprWindowShade block before it is written.
 
-A colored bar marks a row set here — the accent color once saved, the warning color while
-unsaved. **Reset** stops setting that one option, **Clear all** stops setting any (and Save
-then takes the block out), and **Discard changes** puts both the page and the desktop back to
-what the file says. Undoing a value on the desktop means a `hyprctl reload config-only`,
-because Hyprland has no way to unset a single option.
+* **Don't edit inside a block by hand.** The app rewrites it on the next save. If you delete a
+  block's two markers, the app forgets that block and leaves the lines alone.
+* **Every write is backed up first.** That covers `hyprland.lua`, shader files and app configs.
+  Backups go to `~/.config/hyprcustard/backups/`, and the last 10 of each file are kept (you can
+  change the number in Settings).
+* **Lines of yours are only changed when you ask.** A few features can take over lines you wrote,
+  such as the command that starts your wallpaper or a cursor setting. Each one does it only when
+  you press a button that says so. The line is commented out with a marker, not deleted, and a
+  matching **Give it back** button restores it exactly.
 
-Colors are shown the way Hyprland writes them, `rrggbbaa`, and the text fields accept that,
-`rgba(...)`, `0xaarrggbb` or `#aarrggbb`. A border gradient can be typed the way a
-`hyprland.conf` writes one: `33ccffee 00ff99ee 45deg`.
+The look block sits at the end of `hyprland.lua` and only sets what you changed, so everything
+else still comes from your own settings. If something later in the file sets the same option
+again, Save tells you which ones didn't stick.
+
+---
+
+## Look
+
+Everything Hyprland draws around your windows: gaps, borders and their gradients, rounding,
+opacity, dimming, shadow, glow, blur, the desktop background and when the cursor hides.
+
+* The values shown are what Hyprland is using right now, wherever they were set: your config, a
+  file it sources, or a change made while running.
+* Changes go onto the desktop as you make them. Turn off **Show changes on the desktop as you
+  make them** if you would rather change values first and see them on Save.
+* A colored bar marks each option set here. **Reset** stops setting one option, **Clear all**
+  stops setting all of them, and **Discard changes** puts the page and the desktop back to what
+  your config says.
+* Colors can be typed as `rrggbbaa`, `rgba(...)`, `0xaarrggbb` or `#aarrggbb`, and a border
+  gradient as `33ccffee 00ff99ee 45deg`.
 
 ## Look rules
 
-The Look page sets how everything looks; **Look rules** changes that for some things only — one
-app see-through, no shadow on tiled windows, blur behind the bar, no gaps when a workspace has
-a single window. A rule is for:
+Change the look for some things only.
 
-* **Windows** — by class or title (regular expressions, as Hyprland takes them), or by being
-  floating, tiled, fullscreen, a dialog, on some workspace, and so on. It can change opacity
-  (focused and unfocused, replacing the global opacity), the border's size and color,
-  rounding, shadow, glow, blur, dimming, decorations and the animation style.
-* **A layer** — by namespace: `waybar`, `rofi`, `notifications`. Blur behind it, how see-through
-  a pixel can be before blur skips it, dimming behind it, its animation.
-* **Workspaces** — `1`, `name:web`, or a selector such as `w[tv1]` (one tiled window) or `f[1]`
-  (a window fullscreen): gaps inside and at the edges, borders, rounding, shadows. **No gaps
-  when there is only one window**, under **Common rules**, adds the two rules Hyprland's example
-  config calls smart gaps. Common rules has a few other ready-made ones; each is an ordinary rule
-  once added.
+* **Windows**, matched by class or title (regular expressions), or by being floating, tiled,
+  fullscreen, a dialog, on a certain workspace, and so on. A window rule can set opacity, border
+  size and color, rounding, shadow, glow, blur, dimming and the animation style.
+* **Layers** such as `waybar`, `rofi` or `notifications`: blur behind them, dimming, and their
+  animation.
+* **Workspaces**, such as `1`, `name:web`, or a selector like `w[tv1]` (one tiled window): gaps,
+  borders, rounding and shadows.
 
-Open windows and layers are offered by name, and Hyprland checks every rule as it is made, so
-one it would not take is refused with its reason instead of being saved. With live edits on, a
-change is on the desktop straight away; Save writes the rules into the look block, after the
-animations:
+**Common rules** has ready-made ones, such as **No gaps when there is only one window**. Open
+windows and layers are offered by name. Hyprland checks each rule as you make it, so a rule it
+won't accept is turned down with the reason.
 
-```lua
-hyprcustard_rules = {}
+Rules you wrote yourself are listed under **In your hyprland.lua** and keep working as they are.
+**Move here** brings one into the app so you can edit it. Your original line is then commented
+out on the next Save, with a note saying where it went.
 
--- Terminal glass
-hyprcustard_rules["lr1"] = hl.window_rule({
-    match = { class = "kitty" },
-    opacity = "0.92 override 0.8 override",
-    no_shadow = true,
-})
-```
+## Animation
 
-Each rule's handle is kept in `hyprcustard_rules` so the app can switch it off and on again
-live. The rules are not given a `name`: Hyprland merges rules of the same name, and a rule
-switched off and added again would bring its old values back with it. The name you give one
-is written as the comment above it instead.
+![The Animation page](docs/animation.png)
 
-Rules you wrote yourself in `hyprland.lua` are listed under **In your hyprland.lua**, and keep
-working as they are. **Move here** brings one into the app to edit: on the next Save your
-original is commented out, after the usual backup, with a line saying where it went.
-Anything in it that is not about looks — `float`, `size` — moves with it unchanged. A rule
-built from variables, or sharing its line with other code, is listed but cannot be moved.
+Every animation Hyprland has, from `global` down to `specialWorkspaceOut`, and where each one's
+settings come from: **set here**, **set in your config**, **inherits from** a parent, or
+**Hyprland's default**. An animation that nothing sets follows its parent, so setting `windows`
+also changes `windowsIn`, `windowsOut` and `windowsMove` until you set one of those itself.
 
-Hyprland merges every rule for one workspace into one, which is why the app keeps one rule per
-workspace, and why, if your config has its own rule for that workspace, a live edit runs yours
-again first — switching the app's rule off would otherwise take yours with it until a reload.
+For the animation you select:
 
-A theme carries the look rules it was saved with, and applying it sets the app's rules to
-exactly those, as it does every other part of the look — so a theme without any, the built-in
-ones included, takes the app's rules away. A rule moved here is one of the app's from then on.
-Rules still in your own `hyprland.lua` are never touched by a theme.
+* **Animate**, **speed** (in milliseconds), **curve**, and **style**, such as `slide`, `popin`
+  or `slidefade`, with its setting.
+* **Preview**: a stand-in window playing the animation on your curve, at your speed. With live
+  changes on, the real animation is already on your desktop.
+* **The curve**: drag its two control points. A point above the dashed box overshoots.
+  Dragging a curve changes it for everything that uses it. Use **Copy as new curve** to change
+  it for this animation only.
 
-## Animations
+## Themes
 
-The Animation page lists every leaf of Hyprland's animation tree, from `global` down to
-`specialWorkspaceOut`, with where its values come from: **set here**, **set in your config**,
-**inherits from** a parent, or **Hyprland's default**. Hyprland resolves a leaf nothing sets
-from its nearest ancestor, so setting `windows` reaches `windowsIn`, `windowsOut` and
-`windowsMove` until one of those is set on its own. Changing anything on a leaf sets that leaf,
-with all its values at once, the way `hl.animation` takes them.
+![The Themes page](docs/themes.png)
 
-For the selected leaf you get:
+A theme is the whole look: every Look option, the animations and their curves, and your look
+rules.
 
-* **Animate**, **speed** (Hyprland counts in tenths of a second; the page shows milliseconds),
-  **curve**, and **style** with its parameter — a side for `slide`, a percentage for `popin`
-  and `slidefade`. The styles offered are the documented ones for that kind of leaf, plus
-  whatever the leaf already uses; Hyprland has the final word, and says so when it refuses one.
-* **A preview** — a stand-in window doing roughly what the style does, on the curve and at the
-  speed, over and over. It is an approximation; with live edits on, the real animation is
-  already on the desktop.
-* **The curve**, with its two control points to drag. A point above the dashed box overshoots.
-  Dragging a curve defined in your config redefines it here, for everything that uses it;
-  **Copy as new curve** makes a copy under a new name for just this leaf instead.
+* **Save as theme** saves what is on your desktop now, including unsaved changes. **Apply**
+  puts a theme on at once. Press Save to keep its look. **Update** saves the current desktop
+  over one of your themes.
+* Applying a theme gives you exactly that theme, whatever your own config says, and nothing is
+  left behind from the previous one. Your cursor settings are never changed by a theme.
+* Three themes are built in: **Hyprland defaults** (a way back to a plain desktop),
+  **Soft glass** and **Sharp and quick**.
+* **Import…** and **Export…** move themes in and out as files, to share or back up. Your themes
+  are kept in `~/.config/hyprcustard/hypr-themes/`.
 
-Hyprland keeps every curve it has been given until it restarts, and a reload does not undefine
-one. So whether a curve is yours is read from `hyprland.lua` itself, not asked of Hyprland: a
-curve it still has but no file defines is shown as such, and Save warns if an animation set
-here uses one, since that animation would not load after the next restart.
+A theme can also include more:
 
-Curves and animations go into the look block on Save, after its `hl.config` call — curves
-first, so no animation names a curve before it exists:
+* **Include shaders**: your HyprWindowShade rules and layer shaders, and the shader files
+  themselves, so the theme looks the same on another machine. If you already have a different
+  version of one of its shaders, you choose **Replace mine** (yours is backed up), **Keep both**,
+  or **Look only**.
+* **Include colors**: the color scheme you last applied, exactly as it was, even one made from
+  a wallpaper.
+* **Include wallpaper**: the wallpaper on screen and how it is fitted. The wallpaper is
+  remembered by its path, so on a machine without that file the theme says so and leaves your
+  wallpaper alone.
 
-```lua
-hl.curve("snappy", { type = "bezier", points = { {0.2, 1}, {0.3, 1} } })
+Colors and wallpaper go on at once when you apply a theme. **Look only** leaves them alone.
 
-hl.animation({ leaf = "windowsIn", enabled = true, speed = 3, bezier = "snappy", style = "popin 80%" })
-```
-
-## Themes for Hyprland
-
-A theme is the whole look: every Look option, every animation that is set, and the curves those
-animations use. **Save as theme** captures what is on the desktop now, unsaved changes
-included; **Apply** puts a theme on the desktop at once, and Save writes it to `hyprland.lua`
-like any other change.
-
-A theme is complete rather than a list of changes, so applying one gives you that theme whatever
-your own config says, and switching themes never leaves a value behind from the last one. An
-animation your config sets but the theme does not is set to what it would inherit inside the
-theme, so your config's version cannot show through. The cursor options are left alone: when
-your cursor hides is behavior, not looks.
-
-Three themes are built in: **Hyprland defaults** (a way back to a plain desktop without editing a
-file), **Soft glass** and **Sharp and quick**. Your own live in
-`~/.config/hyprcustard/hypr-themes/` as JSON, one file per theme, and **Import…** / **Export…**
-move them in and out. A theme file can be written by hand — values take the shapes the Look
-page uses, and colors may be `#aarrggbb` or Hyprland's `rgba(rrggbbaa)`:
-
-```json
-{
-  "name": "Mine",
-  "options": {
-    "decoration.rounding": 10,
-    "general.col.active_border": { "colors": ["rgba(89b4faee)", "rgba(cba6f7ee)"], "angle": 45 }
-  },
-  "curves": { "glide": [0.05, 0.9, 0.1, 1.05] },
-  "animations": {
-    "windows": { "enabled": true, "speed": 5, "bezier": "glide", "style": "popin 85%" }
-  }
-}
-```
-
-Anything in a theme this version does not recognize is left out, and Apply says what.
-
-### Shaders in a theme
-
-With **Include shaders** on, a theme also carries the HyprWindowShade setup: the window rules
-and their shader tags, the layer shaders and their open and close animations, and **the shader
-files they use, as text** — a shader's tuned values live inside its file, so without them a
-theme would look different on another machine, or on this one after a shader is edited. Inside
-the theme the paths are written `$SHADERS/crt.glsl`, so it works whatever your shader folder is.
-Keybinds, startup actions and how the plugin loads stay out: those are behavior, not looks.
-
-Applying such a theme writes any shader you do not have into your shader folder. If you have a
-**different** version of one, it asks first: **Replace mine** backs yours up and writes the
-theme's over it; **Keep both** leaves yours alone and adds the theme's beside it as
-`crt-<theme name>.glsl`, which the theme's rules then use. **Look only** applies the look and
-animations and leaves your shader setup as it is. A theme without shaders never touches them.
-The shader rules, like any other, take effect when you save.
-
-### Colors and wallpaper in a theme
-
-With **Include colors** on, a theme carries the color scheme last applied on the Colors page —
-the scheme itself, so it comes back exactly, even when it was read from a wallpaper — and the
-choices that made it. With **Include wallpaper** on, it carries the wallpaper on screen (the
-first monitor's) and how it is fitted. The wallpaper is kept as a path, not copied in, since
-wallpapers can be large videos: on a machine without that file the theme says so and leaves
-the wallpaper alone. Which apps get colors, and how the watcher runs, stay your own.
-
-Neither lives in `hyprland.lua`, so applying a theme puts its colors and wallpaper on at once,
-as their own pages do; only its look waits for Save. A theme that brings colors keeps them, even
-if picking a wallpaper normally recolors the desktop. **Look only** leaves both alone.
-
-**Update** on one of your themes overwrites it with what is on the desktop now, keeping its
-name, description and file; the Include switches say what goes in, and it warns before
-dropping a part the theme had.
-
-The app's own colors are a separate thing, under Settings → This app's colors.
+---
 
 ## Wallpaper
 
-The **Wallpaper** page (under *Desktop*) shows previews of your wallpapers and puts the one you
-click on screen. It does not replace your wallpaper program; it drives the one you already
-run, and keeps your own options for it.
+![The Wallpaper page](docs/wallpaper.png)
 
-* **Your folders.** The list starts from the folder your wallpaper program is reading and the
-  usual places (`~/Pictures/Wallpapers`, `~/wallpapers`, `~/.local/share/backgrounds`,
-  `/usr/share/backgrounds` and their variants), whichever exist. Add your own folders, and
-  take any off with ×. Images and videos are listed, subfolders included. Previews are made
-  once with ffmpeg and kept in `~/.cache/hyprcustard/thumbs/`.
-* **Where.** Every monitor, or click a monitor at the top to put picks on that one only.
-* **Which program.** The one running, unless you choose another under *Show it with*;
-  switching moves every monitor to the new one and stops the old one. Each is driven its
-  own way:
+Shows previews of your wallpapers, and puts up the one you click using the wallpaper program you
+already run, with your own options for it.
 
-  | Program | How a wallpaper goes up | Videos | Whole folders |
-  |---|---|---|---|
-  | awww / swww | `awww img`, starting `awww-daemon` if needed | — (GIFs play) | — |
-  | hyprpaper | `hyprctl hyprpaper wallpaper` | — (no GIFs either) | — |
-  | swaybg | started again with the new image; other monitors keep theirs | — (a GIF's first frame) | — |
-  | mpvpaper | started again with the new file, with every option you gave it | yes | yes, *Play the whole folder* |
+* **Folders**: the folder your wallpaper program is using, plus the usual places
+  (`~/Pictures/Wallpapers`, `~/wallpapers`, `/usr/share/backgrounds`, …). Add your own folders,
+  and remove any with ×. Images and videos are listed, subfolders included.
+* **Which monitor**: every monitor, or click one at the top to change only that one.
+* **Show it with**: the program that's running, or another you choose. Switching moves every
+  monitor over to the new program.
 
-  A restarted program's new copy is up before the old one is stopped, so a file it cannot
-  open leaves your wallpaper as it was, and the page says why. Changing *Show it with* or
-  *Fit* puts what is on screen up again with the new choice straight away.
-* **mpvpaper's options.** The ones you started it with are kept, and remembered: after
-  another program has shown wallpapers, the next mpvpaper pick still uses yours (or, before
-  hyprcustard has seen it run, the ones on your login line). For a whole folder, *Next file
-  every … minutes* sets mpvpaper's slideshow timer (`-n`; fractions of a minute are fine) and
-  *Shuffle* sets mpv's `shuffle`. Everything else in your command stays as you wrote it.* **Colors.** *Recolor the desktop to match each pick* builds a scheme from the new wallpaper
-  with the Colors page's style, contrast and apps, and applies it. The Colors page itself is
-  left as it was. Turning it on recolors from the wallpaper already up. When colors follow the wallpaper, each pick recolors at once with the
-  choices being followed, without waiting for `custard-watch`'s minimum gap.
+  | Program | Videos | A whole folder |
+  |---|---|---|
+  | awww / swww | GIFs only | — |
+  | hyprpaper | — | — |
+  | swaybg | — | — |
+  | mpvpaper | yes | yes, with a timer and shuffle |
 
-### At login
+  If the program can't open a file, your current wallpaper stays up and the page says why.
+* **Colors follow the wallpaper**: each pick recolors the desktop to match, using your Colors
+  page settings.
 
-Picking a wallpaper changes the screen, not your config, so whatever starts your wallpaper at
-login still runs next time. The page shows the lines in `hyprland.lua` that start one. **Start
-what is on screen instead** comments those lines out, marking them so they can be restored
-exactly, and adds a managed block (`HyprCustard wallpaper`) that starts what is on screen now,
-shown on the page under the lines it replaced. After that, every pick rewrites the block. A backup is made first. **Give it back** removes the
-block and restores your lines.
+**At login.** A pick changes the screen, but whatever starts your wallpaper at login still runs
+next time. The page shows the lines that do that. **Start what is on screen instead** comments
+those lines out and starts your current pick at login from then on. **Give it back** restores
+your lines.
 
-For hyprpaper, the block starts it with a config of hyprcustard's own,
-`~/.config/hyprcustard/wallpaper/hyprpaper.conf`, so yours is never edited. awww and swww
-remember their last image themselves, so their block only starts the daemon. A systemd user
-service that starts a wallpaper is pointed out, but left alone.
+## Colors
 
-## Colors for the whole desktop
+![The Colors page](docs/colors.png)
 
-The **Colors** page (under *Desktop*) makes one color scheme and writes it for every app you
-turn on: Hyprland's borders and shadow, Waybar, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt
-apps (through qt6ct, qt5ct or Kvantum). Nothing
-changes until you press **Apply**, and the preview shows the scheme first.
+One color scheme for your whole desktop. Nothing changes until you press **Apply**, and the page
+shows the scheme first.
 
-A scheme comes from one of three places:
+**Where the scheme comes from:**
 
-* **A palette** — Gruvbox dark and light, Catppuccin Mocha and Latte, Nord and Rosé Pine are
-  built in. Any [base16](https://github.com/tinted-theming/schemes) scheme file dropped into
-  `~/.config/hyprcustard/schemes/` (`.yaml`) joins them; both the original and the
-  tinted-theming layouts are read.
-* **The wallpaper** — whatever is on screen now, read from whichever wallpaper program you
-  run: mpvpaper, swaybg, hyprpaper, swww, awww or wpaperd (and waypaper's config as a last
-  resort). For mpvpaper playing a folder, the clip showing right now is read from the files
-  it has open. Videos are sampled at six points across their length; *Use every file in the
-  folder* samples the whole folder instead, for one scheme that suits every clip. With more
-  than one monitor you choose whose wallpaper counts.
-* **A color** — any color you pick, or one of the wallpaper's strongest colors.
+* **A palette**: Gruvbox dark and light, Catppuccin Mocha and Latte, Nord and Rosé Pine are
+  built in. Any [base16](https://github.com/tinted-theming/schemes) `.yaml` file you put in
+  `~/.config/hyprcustard/schemes/` is added to them.
+* **The wallpaper**: whatever is on screen, read from mpvpaper, swaybg, hyprpaper, swww, awww
+  or wpaperd. Videos are sampled at several points. **Use every file in the folder** builds one
+  scheme that suits a whole folder. With several monitors, you choose whose wallpaper counts.
+* **A color**: one you pick, or one of the wallpaper's strongest colors.
 
-The wallpaper and a picked color go through the same Material color library
-[matugen](https://github.com/InioX/matugen) uses, with its styles (tonal spot, vibrant,
-content…), dark or light, and contrast — but matugen does not have to be installed.
+For the wallpaper and a picked color you also choose:
 
-### What gets written
+* **Style**: tonal spot, vibrant, content, and others. These are the same styles
+  [matugen](https://github.com/InioX/matugen) has, though matugen doesn't need to be installed.
+* **Dark** or light, and **Contrast**.
+* **Build on**: the wallpaper's most prominent color, or its most colorful. Use most colorful
+  when a small bright subject matters more than a large background.
+* **Tint surfaces from the wallpaper itself, not the seed.** Normally backgrounds take the
+  hue of the color the scheme is built on, so a bright orange subject on a cool, dark picture
+  gives brown backgrounds. With this on, backgrounds take their tint from the wallpaper's own
+  shadows (or its highlights, for a light scheme).
+* **Nudge the seed's hue**: turns the starting color by a few degrees, such as when a photo
+  makes a yellow look orange.
 
-Each app gets its own colors file next to its own config, defining one documented set of
-names: every Material role (`primary`, `on_primary`, `surface`, `surface_container`,
-`on_surface`, `outline`, …) and base16 (`base00` to `base0F`, with base08 always a red, base0B
-a green and base0D a blue). `surface_alpha` and a few others carry the *Bar and popup opacity*.
+**Which apps get it.** Every app you have installed is listed and can be turned off:
 
-| App | File | What it sets by itself | Loaded by |
-|---|---|---|---|
-| Hyprland | `hypr/hyprcustard-colors.lua` | borders, shadow, and a `hyprcustard_colors` table | `pcall(dofile, "…")` at the end of `hyprland.lua` |
-| Waybar | `waybar/hyprcustard-colors.css` | — (`@define-color`s for your style) | `@import "hyprcustard-colors.css";` at the top of `style.css` |
-| Rofi | `rofi/hyprcustard-colors.rasi` | — (variables, spelled with dashes) | `@import "hyprcustard-colors.rasi"` at the top of `config.rasi`, or after its `@theme` line (which discards anything before it) |
-| Dunst | `dunst/dunstrc.d/90-hyprcustard-colors.conf` | backgrounds, text, frames | nothing — a drop-in, read when you have your own `dunstrc` |
-| kitty | `kitty/hyprcustard-colors.conf` | palette, cursor, selection, tabs | `include hyprcustard-colors.conf` at the end of `kitty.conf` |
-| Ghostty | `ghostty/hyprcustard-colors` | palette, cursor, selection | `config-file = ?hyprcustard-colors` at the end of its config |
-| Starship | `hyprcustard-starship-colors.toml`, copied into `starship.toml` | a `hyprcustard` palette, and Starship's own colors (`red`, `bright-blue`…) | `palette = "hyprcustard"` at the top of `starship.toml` (or `$STARSHIP_CONFIG`), with a copy of the palette |
-| GTK 3, GTK 4 | `gtk-3.0/hyprcustard-colors.css`, `gtk-4.0/…` | GTK's named colors (`window_bg_color`, `accent_bg_color`, `theme_bg_color`…), and libadwaita's CSS variables for GTK 4 | `@import "hyprcustard-colors.css";` at the end of `gtk.css` |
-| Qt 6, Qt 5 | `qt6ct/colors/hyprcustard.conf`, `qt5ct/…` | the whole Qt palette | `color_scheme_path=` and `custom_palette=true` under `[Appearance]` in `qt6ct.conf` / `qt5ct.conf` |
-| Kvantum | `Kvantum/HyprCustard/` | a recolored copy of your Kvantum theme | `theme=HyprCustard` under `[General]` in `kvantum.kvconfig` |
+| App | What changes |
+|---|---|
+| Hyprland | border and shadow colors |
+| Waybar, Rofi | named colors for your style to use |
+| Dunst | backgrounds, text and frames |
+| kitty, Ghostty | the terminal palette, cursor and selection |
+| Starship | the prompt's colors |
+| GTK 3 and GTK 4 apps | window, accent and libadwaita colors |
+| Qt apps | the whole Qt palette, through qt6ct, qt5ct or Kvantum |
 
-Your configs are yours, so the page never edits one unless you ask: each app shows whether
-its config loads the file yet, the one line it needs, and an **Add it for me** button, which
-backs the config up first. In Rofi the import has to come after your `@theme` line, so where
-your theme defines one of the same names (`background`, say), the scheme's color is the one
-used.
+Each app gets a colors file next to its config. That file only takes effect once the app's
+config loads it, and your configs are yours, so for each app the page shows whether it does,
+the one line it needs, and an **Add it for me** button. The button backs the config up first.
 
-Starship is the exception: it cannot load a second file, so **Add it for me** points
-`starship.toml` at the `hyprcustard` palette and copies the palette in as
-`[palettes.hyprcustard]`, and every Apply after that refreshes the copy. Nothing else in the
-file changes. Starship lowercases the names in a style before it looks them up, so the
-palette spells them in lowercase: `fg:primary`, `bg:surface_container`, `base0d`. The names
-your old palette defined (`color_orange`, `color_bg1`…) are copied in too, so your styles keep
-finding them, each paired with a scheme color the way a hand-over pairs them (below) and the
-pairing written in a comment — `color_orange = "#d08770"  # scheme: base09`. Change the name in
-the comment to pair it differently. A name with no comment keeps the value written there, so
-colors you add yourself stay yours. Your old palette stays in the file, so setting `palette`
-back to it undoes everything. Starship reads its config for every prompt, so there is
-nothing to reload.
+After **Apply**, running apps reload where they can: Hyprland, Waybar, kitty, Ghostty and Dunst
+change at once, and Rofi on its next open. GTK and Qt apps that are already open keep their
+colors until you restart them.
 
-### Your own colors
+**Your own colors.** A Waybar style or Rofi theme usually sets its own colors, which hide the
+scheme. The page lists them under that app. **Let the scheme set them…** pairs each one with a
+scheme color, which you can change. Then **Hand them over**, and your lines are commented out
+and the scheme fills them in, keeping your transparency. **Give them back** undoes it.
 
-A Waybar style or a Rofi config usually defines its colors itself, after the import, in its
-own words (`@color_aqua`, `bar-background`), so its own win and the scheme never shows. The
-page lists them under the app's row, and **Let the scheme set them…** pairs each one with a
-scheme color: by its name when the name says (`color_aqua` is cyan, `foreground` is text),
-otherwise by the color — a gray by how light it is, anything else by its hue. Change any
-pairing, or keep any color as it is, then **Hand them over**:
+**GTK and Qt.** The page reads the theme you run and tells you what will change.
 
-* your line is commented out, with a marker naming the scheme color it now gets —
-  `/* [hyprcustard sets this: base0C] @define-color color_aqua #89B482; */` — and a backup
-  of the config is made first;
-* the colors file defines the same name in that scheme color, with your own transparency, so
-  `rgba(40,40,40,0.8)` stays 80% opaque in whatever scheme comes next;
-* **Give them back** takes the markers off, leaving every line exactly as it was.
+* GTK 4 and libadwaita apps (most GNOME apps) follow the scheme.
+* GTK 3 apps need a theme that uses GTK's named colors. adw-gtk3 does, and the page offers to
+  switch to it.
+* Qt apps follow it under qt6ct or qt5ct with a style such as Fusion. Under Kvantum you get a
+  recolored copy of your Kvantum theme.
+* If `QT_STYLE_OVERRIDE` is set, it stops qt6ct's style from working. The page shows where it is
+  set and can take it out (and put it back). That change takes effect after you log out and in.
 
-Only colors written out are offered (`#rrggbb`, `rgba(…)`): one defined from another
-(`@foreground`, `shade(@bg, 1.2)`) follows it by itself. In Rofi only the top-level `* { }`
-block holds variables, so only it is read. The pairing lives in your file, in the marker, so
-custard-watch keeps it when it recolors from the wallpaper.
+**Following the wallpaper.** **Keep following the wallpaper** recolors the desktop whenever the
+wallpaper changes, such as a slideshow, a shuffled folder or a new clip at login. A small
+program, `custard-watch`, does this in the background:
 
-### GTK and Qt apps
+* It uses no CPU while it waits for a change.
+* It waits while anything is fullscreen, so a game or film is never interrupted.
+* It makes at most one change every few minutes (5 by default), so a fast slideshow doesn't
+  make the desktop flicker.
+* It follows the settings you last **applied**, so you can try other colors on the page without
+  it reacting.
 
-How far a scheme reaches into GTK and Qt depends on the theme you run, and the page reads
-yours and says what will change:
+It starts with Hyprland, or as a systemd user service if you choose. Turning following off stops
+it and removes what starts it.
 
-* **GTK 4 apps built on libadwaita** (most GNOME apps) follow the scheme. If your
-  `~/.config/gtk-4.0/gtk.css` is itself a whole theme — many GTK themes install one there —
-  its fixed colors win over everything, so the page offers to set it aside (backed up) and
-  start a new one that only loads the colors.
-* **GTK 3 apps, and GTK 4 apps without libadwaita,** follow it only under a theme that draws
-  with GTK's named colors. [adw-gtk3](https://github.com/lassekongo83/adw-gtk3) does (on Arch,
-  the `adw-gtk-theme` package); Adwaita's GTK 3 theme and most others have their colors built
-  in. When adw-gtk3 is installed, the GTK 3 row offers to switch to it. After that, applying a
-  light or dark scheme picks the matching adw-gtk3 variant, and sets the desktop's light or dark
-  preference, which libadwaita, browsers and Qt follow.
-* **Qt apps** take the palette when `QT_QPA_PLATFORMTHEME` is `qt6ct` (or `qt5ct`) and the
-  style draws with the palette, as Fusion does. **Kvantum** paints with its own theme instead,
-  so it gets a copy of your Kvantum theme with its colors and images recolored. The copy keeps
-  that theme's shapes and shading, so it is close to the scheme rather than exact, and a dark
-  theme turns light under a light scheme.
-* **`QT_STYLE_OVERRIDE`** is something Kvantum guides often say to set. With qt6ct it is in
-  the way: Qt ignores the style chosen in qt6ct while it is set, and qt6ct warns about it. When
-  it is set, the qt6ct row lists where: your Hyprland config and the files it sources,
-  `environment.d`, uwsm's env files, and your shell profiles. **Take it out** backs those files
-  up and comments out each line, with a marker. If qt6ct (and qt5ct) don't already choose the
-  same style, it sets their style to the variable's value, so apps look the same. **Put it
-  back** restores the lines exactly. The variable is read when you log in, so the change takes
-  effect after you log out and back in.
+## Icons
 
-Neither toolkit re-reads these files while an app runs: apps opened after **Apply** use the
-new colors, and open ones keep theirs until restarted.
+![The Icons page](docs/icons.png)
 
-Apply then reloads what is running: Hyprland through `hyprctl eval`, Waybar and Ghostty with
-`SIGUSR2`, kitty with `SIGUSR1`, Dunst with `dunstctl reload`. Rofi reads its colors each time
-it opens.
+Pick an icon theme and a cursor theme from what's installed, with a preview of each.
 
-The Hyprland line is a `pcall`, so a missing colors file never breaks your config. Border
-colors set on the Look page compete with the scheme's — whichever comes later in the file wins,
-and the page says so when both are set. *Use the applied scheme for hyprcustard's own window
-too* makes the app wear the scheme as well.
+* **Icon theme** is set for GTK and Qt apps at once. Apps that are open keep their icons until
+  they restart.
+* **Cursor** changes straight away in Hyprland, and is set for GTK apps, X apps and your next
+  login. Choose its size too.
+* If your `hyprland.lua` sets the cursor itself, a cursor picked here only lasts until you log
+  out. **Take them over** comments out those lines so the choice lasts, and **Give them back**
+  restores them.
 
-### Following the wallpaper
+---
 
-**Keep following the wallpaper** (on the Colors page, with the wallpaper chosen) keeps the
-colors matching it as it changes — a slideshow, a shuffled folder, a new clip at each login.
-It is a small separate program, `custard-watch`, installed beside `hyprcustard`:
+## Rules and Layers
 
-* **It sleeps until something changes.** Hyprland's event socket wakes it when a wallpaper
-  program starts, stops or restarts, and inotify when a file in the wallpaper's folder is
-  opened — which every wallpaper program has to do to show it. A check every two minutes
-  catches anything else. Waiting, it uses about 5 MB of memory and no CPU.
-* **It waits while anything is fullscreen**, and applies the change once nothing is, so
-  ffmpeg never runs during a game or a film.
-* **At most one change every N minutes** (5 by default) keeps a fast slideshow from making
-  the desktop flicker. A wallpaper that gives the same scheme as before changes nothing.
-* **It follows what you last applied**, not what the page is showing, so trying other colors
-  leaves it alone. Applying a palette or a picked color turns following off.
+These pages are for the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade) plugin,
+which puts GLSL shaders on individual windows and layers. Install it from the
+[Plugin](#plugin) page.
 
-It starts at each login from a short managed block in `hyprland.lua` (`HyprCustard colors`),
-or — when your session runs under systemd's `graphical-session.target` — as a user service,
-`custard-watch.service`. Turning following off removes either, and the program exits.
-What it is doing shows on the page: running, waiting, or paused for a fullscreen window.
+* **Rules** put shaders on windows. Match a window by class or title (or the initial ones),
+  then choose a shader for any of the moments the plugin knows: **Always**, **While focused**,
+  **On open**, **On close**, **While moving**, **While fullscreen**, and more. Open window
+  classes are offered by name.
+* **Layers** put shaders and open and close animations on layers such as your bar or launcher,
+  by namespace. Layers that are open now are offered by name.
 
-## Shader parameters
+## Shaders
 
-The plugin populates a fixed set of uniforms and offers no channel for custom ones, so a
-shader's tunable numbers are `const` declarations in its source. Editing one here stages a
-new value; **Save shader** rewrites that line in the file — indentation, trailing comments and
-line endings intact — and the plugin picks it up on the next frame.
+![The Shaders page](docs/shaders.png)
 
-Staging rather than writing is what makes a shader safe to experiment with. Every value that
-has moved says **was 0.6** beside it — what the file still holds — and carries a tick on its
-slider at that position, so you can see how far you have wandered without reading a number.
-A **Revert** beside it puts that one value back. A color shows the same thing as a color:
-the swatch splits, the shade the file holds sitting underneath the one you are trying. **Revert all** drops everything staged for that
-shader; nothing on disk has changed, so there is nothing to undo. Dragging a slider back to
-the value the file already has clears the mark by itself.
+Every shader in your shader folder (`~/.config/hypr/shaders` by default), with sliders for the
+values inside it.
 
-One save is one write and one backup, however many values it carries — which also means a
-long afternoon of tuning no longer pushes the copy you started from out of the backup folder.
+* Moving a slider doesn't change the file yet. Each moved value shows what the file still holds
+  (**was 0.6**) and has its own **Revert**. **Save shader** writes them all at once. Nothing is
+  written until then, so you can try things freely.
+* **Preview → Run it** shows the shader on a real window in the pane beside the sliders, with
+  the values you have staged. It runs a second, hidden copy of Hyprland with the plugin loaded,
+  so what you see is what you'll get. The window opens, is pushed aside and closes, on a loop,
+  so open, move and close effects all show. **On your wallpaper** puts your desktop behind it.
+  It needs Hyprland running, the plugin installed and `grim`.
+* **Timing**: how long a one-shot animation runs (`// @duration`), and whether a close shader
+  plays over Hyprland's own fade (`// @overlay`).
 
-The app finds two kinds:
+**Shaders you didn't write** get sliders anyway: any `const` number, vector or bool becomes a
+slider with a guessed range, and a `vec3` named like a color becomes a color picker.
 
-**Annotated**, which is what you want for anything you will come back to:
+**Shaders you write** can name their sliders and ranges:
 
 ```glsl
 // @param 0.0 1.0 0.01 "Dim amount"
 const float DIM = 0.6;
-
-// @param STRENGTH 0 4 "Warmth"          // the named form, for a const further down
-const float STRENGTH = 1.5;
 
 // @color "Paper tint"
 const vec3 PAPER = vec3(0.98, 0.94, 0.86);
@@ -720,324 +445,106 @@ const vec3 PAPER = vec3(0.98, 0.94, 0.86);
 const bool INVERT = false;
 ```
 
-`// @param [name] <min> <max> [step] ["Label"]`. Without a name it attaches to the next `const`.
+`// @param [name] <min> <max> [step] ["Label"]` applies to the next `const`, or to the one
+named. Constants like `PI` are left alone, and so is any `const` set by a calculation.
 
-**Inferred**, for shaders you did not write: any `const float/int/bool/vec2/vec3/vec4` with a
-plain literal gets a slider with a guessed range, marked *guessed range* in the UI. A `vec3`
-whose name contains `color`, `tint` or `rgb` and whose components are all in 0–1 becomes a
-color picker.
+## Keybinds
 
-A `const` named like a mathematical constant — `PI`, `TAU`, `EPSILON` and the usual
-spellings of those — is left out and noted instead. It is not a tuning knob, and a slider
-that rewrites it quietly breaks the shader's maths. Annotate it with `// @param` if you
-really do want one.
+Keys that toggle a shader on the focused window, and calls to run when your session starts
+(**At session start**), such as a shader for every window of one app. **Try it** runs a bind
+without pressing the key.
 
-A `const` whose value is an expression — `const float A = 1.0 / 3.0;` — is left alone, on
-purpose: the app will not rewrite something it cannot read back.
+## Preview and import
 
-Two file-level directives are editable too:
+* **What gets written** shows the exact HyprWindowShade block that Save will write.
+  **Remove managed block** takes it out of your config, and nothing else.
+* **Import rules you wrote by hand** reads shader rules, layer shaders and binds already in your
+  config, outside the block, and brings them into the app. Your originals stay where they are.
+  Once the result looks right, delete them yourself, or the two copies will compete.
 
-* **`// @duration`** — how long a one-shot animation runs. The plugin caps it at 5 seconds and
-  falls back to 0.3s when it is absent, warning once per edit if the shader uses `progress`.
-  The app shows the same warning before you hit it.
-* **`// @overlay`** — composite with Hyprland's own close animation instead of replacing it.
-  Right for a tint or a wipe, wrong for a dissolve that drives its own alpha.
+## Plugin
 
-Shader files are backed up before every save, same as the config.
+Installs, updates, reloads and removes HyprWindowShade through `hyprpm`, with its output shown
+below. Run **Update** after every Hyprland upgrade: it rebuilds the plugin for the new version,
+which takes a few minutes.
 
----
-
-## Seeing a shader before you save it
-
-*Shaders → Preview → Run it* starts a **second Hyprland**, loads the plugin into
-it, and shows you the result in the pane beside the sliders. It is not a
-simulation: it is the plugin, doing what it does, to a real window.
-
-That matters more than it sounds. A preview built inside this app would have to
-reimplement the plugin — translate the GLSL, compile it another way, and invent
-values for the twenty-seven uniforms the plugin fills in every frame. It would be
-close, and the places where it was wrong would be invisible. This cannot be
-wrong, because it is the same code doing the same job.
-
-The preview renders a **copy** of your shader carrying whatever you have staged,
-so the sliders move and the window changes while your own file sits untouched
-until you press **Save shader**. Rounding, gaps, borders, opacity, blur and your
-own animation curves are read back from your running session, so the window in
-the pane is shaped like the windows around it, and it stands on **your own
-wallpaper** — whether a dissolve really reaches zero alpha, or a tint lifts
-blacks, only shows against something with light and dark in it.
-
-Getting that picture without your windows in it is the one clever bit. The
-wallpaper is not read from a file: asking the wallpaper daemon which image it is
-showing works for some of them and not others, and means nothing at all for a
-video wallpaper or a shuffling directory. Instead the preview borrows a headless
-output on your session for a second — it arrives with an empty workspace and
-your wallpaper already drawn on it — photographs that, and gives it back.
-Nothing appears on your screen, nothing of yours moves, and what comes back is
-your wallpaper and nothing else. If your wallpaper daemon is pinned to a named
-monitor it will not follow onto that scratch output, and the preview quietly
-falls back to the pane's own color. **On your wallpaper** in the pane's header
-switches between the two.
-
-The window **opens, holds, is shoved aside, and closes**, on a loop, because a
-shader is only visible during the phase it was written for and the preview
-should not make you guess which one that is. It reads the phase off the shader
-and tags it accordingly: one that drives itself from `progress` goes on open and
-close, one that reads velocity or a move delta goes on move and resize, and
-anything else goes on the plain tag and is visible throughout. The shove is a
-second window opening beside the first, which is a real move and a real resize
-with real velocity behind them — the only thing that makes a wobble show
-anything at all.
-
-Nothing appears on your screen. A nested compositor normally opens a window of
-its own; this one is given a headless output and then has that window taken away,
-so the only thing that ever sees it is the pane. It shuts down when you stop it,
-when you pick another shader, and when you close the app — and if the app dies
-without getting the chance, the preview notices that it has been orphaned and
-exits by itself a couple of seconds later.
-
-It needs Hyprland running to nest inside, the plugin installed, and `grim` to
-read frames out. The button says when one of those is missing.
-
-### Where the wallpaper behind it comes from
-
-**On your wallpaper** stands the preview on your desktop rather than on a flat color,
-because whether a dissolve really reaches zero alpha only shows against something with
-light and dark in it.
-
-`swaybg` is what draws it, whichever way the image is found.
-
-If your own wallpaper is *also* set with `swaybg`, the image is simply read off the running
-swaybg's command line: nothing is added to your session, nothing is removed from it, and
-nothing moves.
-
-Set any other way — a different daemon, a video, a shuffling directory, a shader — there is
-no file to read, so the preview photographs your desktop instead. It does that on a headless
-output borrowed from your session for a second, which comes up with an empty workspace and
-your wallpaper already on it, so no window of yours is in the picture. The one visible cost
-is the mouse: Hyprland throws the pointer into the middle of the screen whenever an output
-is removed, and although the preview puts it straight back, you see the round trip. So the
-photograph is taken **once** and kept for as long as the app is open. Change your wallpaper
-while it is running and you will need to restart it — or turn the backdrop off, which the
-button under the pane does.
+When `hyprpm` needs your password, hyprcustard asks in a dialog of its own. **Run in a terminal**
+does the same job in a terminal window instead. Use it if you use `doas` rather than `sudo`.
 
 ---
 
-## Themes
+## Fishsticks & Custard
 
-**System (Qt)** is the default, and is the app taking its colors from Qt's palette —
-whatever your platform theme sets, whether that is qt6ct, Kvantum, a desktop's own
-theme, or nothing at all. Change your Qt theme and the app follows without a restart.
-
-Qt has no palette role meaning "success" or "warning", and `mid` is a light gray even
-under some dark themes, so those few colors are not taken from it: hairlines and shades
-are mixed from the window and text colors, which are always present and always in the
-right relationship to each other, and ok/warn/error are fixed in a light and a dark
-variant. The accent is the desktop's own accent color where the platform reports one
-(Qt 6.6+), and the selection color otherwise.
-
-**Gruvbox Dark** and **Gruvbox Light** ship with the app and ignore Qt entirely, so they
-look the same on any desktop. Anything else is a TOML file in
-`~/.config/hyprcustard/themes/`; the file stem is the theme's name in the picker.
-*Settings → Write an example theme* drops a fully commented one there.
-
-```toml
-name = "Example"
-base = "gruvbox-dark"     # gruvbox-dark or gruvbox-light; anything you omit comes from here
-dark = true
-opacity = 0.96            # 0.3 – 1.0; Hyprland composites the rest
-
-[colors]
-bg         = "#282828"    # window background
-bg_alt     = "#1d2021"    # sidebar and header
-surface    = "#32302f"    # cards, rows, inputs
-surface_hi = "#3c3836"    # hover
-border     = "#504945"
-fg         = "#ebdbb2"
-fg_dim     = "#d5c4a1"
-muted      = "#928374"
-accent     = "#83a598"    # focus rings, sliders, active tab
-accent_alt = "#d3869b"
-ok         = "#b8bb26"
-warn       = "#fabd2f"
-error      = "#fb4934"
-selection  = "#3c3836"
-on_accent  = "#1d2021"    # text drawn on the accent color
-```
-
-Every key is optional. `#rgb`, `#rrggbb` and `#aarrggbb` all work. A file with a broken color
-is reported by name and role rather than silently ignored, and the other themes still load.
-
----
-
-## Importing rules you already wrote
-
-*Preview → Look for rules* reads the parts of your config **outside** the managed block and
-shows what it recognizes: `hl.window_rule` calls carrying a shader tag, `layershader` and the
-layer animations, and plugin calls inside `hl.bind`.
-
-It understands string literals and concatenations with `local`s defined in the same file —
-the `local shaders = "/home/you/…"` pattern from the plugin's README. Anything it cannot read
-with certainty is listed as skipped rather than guessed at.
-
-Importing adds those entries to the app; **it does not delete your originals**. Look them over,
-save, check the result, then remove the hand-written lines yourself. Until you do, both copies
-are in the file and the tags will fight — see the plugin's notes on `_default` for what that
-looks like.
-
----
-
-## Installing the plugin
-
-The **Plugin** page drives `hyprpm`, Hyprland's plugin manager: install, update, enable,
-disable, reload and remove, with everything it prints in a pane underneath. `hyprpm update`
-rebuilds the plugin against the Hyprland you are running, which takes minutes and is what you
-want after every Hyprland upgrade.
-
-![Plugin](docs/plugin.png)
-
-*After an update: what hyprpm printed, and what it left installed and loaded.*
-
-`hyprpm` escalates by itself — it refuses to run as root, and calls `sudo` for the steps that
-write outside your home directory: its plugin store under `/var/cache/hyprpm`, and the
-Hyprland headers. There is no terminal behind a window to type that password into, so:
-
-* the operation runs in a session of its own, started with `setsid`;
-* `SUDO_ASKPASS` points at this app, re-run as `hyprcustard         --askpass`;
-* sudo, having no terminal to read from, runs that helper instead;
-* the helper connects back to the window over a unix socket in
-  `$XDG_RUNTIME_DIR/hyprcustard/`, which is created mode 0700;
-* what you type into the dialog goes straight back down the socket to sudo.
-
-The password is never written to disk, never appears in a command line or in the environment,
-and is held in memory only until the operation ends — a single operation escalates more than
-once (the state store first, then whatever else it has to write), and being asked twice for
-one click would be worse than useless.
-
-A wrong password is noticed and asked for again rather than spent. sudo allows three attempts
-and asks its askpass program once per attempt, but hyprpm captures the output of the command
-it escalates, so sudo's own "Sorry, try again" usually never reaches the log. What gives it
-away is that sudo asks a second time with nothing printed in between: hyprpm is blocked
-waiting, so a prompt with no progress since the last answer means that answer was refused.
-
-The pane is output, not a terminal: there is nothing to type into it, which is the whole
-reason the password has a dialog of its own.
-
-**Run in a terminal** runs the same operation in a terminal emulator instead — `$TERMINAL`,
-or the first of kitty, foot, alacritty, ghostty, wezterm, konsole, gnome-terminal and xterm —
-where sudo prompts the way it always has. That is the way out on a system where the askpass
-route does not apply, a `doas`-only machine for instance, since `doas` has no askpass.
-
-**Cancel** signals the whole process group, so a half-finished build stops with it.
-
----
+[Fishsticks & Custard](https://github.com/ManofJELLO/fishsticks-and-custard) is a voice
+assistant that answers through Claude Code or another agent. This page installs and updates it,
+downloads its speech models, starts it with Hyprland, sets its keys, and edits its settings:
+the agent, its window and its voice.
 
 ## Settings
 
-| Setting | Notes |
+| Setting | What it does |
 |---|---|
-| Hyprland config | Which file the block goes in. Default `~/.config/hypr/hyprland.lua`. |
-| Shader folder | Scanned for `.glsl`, `.frag`, `.fs`, one level of subfolders deep. Default `~/.config/hypr/shaders`. |
-| Backups to keep | Per file. Default 10. |
-| Theme | System (Qt) by default; Gruvbox Dark, Gruvbox Light, or anything in the theme folder. |
-| Shader paths | Whether to use the `hws_shaders` local or write full paths. |
-| Load the plugin | Nothing, `hyprpm reload -n`, or `hyprctl plugin load <path>`. |
-| Startup delay | See above. Zero unless you need it. |
-| Reload Hyprland after saving | Runs `hyprctl reload` so new rules apply without logging out. |
-| Reload shaders after editing one | Runs after **Save shader**. Off by default — the plugin already reloads on mtime change. |
-| Repository | Where **Install** takes the plugin from. Default `https://github.com/ManofJELLO/HyprWindowShade`. |
-| Plugin name | What `hyprpm` calls it, which `enable`, `disable` and `remove` take. Default `HyprWindowShade`. |
-| Keep it in the tray | An icon in your bar's tray (anything that hosts StatusNotifierItems, such as waybar's `tray` module). Closing the window leaves hyprcustard running there; click the icon to open it, right-click it to quit. |
-| Start at login | Adds a managed block (`HyprCustard autostart`) that runs `hyprcustard --tray` when Hyprland starts. Turning it off takes the block out. A backup is made first. |
+| Hyprland config | The file hyprcustard writes to. Default `~/.config/hypr/hyprland.lua`. |
+| Shader folder | Where your shaders are. Default `~/.config/hypr/shaders`. |
+| Backups to keep | How many backups of each file. Default 10. |
+| Shader paths | Write the shader folder once and build paths from it, or write each path in full. |
+| Load the plugin | Leave it to you, `hyprpm reload -n`, or `hyprctl plugin load` with a path. |
+| Startup delay | Leave at zero, unless the plugin loads too late at login for your startup calls (you'll get a notification saying so). |
+| Reload Hyprland after saving | So new rules apply without logging out. |
+| Reload shaders after editing one | Usually unneeded: the plugin notices a saved shader by itself. |
+| Keep it in the tray | Closing the window leaves hyprcustard in your bar's tray (such as Waybar's `tray` module). Click to open, right-click to quit. |
+| Start at login | Starts hyprcustard in the tray when Hyprland starts. |
+| App colors | How hyprcustard itself looks: **Slate** (its own look), **System** (your Qt colors), **Gruvbox Dark** or **Gruvbox Light**, or **Color scheme**, the scheme last applied on the Colors page. |
+| Font | Follow the system font, or choose one. |
 
-App settings live in `~/.config/hyprcustard/settings.toml`. A malformed file is
-reported and ignored, never silently overwritten.
+To make your own look for the app, **Write an example theme** puts a commented file in
+`~/.config/hyprcustard/themes/` to copy and edit. Every color in it is optional.
 
----
+Settings are kept in `~/.config/hyprcustard/settings.toml`.
 
 ## Command line
 
 ```sh
-hyprcustard                 # the app, or the window of the one already running
-hyprcustard --tray          # start in the tray, without opening the window
-hyprcustard --print-state   # the whole state document as JSON
-hyprcustard --print-block   # the Lua that would be written
-hyprcustard --version       # the version (--help lists these)
-hyprcustard --askpass       # sudo's askpass helper, for the Plugin page
+hyprcustard                 # open the app, or the window of the one already running
+hyprcustard --tray          # start in the tray without opening the window
+hyprcustard --print-block   # print the HyprWindowShade block that would be written
+hyprcustard --version
 ```
 
-Only one copy runs at a time: launching hyprcustard while it sits in the tray opens its window.
-With `--tray` and no tray in the bar after a minute, the window opens after all, so the app is
-never running out of reach.
-
-The two `--print-*` flags do not start Qt, which makes them useful on a machine where the GUI
-will not come up, and in a script. `--askpass` is for sudo to call, not for people: see
-[Installing the plugin](#installing-the-plugin).
-
-`CUSTARD_SHOT_DIR=<dir>` renders each page to a PNG there and quits — how the screenshots in this
-README were made, and how the layout is checked without a compositor.
+Only one copy runs at a time. If you start it with `--tray` and there is no tray in your bar,
+the window opens after a minute anyway.
 
 ---
 
-## How it is put together
+## Undoing things
 
-Three crates:
+| To undo | Do this |
+|---|---|
+| A change on the Look, Look rules or Animation page you haven't saved | **Discard changes** |
+| An option the Look page sets | **Reset** beside it, or **Clear all**, then Save |
+| A rule you moved into the app | Delete it in the app, and uncomment your original line |
+| A wallpaper taking over your login line | **Give it back** on the Wallpaper page |
+| Colors taking over your Waybar or Rofi colors | **Give them back** under that app on the Colors page |
+| The cursor taking over your config's lines | **Give them back** on the Icons page |
+| The shader block | **Remove managed block** on the Preview page |
+| Anything else | Copy a file back from `~/.config/hyprcustard/backups/` |
 
-* **`custard-core`** — everything that decides anything. The config model, the Lua emitter, the
-  managed-block reader and writer, the GLSL parser and patcher, the importer, themes, and the
-  `hyprctl` calls. No Qt, no UI, and covered by unit tests: `cargo test -p custard-core`.
-* **`custard-watch`** — the program that follows the wallpaper. It uses the core's color code,
-  so it builds exactly the scheme the Colors page would; it adds only the waiting.
-* **`custard-gui`** — the Qt layer. One `Backend` singleton with a JSON state property, a `run`
-  method and a `query` method. The QML reads state and sends commands; it holds no
-  configuration logic of its own.
+To remove hyprcustard completely, uninstall it, then delete its blocks from `hyprland.lua`
+(each starts and ends with a `managed by hyprcustard` marker, or `managed by
+hyprwindowshade-gui` for the shader block) and the folder `~/.config/hyprcustard/`.
 
-That split is the reason the interesting parts can be tested without a display or a
-compositor, and the reason a UI bug cannot corrupt a config.
+## Good to know
 
-```
-crates/custard-core/src/
-    model.rs      the configuration, and the twenty tag slots
-    emit.rs       model  -> Lua
-    block.rs      the marker block, and the state blob inside it
-    import.rs     hand-written Lua -> model, conservatively
-    shader/       scan, parse (@param, @duration, @overlay, uniforms), patch
-    theme.rs      the built-ins, and the TOML loader
-    colors/       desktop color schemes: wallpaper readers, ffmpeg sampling,
-                  Material and base16 schemes, and the per-app writers
-    walls/        the Wallpaper page: folders, previews, driving each
-                  wallpaper program, and the login block
-    hyprctl.rs    clients, layers, dispatch
-    session.rs    the facade: one state document, one command entry point
-crates/custard-gui/
-    src/bridge.rs the CXX-Qt bridge, and nothing else
-    qml/          Theme and App singletons, components, one file per page
-```
-
----
-
-## Things worth knowing
-
-**Motion uniforms are zero on a layer.** A shader that scales its effect by `velocity` or
-`peak_velocity` renders a layer surface untouched — no error, no warning, nothing happens. The
-Layers page flags this when you pick such a shader, because it is the single most confusing
-thing about layer shaders.
-
-**Fullscreen drops everything by default.** A fullscreen window gets no shaders at all unless
-you set *While fullscreen* or *Keep stack fullscreen*. That is the plugin's behavior, not a
-limitation here.
-
-**`_default` is documented for eight tags.** The plugin's tag table says any shader tag accepts
-the `_default` fallback suffix; its fallback section names eight specifically. The app lets you
-set it anywhere but warns on the ones outside that list, so a surprise is a warning rather than
-a mystery.
-
-**A duration override does nothing on move and resize.** Hyprland's own `windowsMove` animation
-is the clock there. The app hides the duration field for those tags.
-
-**`hyprctl dispatch` lies about failing.** The plugin's functions return nothing, so
-`hl.dispatch` rejects the call with a non-zero exit *after* it has already worked. The app
-ignores that specific complaint and surfaces anything else.
+* **Open apps keep their old colors and icons** until restarted. Hyprland, Waybar, kitty,
+  Ghostty and Dunst are the exceptions, and change at once.
+* **A color set on the Look page and the Colors page compete** for Hyprland's borders. Whichever
+  comes later in your config wins, and the page tells you when both are set.
+* **Fullscreen windows get no shaders** unless a rule sets **While fullscreen** or **Keep
+  stack fullscreen**. That is how the plugin works.
+* **A shader that reacts to movement does nothing on a layer**, because layers don't report
+  movement to the plugin. The Layers page warns you when you pick one.
+* **If the plugin loads slowly at login**, your startup calls may run before it's ready, and
+  you'll see a notification. Raise **Startup delay** in Settings.
 
 ---
 
