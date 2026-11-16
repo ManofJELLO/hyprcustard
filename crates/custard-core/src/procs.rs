@@ -39,6 +39,32 @@ pub fn alive(pid: u32) -> bool {
     !matches!(state, None | Some('Z') | Some('X'))
 }
 
+/// Whether a process has a handler of its own for signal `signo` — and so
+/// will not be ended by it, as a program still starting would be by any
+/// signal whose default action is to terminate.
+pub fn catches(pid: u32, signo: u32) -> bool {
+    let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) else { return false };
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix("SigCgt:"))
+        .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+        .is_some_and(|mask| (1..=64).contains(&signo) && mask & (1 << (signo - 1)) != 0)
+}
+
+/// How long ago a process started.
+pub fn age(pid: u32) -> Option<std::time::Duration> {
+    // Start time is in clock ticks since boot; Linux fixes the tick that
+    // /proc reports in (USER_HZ) at 100 on every architecture it runs on.
+    const USER_HZ: f64 = 100.0;
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, rest) = stat.rsplit_once(')')?;
+    // Fields after the name start at the 3rd; start time is the 22nd.
+    let start: f64 = rest.split_whitespace().nth(19)?.parse().ok()?;
+    let uptime: f64 =
+        std::fs::read_to_string("/proc/uptime").ok()?.split_whitespace().next()?.parse().ok()?;
+    Some(std::time::Duration::from_secs_f64((uptime - start / USER_HZ).max(0.0)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +86,28 @@ mod tests {
         assert!(!named("sleep").contains(&pid));
         child.wait().unwrap();
         assert!(!alive(pid));
+    }
+
+    #[test]
+    fn tells_a_caught_signal_from_one_that_would_end_it() {
+        let me = std::process::id();
+        // Rust's runtime ignores SIGPIPE rather than catching it, and nothing
+        // here handles SIGUSR2.
+        assert!(!catches(me, 12));
+        let mut child = Command::new("bash")
+            .args(["-c", "trap 'echo' USR2; sleep 30"])
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !catches(pid, 12) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(catches(pid, 12), "bash traps USR2");
+        assert!(!catches(pid, 10), "but not USR1");
+        assert!(age(pid).is_some_and(|a| a < std::time::Duration::from_secs(10)));
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 }

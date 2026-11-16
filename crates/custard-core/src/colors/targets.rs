@@ -13,6 +13,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use super::scheme::Scheme;
 use super::starship;
@@ -723,9 +724,9 @@ pub fn reload(target: &Target, scheme: &Scheme) -> Option<String> {
                 Err(e) => format!("could not reload: {e}"),
             }
         }),
-        "waybar" => signal("waybar", "USR2"),
-        "kitty" => signal("kitty", "USR1"),
-        "ghostty" => signal("ghostty", "USR2"),
+        "waybar" => signal("waybar", SIGUSR2),
+        "kitty" => signal("kitty", SIGUSR1),
+        "ghostty" => signal("ghostty", SIGUSR2),
         // GTK reads gtk.css once, as an app starts; what can change now is
         // the theme variant and the light or dark preference.
         "gtk3" | "gtk4" => target
@@ -757,15 +758,45 @@ fn running(name: &str) -> bool {
     !pids(name).is_empty()
 }
 
-fn signal(name: &str, sig: &str) -> Option<String> {
-    let pids = pids(name);
-    if pids.is_empty() {
+const SIGUSR1: u32 = 10;
+const SIGUSR2: u32 = 12;
+
+/// How long a program that has only just started may take to set up its
+/// reload handler before it is left to read its colors as it starts.
+const HANDLER_GRACE: Duration = Duration::from_secs(5);
+
+/// Send `signo` to every `name`, but only to those that handle it.
+///
+/// Both signals end a process that has not set up a handler yet. At login
+/// the watcher applies within a second of Hyprland starting, while the
+/// terminals started alongside it are still coming up — and a signal then
+/// closed them. A process this young is waited for briefly; one that still
+/// has no handler, or an older one that never had (a version without
+/// reload), is left alone.
+fn signal(name: &str, signo: u32) -> Option<String> {
+    let all = crate::procs::named(name);
+    if all.is_empty() {
         return None;
     }
+    let deadline = Instant::now() + HANDLER_GRACE;
+    let ready = loop {
+        let (ready, waiting): (Vec<u32>, Vec<u32>) =
+            all.iter().partition(|pid| crate::procs::catches(**pid, signo));
+        let young = waiting.iter().any(|pid| {
+            crate::procs::alive(*pid)
+                && crate::procs::age(*pid).is_some_and(|a| a < HANDLER_GRACE)
+        });
+        if !young || Instant::now() >= deadline {
+            break ready;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    if ready.is_empty() {
+        return Some("still starting; it reads the new colors as it does".into());
+    }
     let ok = Command::new("kill")
-        .arg("-s")
-        .arg(sig)
-        .args(&pids)
+        .arg(format!("-{signo}"))
+        .args(ready.iter().map(u32::to_string))
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .status()
