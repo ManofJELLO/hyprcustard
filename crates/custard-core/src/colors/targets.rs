@@ -783,8 +783,7 @@ fn signal(name: &str, signo: u32) -> Option<String> {
         let (ready, waiting): (Vec<u32>, Vec<u32>) =
             all.iter().partition(|pid| crate::procs::catches(**pid, signo));
         let young = waiting.iter().any(|pid| {
-            crate::procs::alive(*pid)
-                && crate::procs::age(*pid).is_some_and(|a| a < HANDLER_GRACE)
+            crate::procs::alive(*pid) && crate::procs::age(*pid).is_some_and(|a| a < HANDLER_GRACE)
         });
         if !young || Instant::now() >= deadline {
             break ready;

@@ -35,39 +35,21 @@ use crate::shader::meta::KNOWN_UNIFORMS;
 
 /// FSC config keys the page does not offer.
 const FSC_ACK_KEYS: &[(&str, &str)] = &[
-    ("claude.home", "a path to FSC's own working folder; kept in the file as it is"),
     ("claude.setting_sources", "which Claude Code settings FSC reads; kept as it is"),
     ("claude.extra_args", "raw arguments for claude; kept as it is"),
-    // FSC 0.7's other agents. Which agent answers, and its model and mode,
-    // are switched from FSC's tray menus or `fsc agent` / `model` / `mode`,
-    // which save them; an agent's launch settings are set up once, by hand,
-    // per FSC's docs. Not offered yet — a candidate for the page later.
+    // Old places FSC 0.7 still reads; the page edits the new ones and
+    // clears these as it does (fsc::MOVED_KEYS).
+    ("claude.home", "FSC 0.7's old place for agent.home, which the page edits"),
     ("claude.memory", "FSC 0.7's old place for agent.memory, which the page edits"),
-    ("claude.session_idle_minutes", "FSC 0.7's old place for agent.session_idle_minutes, which the page edits"),
-    ("agent.backend", "switched from FSC's tray or `fsc agent`, which saves it"),
-    ("agent.auto_allow", "an ACP agent's tool permissions; kept as it is"),
-    ("agent.home", "a path to the assistant's home folder; kept as it is"),
-    ("claude.permission_mode", "how much Claude asks first; FSC's mode menu sets it"),
-    ("acp.command", "a custom ACP agent's launch settings; kept as they are"),
-    ("acp.args", "a custom ACP agent's launch settings; kept as they are"),
-    ("acp.env", "a custom ACP agent's launch settings; kept as they are"),
-    ("acp.model", "chosen from FSC's model menu or `fsc model`"),
-    ("acp.mode", "chosen from FSC's mode menu or `fsc mode`"),
-    ("codex.command", "Codex's launch settings; kept as they are"),
-    ("codex.args", "Codex's launch settings; kept as they are"),
-    ("codex.env", "Codex's launch settings; kept as they are"),
-    ("codex.model", "chosen from FSC's model menu or `fsc model`"),
-    ("codex.mode", "chosen from FSC's mode menu or `fsc mode`"),
-    ("antigravity.command", "Antigravity's launch settings; kept as they are"),
-    ("antigravity.args", "Antigravity's launch settings; kept as they are"),
-    ("antigravity.env", "Antigravity's launch settings; kept as they are"),
-    ("antigravity.model", "chosen from FSC's model menu or `fsc model`"),
-    ("antigravity.mode", "chosen from FSC's mode menu or `fsc mode`"),
-    ("opencode.command", "OpenCode's launch settings; kept as they are"),
-    ("opencode.args", "OpenCode's launch settings; kept as they are"),
-    ("opencode.env", "OpenCode's launch settings; kept as they are"),
-    ("opencode.model", "chosen from FSC's model menu or `fsc model`"),
-    ("opencode.mode", "chosen from FSC's mode menu or `fsc mode`"),
+    (
+        "claude.session_idle_minutes",
+        "FSC 0.7's old place for agent.session_idle_minutes, which the page edits",
+    ),
+    // A table of variables: rare, and clearer in the file than on a page.
+    ("codex.env", "extra environment variables for the agent; kept as they are"),
+    ("antigravity.env", "extra environment variables for the agent; kept as they are"),
+    ("opencode.env", "extra environment variables for the agent; kept as they are"),
+    ("acp.env", "extra environment variables for the agent; kept as they are"),
 ];
 
 /// `fsc` subcommands no key or button of hyprcustard's runs.
@@ -78,10 +60,10 @@ const FSC_ACK_COMMANDS: &[(&str, &str)] = &[
     ("status", "hyprcustard looks for the fscd process instead"),
     ("memory", "prints to a terminal; nothing for a key to do"),
     ("forget", "destructive, and belongs in FSC's own popup"),
-    ("agent", "takes an agent's name; FSC's tray switches agents"),
-    ("model", "takes a model id; FSC's tray switches models"),
-    ("mode", "takes a mode; FSC's tray switches modes"),
-    ("wake", "takes a phrase; changing it is a setting, not a key"),
+    ("agent", "takes an agent's name; the page's Answered by setting and FSC's tray cover it"),
+    ("model", "takes a model id; the agent's Model setting and FSC's tray cover it"),
+    ("mode", "takes a mode; the agent's Mode setting and FSC's tray cover it"),
+    ("wake", "takes a phrase; the page's wake phrase setting covers it"),
 ];
 
 /// Plugin uniforms that are not for shaders to declare.
@@ -321,7 +303,9 @@ fn fsc_config(root: &Path, r: &mut Report) {
             Kind::Bool => ty == "bool",
             Kind::Int(..) => matches!(ty, "u8" | "u16" | "u32" | "u64" | "i32" | "i64" | "usize"),
             Kind::Float(..) => matches!(ty, "f32" | "f64"),
-            Kind::Text => ty == "String",
+            // A path is typed in as text.
+            Kind::Text => matches!(ty, "String" | "PathBuf"),
+            Kind::List(_) => ty == "Vec<String>",
             Kind::Choice(mine) => match enums.get(ty) {
                 Some(theirs) => {
                     let a: BTreeSet<&str> = mine.iter().copied().collect();
@@ -334,7 +318,8 @@ fn fsc_config(root: &Path, r: &mut Report) {
                     }
                     true
                 }
-                None => false,
+                // Words FSC keeps as a plain string: nothing to compare.
+                None => ty == "String",
             },
         };
         if !kind_ok && !ty.is_empty() {

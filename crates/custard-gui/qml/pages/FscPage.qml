@@ -15,6 +15,8 @@ Item {
 
     readonly property var fsc: App.fsc
     readonly property var facts: page.fsc.facts || null
+    // The agent the saved config chooses; the page's choice takes effect on Save.
+    readonly property var agent: page.facts ? page.facts.agent : null
     readonly property var settings: page.fsc.settings || ({ keys: [] })
     readonly property bool installed: page.facts !== null && !!page.facts.installed
     readonly property bool busy: App.hyprpmBusy
@@ -56,6 +58,40 @@ Item {
         if (page.pending.hasOwnProperty(f.name))
             return page.pending[f.name] === null ? f["default"] : page.pending[f.name]
         return f.value === null || f.value === undefined ? f["default"] : f.value
+    }
+
+    // The agent that answers, as the page stands: the Claude card and each
+    // ACP agent's card show only while theirs is the one chosen.
+    readonly property string backend: {
+        var fields = page.fsc.fields || []
+        for (var i = 0; i < fields.length; i++) {
+            if (fields[i].name === "agent.backend")
+                return page.shown(fields[i])
+        }
+        return "claude"
+    }
+
+    // A list field as a plain array of words. From the backend it arrives as
+    // a Qt sequence, which Array.isArray does not count as an array.
+    function words(v) {
+        if (v === null || v === undefined || typeof v === "string" || v.length === undefined)
+            return null
+        var out = []
+        for (var i = 0; i < v.length; i++)
+            out.push(String(v[i]))
+        return out
+    }
+
+    // A list field as one line.
+    function listText(v) {
+        var w = page.words(v)
+        return w === null ? "" : w.join(", ")
+    }
+
+    function sameList(a, b) {
+        var x = page.words(a)
+        var y = page.words(b)
+        return x !== null && y !== null && x.join("\u0000") === y.join("\u0000")
     }
 
     function fieldsIn(section) {
@@ -130,7 +166,7 @@ Item {
             Card {
                 Layout.fillWidth: true
                 title: "Fishsticks & Custard"
-                subtitle: "A voice assistant that runs on your Claude subscription. Say "
+                subtitle: "A voice assistant that answers through Claude Code or another agent. Say "
                           + "“fishsticks and custard”, press its key, or click its tray icon."
 
                 Flow {
@@ -156,17 +192,28 @@ Item {
                     }
                     Badge {
                         visible: page.facts !== null
-                        text: page.facts && page.facts.claude ? "Claude Code found" : "Claude Code not found"
-                        tint: page.facts && page.facts.claude ? Theme.ok : Theme.error
+                        text: page.agent ? page.agent.name + (page.agent.found ? " found" : " not found") : ""
+                        tint: page.agent && page.agent.found ? Theme.ok : Theme.error
                     }
                 }
 
                 Text {
                     width: parent.width
-                    visible: page.facts !== null && !page.facts.claude
-                    text: "It talks to Claude through the Claude Code command line program, which "
-                          + "is not a pacman package. Install it from claude.com/claude-code and log in "
-                          + "once in a terminal; then set its path below if it is not called claude."
+                    visible: page.agent !== null && !page.agent.found
+                    text: {
+                        var a = page.agent
+                        if (a === null)
+                            return ""
+                        if (a.backend === "claude")
+                            return "It talks to Claude through the Claude Code command line program, which "
+                                   + "is not a pacman package. Install it from claude.com/claude-code and log in "
+                                   + "once in a terminal; then set its path below if it is not called claude."
+                        if (a.program === "")
+                            return "A custom agent has no usual program: set its program on the Custom agent card below."
+                        return "FSC answers through " + a.program + ", which was not found. Install "
+                               + a.install + (a.login !== "" ? ", sign in once with " + a.login : "")
+                               + ", or set its program below."
+                    }
                     color: Theme.warn
                     font.pixelSize: Theme.fontSize
                     wrapMode: Text.WordWrap
@@ -490,7 +537,11 @@ Item {
             Repeater {
                 model: [
                     { section: "agent", title: "Agent" },
-                    { section: "claude", title: "Claude" },
+                    { section: "claude", title: "Claude", agent: "claude" },
+                    { section: "codex", title: "Codex", agent: "codex" },
+                    { section: "antigravity", title: "Antigravity", agent: "antigravity" },
+                    { section: "opencode", title: "OpenCode", agent: "opencode" },
+                    { section: "acp", title: "Custom agent", agent: "acp" },
                     { section: "ui", title: "Window" },
                     { section: "voice", title: "Voice" }
                 ]
@@ -501,6 +552,7 @@ Item {
                     required property var modelData
 
                     Layout.fillWidth: true
+                    visible: !sectionCard.modelData.agent || sectionCard.modelData.agent === page.backend
                     title: sectionCard.modelData.title
 
                     Repeater {
@@ -542,6 +594,24 @@ Item {
                                     currentIndex: (row.modelData.choices || []).indexOf(row.current)
                                     onActivated: function (index) {
                                         page.stage(row.modelData.name, row.modelData.choices[index])
+                                    }
+                                }
+
+                                LineEdit {
+                                    visible: row.modelData.kind === "list"
+                                    width: parent.width
+                                    text: page.sameList(row.current, row.modelData["default"])
+                                          ? "" : page.listText(row.current)
+                                    placeholderText: page.listText(row.modelData["default"])
+                                    onCommit: function (v) {
+                                        var t = v.trim()
+                                        var value = t === "" ? null : t.split(",").map(function (w) {
+                                            return w.trim()
+                                        }).filter(function (w) { return w !== "" })
+                                        if (value === null ? (row.modelData.value === null && !row.changed)
+                                                           : page.sameList(value, row.current))
+                                            return
+                                        page.stage(row.modelData.name, value)
                                     }
                                 }
 

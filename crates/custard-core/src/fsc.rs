@@ -542,12 +542,73 @@ pub struct Facts {
     pub running: bool,
     /// Where the Claude Code CLI is, if it is on PATH.
     pub claude: Option<String>,
+    /// The agent that answers, as the config file has it.
+    pub agent: AgentFacts,
     /// Where the speech models go.
     pub models_dir: String,
     /// The model files the current config needs and does not have.
     pub missing_models: Vec<String>,
     /// The whisper models already downloaded, by name.
     pub whisper_models: Vec<String>,
+}
+
+/// The agent FSC answers through, and whether its program is here.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct AgentFacts {
+    /// `[agent] backend`: claude, codex, antigravity, opencode or acp.
+    pub backend: String,
+    /// What to call it: "Claude Code", "Codex".
+    pub name: String,
+    /// The program FSC runs for it; empty for a custom agent with none set.
+    pub program: String,
+    /// Where that program is, when it is on PATH or a file.
+    pub found: Option<String>,
+    /// What to install when it is not found.
+    pub install: String,
+    /// The command that signs in to it once, if it needs one.
+    pub login: String,
+}
+
+/// The agent the config chooses, from FSC 0.7's presets (`AgentKind::preset`
+/// in fsc-core): each ACP agent's usual program, unless `[<agent>] command`
+/// names another.
+pub fn agent_facts(values: &Map<String, Value>) -> AgentFacts {
+    let get =
+        |name: &str| values.get(name).and_then(Value::as_str).unwrap_or("").trim().to_string();
+    let backend = Some(get("agent.backend")).filter(|b| AGENTS.contains(&b.as_str()));
+    let backend = backend.unwrap_or_else(|| "claude".into());
+    let (name, usual, install, login) = match backend.as_str() {
+        "codex" => (
+            "Codex",
+            "codex-acp",
+            "codex-acp (npm i -g @agentclientprotocol/codex-acp)",
+            "codex login",
+        ),
+        "antigravity" => ("Antigravity", "agy", "antigravity-cli", "agy acp --login"),
+        "opencode" => ("OpenCode", "opencode", "opencode", "opencode auth login"),
+        "acp" => ("Custom agent", "", "", ""),
+        _ => ("Claude Code", "claude", "Claude Code, from claude.com/claude-code", ""),
+    };
+    let set =
+        if backend == "claude" { get("claude.bin") } else { get(&format!("{backend}.command")) };
+    let program = if set.is_empty() { usual.to_string() } else { set };
+    let found = (!program.is_empty())
+        .then(|| {
+            paths::which(&program).or_else(|| {
+                let p = paths::expand(&program);
+                p.is_file().then_some(p)
+            })
+        })
+        .flatten()
+        .map(|p| paths::contract(&p));
+    AgentFacts {
+        backend,
+        name: name.into(),
+        program,
+        found,
+        install: install.into(),
+        login: login.into(),
+    }
 }
 
 /// Where FSC keeps its config.
@@ -610,6 +671,7 @@ pub fn facts(values: &Map<String, Value>) -> Facts {
                 p.is_file().then_some(p)
             })
             .map(|p| paths::contract(&p)),
+        agent: agent_facts(values),
         models_dir: paths::contract(&dir),
         missing_models: needed_models(values)
             .into_iter()
@@ -785,6 +847,9 @@ pub enum Kind {
     Text,
     /// One of a few words.
     Choice(&'static [&'static str]),
+    /// A list of words, edited as one line split at commas. With words
+    /// given, each must be one of them.
+    List(&'static [&'static str]),
 }
 
 /// One setting in FSC's config.
@@ -815,6 +880,24 @@ const fn f(
     Field { section, key, label, hint, kind, default }
 }
 
+/// The agents FSC 0.7 can ask, as `[agent] backend` takes them.
+const AGENTS: &[&str] = &["claude", "codex", "antigravity", "opencode", "acp"];
+
+/// The kinds of tool call an ACP agent makes (the Agent Client Protocol's
+/// `ToolKind`), for `[agent] auto_allow`.
+const TOOL_KINDS: &[&str] = &[
+    "read",
+    "edit",
+    "delete",
+    "move",
+    "search",
+    "execute",
+    "think",
+    "fetch",
+    "switch_mode",
+    "other",
+];
+
 const ANCHORS: &[&str] = &[
     "top",
     "top-left",
@@ -828,13 +911,18 @@ const ANCHORS: &[&str] = &[
 ];
 
 /// The settings the page offers, and FSC's defaults for them, from
-/// fsc-core's `config.rs`. Settings it leaves out (`claude.home`,
-/// `setting_sources`, `extra_args`) are kept in the file as they are.
+/// fsc-core's `config.rs`. Settings it leaves out (`claude.setting_sources`
+/// and `extra_args`, the agents' `env` tables) are kept in the file as they
+/// are; see the ACK tables in `upstream.rs`.
 pub const FIELDS: &[Field] = &[
+    f("agent", "backend", "Answered by", "claude: Claude Code. codex, antigravity, opencode: through the Agent Client Protocol. acp: any other ACP agent. FSC's tray switches it too", Kind::Choice(AGENTS), "\"claude\""),
     f("claude", "model", "Model", "An alias (sonnet, opus, haiku) or a full model id", Kind::Text, "\"sonnet\""),
     f("claude", "bin", "Claude Code", "The claude program, by name or path", Kind::Text, "\"claude\""),
     f("agent", "session_idle_minutes", "New session after", "Minutes without an exchange; 0 never starts one", Kind::Int(0, 1440), "20"),
     f("agent", "memory", "Remember between sessions", "Keeps a short list of facts about you in memory.md", Kind::Bool, "true"),
+    f("agent", "auto_allow", "Runs without asking", "ACP agents only. Split at commas, from: read, edit, delete, move, search, execute, think, fetch, switch_mode, other", Kind::List(TOOL_KINDS), "[\"read\", \"search\", \"fetch\", \"think\"]"),
+    f("agent", "home", "Assistant's home", "Its persona, memory and the agent's own settings; empty is ~/.local/share/fsc/home", Kind::Text, "\"\""),
+    f("claude", "permission_mode", "Permission mode", "default asks first. acceptEdits, auto and plan as in Claude Code", Kind::Choice(&["default", "acceptEdits", "auto", "plan"]), "\"default\""),
     f("ui", "surface", "Shown as", "window: placed and decorated by Hyprland's rules. layer: pinned to an edge. headless: voice and tray only", Kind::Choice(&["window", "layer", "headless"]), "\"window\""),
     f("ui", "anchor", "Pinned to", "Layer only", Kind::Choice(ANCHORS), "\"top\""),
     f("ui", "margin", "Distance from top or bottom", "Layer only, in pixels", Kind::Int(0, 4000), "80"),
@@ -867,6 +955,23 @@ pub const FIELDS: &[Field] = &[
     f("voice", "hang_up_after_secs", "Hang up after", "Seconds of silence in a conversation; 0 waits for the popup to close", Kind::Int(0, 3600), "60"),
     f("voice", "wake_word", "Wake phrase", "Listen for it whenever the mic is free", Kind::Bool, "true"),
     f("voice", "wake_phrase", "The phrase", "", Kind::Text, "\"fishsticks and custard\""),
+    // Each ACP agent's own settings; the page shows the chosen agent's.
+    f("codex", "command", "Program", "By name or path; empty runs codex-acp", Kind::Text, "\"\""),
+    f("codex", "args", "Arguments", "Split at commas. Added after the usual ones; with a program set, the whole list", Kind::List(&[]), "[]"),
+    f("codex", "model", "Model", "A model id as Codex lists it; empty is its default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("codex", "mode", "Mode", "How much it asks first; empty is read-only, which asks before edits, commands and network use. FSC's tray lists them", Kind::Text, "\"\""),
+    f("antigravity", "command", "Program", "By name or path; empty runs agy acp", Kind::Text, "\"\""),
+    f("antigravity", "args", "Arguments", "Split at commas. Added after the usual ones; with a program set, the whole list", Kind::List(&[]), "[]"),
+    f("antigravity", "model", "Model", "A model id as Antigravity lists it; empty is its default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("antigravity", "mode", "Mode", "How much it asks first; empty is the agent's own default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("opencode", "command", "Program", "By name or path; empty runs opencode acp", Kind::Text, "\"\""),
+    f("opencode", "args", "Arguments", "Split at commas. Added after the usual ones; with a program set, the whole list", Kind::List(&[]), "[]"),
+    f("opencode", "model", "Model", "A model id as OpenCode lists it; empty is its default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("opencode", "mode", "Mode", "How much it asks first; empty is the agent's own default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("acp", "command", "Program", "The agent's program, by name or path. Needed: a custom agent has no usual one", Kind::Text, "\"\""),
+    f("acp", "args", "Arguments", "Split at commas: its whole argument list", Kind::List(&[]), "[]"),
+    f("acp", "model", "Model", "A model id as the agent lists it; empty is its default. FSC's tray lists them", Kind::Text, "\"\""),
+    f("acp", "mode", "Mode", "How much it asks first; empty is the agent's own default. FSC's tray lists them", Kind::Text, "\"\""),
 ];
 
 fn field(name: &str) -> Option<&'static Field> {
@@ -891,9 +996,10 @@ fn toml_to_json(literal: &str) -> Value {
 /// the old place when the new one is not set, so the page does too, and
 /// takes the old key out when it writes the new one — otherwise a value
 /// left in `[claude]` would come back the moment `[agent]`'s was removed.
-const MOVED_KEYS: &[(&str, &str)] = &[
+pub const MOVED_KEYS: &[(&str, &str)] = &[
     ("agent.session_idle_minutes", "claude.session_idle_minutes"),
     ("agent.memory", "claude.memory"),
+    ("agent.home", "claude.home"),
 ];
 
 fn split(name: &str) -> (&str, &str) {
@@ -933,6 +1039,7 @@ pub fn fields_view(values: &Map<String, Value>) -> Value {
                     Kind::Float(lo, hi) => ("float", json!({ "min": lo, "max": hi })),
                     Kind::Text => ("text", json!({})),
                     Kind::Choice(c) => ("choice", json!({ "choices": c })),
+                    Kind::List(words) => ("list", json!({ "words": words })),
                 };
                 let mut v = json!({
                     "name": name,
@@ -992,6 +1099,28 @@ fn checked(f: &Field, v: &Value) -> Result<toml_edit::Value> {
                 )));
             }
             toml_edit::Value::from(s)
+        }
+        Kind::List(words) => {
+            let items = v.as_array().ok_or_else(bad)?;
+            let mut out = toml_edit::Array::new();
+            for item in items {
+                let s = item.as_str().ok_or_else(bad)?.trim();
+                if s.is_empty() {
+                    continue;
+                }
+                if s.contains(['\n', '\r']) {
+                    return Err(bad());
+                }
+                if !words.is_empty() && !words.contains(&s) {
+                    return Err(Error::other(format!(
+                        "{} takes {}, not {s}",
+                        f.label,
+                        words.join(", ")
+                    )));
+                }
+                out.push(s);
+            }
+            toml_edit::Value::Array(out)
         }
     })
 }
@@ -1053,6 +1182,9 @@ fn same(v: &toml_edit::Value, default: &Value) -> bool {
             default.as_f64().is_some_and(|d| (d - x.value()).abs() < 1e-9)
         }
         toml_edit::Value::String(s) => default.as_str() == Some(s.value().as_str()),
+        toml_edit::Value::Array(a) => default
+            .as_array()
+            .is_some_and(|d| d.len() == a.len() && a.iter().zip(d).all(|(x, y)| same(x, y))),
         _ => false,
     }
 }
@@ -1083,6 +1215,62 @@ hl.bind(\"SUPER + SHIFT + A\", hl.dsp.exec_cmd(\"fsc release\"), { release = tru
 -- hl.bind(\"SUPER + Z\", hl.dsp.exec_cmd(\"fsc new\"))
 hl.bind(\"SUPER + X\", hl.dsp.exec_cmd(\"fsc ask hello\"))
 ";
+
+    #[test]
+    fn the_agent_program_comes_from_the_preset_or_the_config() {
+        let v = |pairs: &[(&str, &str)]| -> Map<String, Value> {
+            pairs.iter().map(|(k, v)| (k.to_string(), json!(v))).collect()
+        };
+        let a = agent_facts(&Map::new());
+        assert_eq!((a.backend.as_str(), a.program.as_str()), ("claude", "claude"));
+        let a = agent_facts(&v(&[("agent.backend", "codex")]));
+        assert_eq!((a.name.as_str(), a.program.as_str()), ("Codex", "codex-acp"));
+        assert_eq!(a.login, "codex login");
+        let a = agent_facts(&v(&[("agent.backend", "opencode"), ("opencode.command", "/opt/oc")]));
+        assert_eq!(a.program, "/opt/oc");
+        let a = agent_facts(&v(&[("agent.backend", "acp")]));
+        assert!(a.program.is_empty() && a.found.is_none());
+        let a = agent_facts(&v(&[("agent.backend", "sh"), ("claude.bin", "sh")]));
+        assert_eq!(a.backend, "claude", "an unknown agent is FSC's default");
+        assert!(a.found.is_some(), "sh is on PATH");
+    }
+
+    #[test]
+    fn lists_are_written_as_arrays_and_checked_word_by_word() {
+        let mut m = Map::new();
+        m.insert("agent.auto_allow".into(), json!(["read", " edit ", ""]));
+        m.insert("codex.args".into(), json!(["--flag", "value with space"]));
+        let out = edit_config("", &m).unwrap();
+        let doc: toml::Table = toml::from_str(&out).unwrap();
+        assert_eq!(doc["agent"]["auto_allow"], toml::Value::try_from(["read", "edit"]).unwrap());
+        assert_eq!(doc["codex"]["args"].as_array().unwrap().len(), 2);
+        assert_eq!(config_values(&out).unwrap()["agent.auto_allow"], json!(["read", "edit"]));
+
+        // FSC's own default is not written into a file that does not set it.
+        let mut m = Map::new();
+        m.insert("agent.auto_allow".into(), json!(["read", "search", "fetch", "think"]));
+        assert_eq!(edit_config("", &m).unwrap(), "");
+
+        let mut m = Map::new();
+        m.insert("agent.auto_allow".into(), json!(["read", "everything"]));
+        let e = edit_config("", &m).unwrap_err().to_string();
+        assert!(e.contains("everything"), "{e}");
+    }
+
+    #[test]
+    fn the_agents_settings_land_in_their_own_tables() {
+        let mut m = Map::new();
+        m.insert("agent.backend".into(), json!("opencode"));
+        m.insert("opencode.model".into(), json!("opencode/big-pickle"));
+        m.insert("claude.permission_mode".into(), json!("acceptEdits"));
+        let out = edit_config("[claude]\nhome = \"~/old\"\n", &m).unwrap();
+        let doc: toml::Table = toml::from_str(&out).unwrap();
+        assert_eq!(doc["agent"]["backend"].as_str(), Some("opencode"));
+        assert_eq!(doc["opencode"]["model"].as_str(), Some("opencode/big-pickle"));
+        assert_eq!(doc["claude"]["permission_mode"].as_str(), Some("acceptEdits"));
+        // The old home is still what the page shows until a new one is set.
+        assert_eq!(config_values(&out).unwrap()["agent.home"], json!("~/old"));
+    }
 
     #[test]
     fn settings_moved_to_agent_read_the_old_place_and_clear_it() {
