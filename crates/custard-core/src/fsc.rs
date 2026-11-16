@@ -790,7 +790,7 @@ pub enum Kind {
 /// One setting in FSC's config.
 #[derive(Debug, Clone, Copy)]
 pub struct Field {
-    /// Its table: `claude`, `ui` or `voice`.
+    /// Its table: `agent`, `claude`, `ui` or `voice`.
     pub section: &'static str,
     /// Its key in that table.
     pub key: &'static str,
@@ -833,8 +833,8 @@ const ANCHORS: &[&str] = &[
 pub const FIELDS: &[Field] = &[
     f("claude", "model", "Model", "An alias (sonnet, opus, haiku) or a full model id", Kind::Text, "\"sonnet\""),
     f("claude", "bin", "Claude Code", "The claude program, by name or path", Kind::Text, "\"claude\""),
-    f("claude", "session_idle_minutes", "New session after", "Minutes without an exchange; 0 never starts one", Kind::Int(0, 1440), "20"),
-    f("claude", "memory", "Remember between sessions", "Keeps a short list of facts about you in memory.md", Kind::Bool, "true"),
+    f("agent", "session_idle_minutes", "New session after", "Minutes without an exchange; 0 never starts one", Kind::Int(0, 1440), "20"),
+    f("agent", "memory", "Remember between sessions", "Keeps a short list of facts about you in memory.md", Kind::Bool, "true"),
     f("ui", "surface", "Shown as", "window: placed and decorated by Hyprland's rules. layer: pinned to an edge. headless: voice and tray only", Kind::Choice(&["window", "layer", "headless"]), "\"window\""),
     f("ui", "anchor", "Pinned to", "Layer only", Kind::Choice(ANCHORS), "\"top\""),
     f("ui", "margin", "Distance from top or bottom", "Layer only, in pixels", Kind::Int(0, 4000), "80"),
@@ -887,15 +887,34 @@ fn toml_to_json(literal: &str) -> Value {
     serde_json::to_value(&doc["v"]).unwrap_or(Value::Null)
 }
 
+/// Settings FSC 0.7 moved from `[claude]` to `[agent]`. FSC still reads
+/// the old place when the new one is not set, so the page does too, and
+/// takes the old key out when it writes the new one — otherwise a value
+/// left in `[claude]` would come back the moment `[agent]`'s was removed.
+const MOVED_KEYS: &[(&str, &str)] = &[
+    ("agent.session_idle_minutes", "claude.session_idle_minutes"),
+    ("agent.memory", "claude.memory"),
+];
+
+fn split(name: &str) -> (&str, &str) {
+    name.split_once('.').unwrap_or((name, ""))
+}
+
 /// The settings `text` sets, by `section.key`, for the fields the page
 /// offers. A key the file does not set is absent.
 pub fn config_values(text: &str) -> Result<Map<String, Value>> {
     let doc: toml::Table = toml::from_str(text)
         .map_err(|e| Error::other(format!("FSC's config.toml could not be read: {e}")))?;
+    let get = |name: &str| {
+        let (section, key) = split(name);
+        doc.get(section).and_then(|t| t.get(key))
+    };
     let mut out = Map::new();
     for f in FIELDS {
-        if let Some(v) = doc.get(f.section).and_then(|t| t.get(f.key)) {
-            out.insert(format!("{}.{}", f.section, f.key), serde_json::to_value(v)?);
+        let name = format!("{}.{}", f.section, f.key);
+        let old = MOVED_KEYS.iter().find(|(new, _)| *new == name).map(|(_, old)| *old);
+        if let Some(v) = get(&name).or_else(|| old.and_then(get)) {
+            out.insert(name, serde_json::to_value(v)?);
         }
     }
     Ok(out)
@@ -989,6 +1008,12 @@ pub fn edit_config(text: &str, changes: &Map<String, Value>) -> Result<String> {
         .map_err(|e| Error::other(format!("FSC's config.toml could not be read: {e}")))?;
     for (name, v) in changes {
         let f = field(name).ok_or_else(|| Error::other(format!("no FSC setting `{name}`")))?;
+        if let Some((_, old)) = MOVED_KEYS.iter().find(|(new, _)| new == name) {
+            let (section, key) = split(old);
+            if let Some(t) = doc.get_mut(section).and_then(|t| t.as_table_like_mut()) {
+                t.remove(key);
+            }
+        }
         if v.is_null() {
             if let Some(t) = doc.get_mut(f.section).and_then(|t| t.as_table_like_mut()) {
                 t.remove(f.key);
@@ -1058,6 +1083,30 @@ hl.bind(\"SUPER + SHIFT + A\", hl.dsp.exec_cmd(\"fsc release\"), { release = tru
 -- hl.bind(\"SUPER + Z\", hl.dsp.exec_cmd(\"fsc new\"))
 hl.bind(\"SUPER + X\", hl.dsp.exec_cmd(\"fsc ask hello\"))
 ";
+
+    #[test]
+    fn settings_moved_to_agent_read_the_old_place_and_clear_it() {
+        let old = "[claude]\nmodel = \"opus\"\nmemory = false\nsession_idle_minutes = 5\n";
+        let v = config_values(old).unwrap();
+        assert_eq!(v["agent.memory"], json!(false), "read from [claude] while [agent] is unset");
+        assert_eq!(v["agent.session_idle_minutes"], json!(5));
+
+        // Back to the default: the old key goes too, or FSC would still use it.
+        let mut m = Map::new();
+        m.insert("agent.memory".into(), json!(true));
+        let out = edit_config(old, &m).unwrap();
+        assert!(!out.contains("memory"), "{out}");
+        assert!(config_values(&out).unwrap().get("agent.memory").is_none());
+
+        // A new value lands in [agent], and [claude] keeps its other keys.
+        let mut m = Map::new();
+        m.insert("agent.session_idle_minutes".into(), json!(30));
+        let out = edit_config(old, &m).unwrap();
+        let doc: toml::Table = toml::from_str(&out).unwrap();
+        assert_eq!(doc["agent"]["session_idle_minutes"].as_integer(), Some(30));
+        assert!(doc["claude"].get("session_idle_minutes").is_none());
+        assert_eq!(doc["claude"]["model"].as_str(), Some("opus"));
+    }
 
     #[test]
     fn finds_the_lines_that_run_it() {

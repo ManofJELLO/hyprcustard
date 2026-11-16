@@ -489,6 +489,7 @@ Item {
 
             Repeater {
                 model: [
+                    { section: "agent", title: "Agent" },
                     { section: "claude", title: "Claude" },
                     { section: "ui", title: "Window" },
                     { section: "voice", title: "Voice" }

@@ -38,6 +38,36 @@ const FSC_ACK_KEYS: &[(&str, &str)] = &[
     ("claude.home", "a path to FSC's own working folder; kept in the file as it is"),
     ("claude.setting_sources", "which Claude Code settings FSC reads; kept as it is"),
     ("claude.extra_args", "raw arguments for claude; kept as it is"),
+    // FSC 0.7's other agents. Which agent answers, and its model and mode,
+    // are switched from FSC's tray menus or `fsc agent` / `model` / `mode`,
+    // which save them; an agent's launch settings are set up once, by hand,
+    // per FSC's docs. Not offered yet — a candidate for the page later.
+    ("claude.memory", "FSC 0.7's old place for agent.memory, which the page edits"),
+    ("claude.session_idle_minutes", "FSC 0.7's old place for agent.session_idle_minutes, which the page edits"),
+    ("agent.backend", "switched from FSC's tray or `fsc agent`, which saves it"),
+    ("agent.auto_allow", "an ACP agent's tool permissions; kept as it is"),
+    ("agent.home", "a path to the assistant's home folder; kept as it is"),
+    ("claude.permission_mode", "how much Claude asks first; FSC's mode menu sets it"),
+    ("acp.command", "a custom ACP agent's launch settings; kept as they are"),
+    ("acp.args", "a custom ACP agent's launch settings; kept as they are"),
+    ("acp.env", "a custom ACP agent's launch settings; kept as they are"),
+    ("acp.model", "chosen from FSC's model menu or `fsc model`"),
+    ("acp.mode", "chosen from FSC's mode menu or `fsc mode`"),
+    ("codex.command", "Codex's launch settings; kept as they are"),
+    ("codex.args", "Codex's launch settings; kept as they are"),
+    ("codex.env", "Codex's launch settings; kept as they are"),
+    ("codex.model", "chosen from FSC's model menu or `fsc model`"),
+    ("codex.mode", "chosen from FSC's mode menu or `fsc mode`"),
+    ("antigravity.command", "Antigravity's launch settings; kept as they are"),
+    ("antigravity.args", "Antigravity's launch settings; kept as they are"),
+    ("antigravity.env", "Antigravity's launch settings; kept as they are"),
+    ("antigravity.model", "chosen from FSC's model menu or `fsc model`"),
+    ("antigravity.mode", "chosen from FSC's mode menu or `fsc mode`"),
+    ("opencode.command", "OpenCode's launch settings; kept as they are"),
+    ("opencode.args", "OpenCode's launch settings; kept as they are"),
+    ("opencode.env", "OpenCode's launch settings; kept as they are"),
+    ("opencode.model", "chosen from FSC's model menu or `fsc model`"),
+    ("opencode.mode", "chosen from FSC's mode menu or `fsc mode`"),
 ];
 
 /// `fsc` subcommands no key or button of hyprcustard's runs.
@@ -48,6 +78,10 @@ const FSC_ACK_COMMANDS: &[(&str, &str)] = &[
     ("status", "hyprcustard looks for the fscd process instead"),
     ("memory", "prints to a terminal; nothing for a key to do"),
     ("forget", "destructive, and belongs in FSC's own popup"),
+    ("agent", "takes an agent's name; FSC's tray switches agents"),
+    ("model", "takes a model id; FSC's tray switches models"),
+    ("mode", "takes a mode; FSC's tray switches modes"),
+    ("wake", "takes a phrase; changing it is a setting, not a key"),
 ];
 
 /// Plugin uniforms that are not for shaders to declare.
@@ -279,7 +313,10 @@ fn fsc_config(root: &Path, r: &mut Report) {
         if example.get(f.section).and_then(|t| t.get(f.key)).is_some() && mine != theirs {
             r.changed(format!("config key {name}: default is {theirs}, the page says {mine}"));
         }
+        // An optional key (FSC falls back to another, or to its default)
+        // is edited as the value it holds.
         let ty = types.get(&name).map(String::as_str).unwrap_or("");
+        let ty = ty.strip_prefix("Option<").and_then(|t| t.strip_suffix('>')).unwrap_or(ty);
         let kind_ok = match f.kind {
             Kind::Bool => ty == "bool",
             Kind::Int(..) => matches!(ty, "u8" | "u16" | "u32" | "u64" | "i32" | "i64" | "usize"),
