@@ -476,9 +476,9 @@ does the same job in a terminal window instead. Use it if you use `doas` rather 
 ## Fishsticks & Custard
 
 [Fishsticks & Custard](https://github.com/ManofJELLO/fishsticks-and-custard) is a voice
-assistant that answers through Claude Code or another agent. This page installs and updates it,
-downloads its speech models, starts it with Hyprland, sets its keys, and edits its settings:
-the agent, its window and its voice.
+assistant that answers through Claude Code or another agent. This page installs it, downloads its
+speech models, starts it with Hyprland, sets its keys, and edits its settings: the agent, its
+window and its voice. Once installed it is updated with the rest of your system, by pacman.
 
 ## Settings
 

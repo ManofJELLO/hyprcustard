@@ -808,9 +808,11 @@ fn key_trusted() -> bool {
 // Jobs
 // ---------------------------------------------------------------------------
 
-/// Install, or update: trust the key and add the repository if they are
-/// not already there, then install with a full system upgrade, which is the
-/// only kind of install Arch supports once the package lists are synced.
+/// Install: trust the key and add the repository if they are not already
+/// there, then install with a full system upgrade, which is the only kind
+/// of install Arch supports once the package lists are synced. Updates are
+/// left to the user's package manager, with the rest of their system; the
+/// page offers no button for them.
 ///
 /// Arguments: fingerprint, key URL, repository, server, pacman.conf.
 const INSTALL: &str = r#"set -eu

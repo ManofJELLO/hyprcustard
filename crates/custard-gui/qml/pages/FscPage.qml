@@ -233,8 +233,8 @@ Item {
                     width: parent.width
                     visible: page.facts !== null && page.facts.pacman
                     text: page.installed
-                          ? "Update upgrades the whole system along with it, as pacman requires once "
-                            + "its package lists are refreshed."
+                          ? "Updates come with the rest of your system, from your package manager "
+                            + "(sudo pacman -Syu, or your AUR helper)."
                           : "Install trusts the project's signing key (checked against its known "
                             + "fingerprint), adds its pacman repository, and installs it with a full "
                             + "system upgrade. It asks for your password."
@@ -248,8 +248,9 @@ Item {
                     spacing: Theme.gapSmall
 
                     PillButton {
-                        text: page.installed ? "Update" : "Install"
-                        primary: !page.installed
+                        visible: !page.installed
+                        text: "Install"
+                        primary: true
                         enabled: !page.busy && page.facts !== null && page.facts.pacman
                         onClicked: App.fscRun("install")
                     }
