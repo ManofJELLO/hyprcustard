@@ -457,8 +457,12 @@ fn fsc_desktop(root: &Path, r: &mut Report) {
 /// page counts, against `lang.rs`.
 fn fsc_languages(root: &Path, r: &mut Report) {
     let lang = read(root, "crates/fsc-core/src/lang.rs");
-    let entry = Regex::new(r#"(?s)\bcode:\s*"([a-z]+)",.*?\bvoices:\s*&\[(.*?)\],\s*\n\s*answers"#)
-        .unwrap();
+    // Comment lines may sit between `voices` and `answers` (zh has some);
+    // without allowing for them the match ran on into the next entry.
+    let entry = Regex::new(
+        r#"(?s)\bcode:\s*"([a-z]+)",[^{}]*?\bvoices:\s*&\[(.*?)\],\s*\n(?:\s*//[^\n]*\n)*\s*answers"#,
+    )
+    .unwrap();
     let pair = Regex::new(r#"\(\s*"([A-Z]*)",\s*"([^"]+)"\s*\)"#).unwrap();
     let theirs: BTreeMap<String, Vec<(String, String)>> = entry
         .captures_iter(&lang)

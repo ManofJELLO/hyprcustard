@@ -643,6 +643,11 @@ pub const LANGUAGES: &[(&str, &[(&str, &str)])] = &[
     ("tr", &[("", "tr_TR-dfki-medium")]),
     ("hu", &[("", "hu_HU-anna-medium")]),
     ("ro", &[("", "ro_RO-mihai-medium")]),
+    ("zh", &[("", "zh_CN-huayan-medium")]),
+    ("ko", &[("", "ko_KR-kss-medium")]),
+    ("hi", &[("", "hi_IN-pratham-medium")]),
+    ("vi", &[("", "vi_VN-vais1000-medium")]),
+    ("id", &[("", "id_ID-news_tts-medium")]),
 ];
 
 /// A language of [`LANGUAGES`] by code; Norwegian answers to nb and nn.
