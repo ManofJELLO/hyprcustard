@@ -526,6 +526,10 @@ pub fn set_cursor_theme(p: &Places, name: &str, size: u32, keep: usize) -> Resul
 // Hyprland's config
 // ---------------------------------------------------------------------------
 
+/// The gsettings keys this module sets that a line in the Hyprland config
+/// can set back: the icon theme, and the cursor's.
+pub const PIN_KEYS: [&str; 3] = ["icon-theme", "cursor-theme", "cursor-size"];
+
 /// The cursor block's markers.
 pub const MARKERS: Markers = Markers {
     begin: "-- >>> HyprCustard cursor (managed by hyprcustard) >>>",

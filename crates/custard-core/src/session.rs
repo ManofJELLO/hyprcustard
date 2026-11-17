@@ -103,6 +103,9 @@ struct Desk {
     cursor_lines: Vec<crate::icons::Line>,
     cursor_moved: Vec<usize>,
     cursor_managed: bool,
+    /// Lines in the Hyprland config, and the files it sources, that set the
+    /// icon or cursor theme with gsettings, live or taken out.
+    icon_pins: Vec<colors::pins::Pin>,
 }
 
 /// Which part of the app noticed a problem.
@@ -1008,6 +1011,10 @@ impl Session {
             cursor_lines: crate::icons::user_lines(&text),
             cursor_moved: crate::icons::moved_lines(&text),
             cursor_managed: crate::icons::managed(&text),
+            icon_pins: colors::pins::find(&colors::qt_style::hypr_sources(&config))
+                .into_iter()
+                .filter(|p| crate::icons::PIN_KEYS.contains(&p.key.as_str()))
+                .collect(),
             ..Default::default()
         };
         self.refresh_fsc(&text);
@@ -1918,7 +1925,7 @@ impl Session {
             (None, Some(Ok(b))) => b.scheme.dark,
             _ => self.settings.colors.dark,
         };
-        let took = self.take_out_pins(key)?;
+        let took = self.take_out_pins(&[key])?;
         let took = (!took.is_empty()).then(|| took.join(", "));
         let desk = colors::toolkits::Desktop::read(&home);
         let msg = if id == "gtk3" && !desk.gtk_theme_follows() {
@@ -1950,16 +1957,17 @@ impl Session {
     }
 
     /// Comment out the lines in the Hyprland config, and the files it
-    /// sources, that set `key` with gsettings. Returns the files changed.
-    fn take_out_pins(&self, key: &str) -> Result<Vec<String>> {
+    /// sources, that set any of `keys` with gsettings. Returns the files
+    /// changed.
+    fn take_out_pins(&self, keys: &[&str]) -> Result<Vec<String>> {
         use colors::pins;
         let sources = colors::qt_style::hypr_sources(&self.settings.resolved_config_path());
         let all = pins::find(&sources);
-        let live = pins::live(&all, key);
+        let live: Vec<&pins::Pin> = keys.iter().flat_map(|k| pins::live(&all, k)).collect();
         let mut files = Vec::new();
         for src in sources.iter().filter(|src| live.iter().any(|p| p.path == src.path)) {
             let text = paths::read_to_string(&src.path)?;
-            let next = pins::take_out(src.kind, &text, &[key]);
+            let next = pins::take_out(src.kind, &text, keys);
             if next != text {
                 guard_test_write(&src.path);
                 paths::backup(&src.path, self.settings.backups_to_keep)?;
@@ -3329,6 +3337,41 @@ mod tests {
         s.command("icons.giveBack", &json!({})).unwrap();
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
         assert!(s.command("icons.setIcons", &json!({})).is_err(), "needs a theme");
+    }
+
+    /// A config line that sets the icon theme with gsettings at each reload
+    /// is shown on the Icons page, said when a theme is picked, and taken
+    /// out on its own, leaving the cursor's.
+    #[test]
+    fn gsettings_lines_that_undo_the_icon_theme_are_taken_out() {
+        let mine = "hl.exec_cmd(\"gsettings set org.gnome.desktop.interface icon-theme 'Gruv'\")\n\
+                    hl.exec_cmd(\"gsettings set org.gnome.desktop.interface cursor-theme 'Old'\")\n";
+        let (_dir, cfg, mut s) = rule_session(mine);
+        s.refresh_desk();
+        let lines = |s: &Session, k: &str| s.state()["icons"][k]["lines"].as_array().unwrap().len();
+        assert_eq!((lines(&s, "iconPins"), lines(&s, "cursorPins")), (1, 1));
+
+        let msg = s.command("icons.setIcons", &json!({ "theme": "Papirus" })).unwrap().unwrap();
+        assert!(msg.contains("sets it back to Gruv") && msg.contains(":1"), "{msg}");
+
+        let msg = s
+            .command("icons.takePins", &json!({ "kind": "icons", "theme": "Papirus" }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.starts_with("Took the lines that set the icon theme"), "{msg}");
+        assert!(msg.ends_with("and set Papirus again"), "{msg}");
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        let l: Vec<&str> = text.lines().collect();
+        assert!(
+            l[0].starts_with("-- [hyprcustard took this out") && l[1].starts_with("hl.exec_cmd")
+        );
+        assert_eq!((lines(&s, "iconPins"), lines(&s, "cursorPins")), (0, 1));
+        assert_eq!(s.state()["icons"]["iconPins"]["taken"], 1);
+
+        let msg = s.command("icons.setIcons", &json!({ "theme": "Papirus" })).unwrap().unwrap();
+        assert!(!msg.contains("sets it back"), "{msg}");
+        let msg = s.command("icons.takePins", &json!({ "kind": "icons" })).unwrap().unwrap();
+        assert_eq!(msg, "There was nothing to change");
     }
 
     #[test]

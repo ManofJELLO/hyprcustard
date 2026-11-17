@@ -10,6 +10,10 @@ use super::Session;
 use crate::error::{Error, Result};
 use crate::{icons, paths};
 
+/// The gsettings keys behind the icon theme, and behind the cursor.
+const ICON_KEYS: &[&str] = &["icon-theme"];
+const CURSOR_KEYS: &[&str] = &["cursor-theme", "cursor-size"];
+
 /// What the page last found.
 #[derive(Debug, Clone, Default)]
 pub(super) struct IconScan {
@@ -41,10 +45,12 @@ impl Session {
             "icons.setIcons" => {
                 let theme = theme()?;
                 let changed = icons::set_icon_theme(&places, &theme, keep)?;
-                Ok(Some(format!(
+                let mut msg = format!(
                     "Icons are now {theme} in {}. Apps already open keep theirs until they restart",
                     changed.join(", ")
-                )))
+                );
+                msg.push_str(&self.pinned_note(ICON_KEYS));
+                Ok(Some(msg))
             }
             "icons.setCursor" => {
                 let theme = theme()?;
@@ -53,6 +59,33 @@ impl Session {
                 let mut msg =
                     format!("The cursor is now {theme} at {size} in {}", changed.join(", "));
                 msg.push_str(&self.cursor_block(&theme, size, false)?);
+                msg.push_str(&self.pinned_note(CURSOR_KEYS));
+                Ok(Some(msg))
+            }
+            "icons.takePins" => {
+                let cursor = payload.get("kind").and_then(Value::as_str) == Some("cursor");
+                let (keys, what) =
+                    if cursor { (CURSOR_KEYS, "cursor") } else { (ICON_KEYS, "icon theme") };
+                let files = self.take_out_pins(keys)?;
+                if files.is_empty() {
+                    return Ok(Some("There was nothing to change".into()));
+                }
+                let mut msg = format!(
+                    "Took the lines that set the {what} back out of {}; they are commented \
+                     out, marked as hyprcustard's",
+                    files.join(", ")
+                );
+                // gsettings keeps what such a line last set, so the theme
+                // wanted is set again now the line is out.
+                if let Ok(theme) = theme() {
+                    if cursor {
+                        let size = self.cursor_size(payload);
+                        icons::set_cursor_theme(&places, &theme, size, keep)?;
+                    } else {
+                        icons::set_icon_theme(&places, &theme, keep)?;
+                    }
+                    msg.push_str(&format!(", and set {theme} again"));
+                }
                 Ok(Some(msg))
             }
             "icons.takeOver" => {
@@ -73,6 +106,25 @@ impl Session {
             scan.current = icons::current(&places);
         }
         result
+    }
+
+    /// The gsettings lines still in force that set one of `keys`.
+    fn live_pins(&self, keys: &[&str]) -> Vec<&crate::colors::pins::Pin> {
+        self.desk.icon_pins.iter().filter(|p| !p.taken && keys.contains(&p.key.as_str())).collect()
+    }
+
+    /// What continues a message about setting a theme when a line in the
+    /// config sets it back.
+    fn pinned_note(&self, keys: &[&str]) -> String {
+        let live = self.live_pins(keys);
+        let Some(first) = live.first() else { return String::new() };
+        format!(
+            ". But {} sets it back to {} each time Hyprland starts or reloads: take {} out \
+             on this page to keep this one",
+            crate::colors::pins::places(&live),
+            first.value,
+            if live.len() == 1 { "that line" } else { "those lines" }
+        )
     }
 
     fn cursor_size(&self, payload: &Value) -> u32 {
@@ -150,6 +202,29 @@ impl Session {
             "cursorLines": self.desk.cursor_lines,
             "cursorMoved": self.desk.cursor_moved,
             "cursorManaged": self.desk.cursor_managed,
+            "iconPins": self.pins_view(ICON_KEYS),
+            "cursorPins": self.pins_view(CURSOR_KEYS),
         })
+    }
+
+    fn pins_view(&self, keys: &[&str]) -> Value {
+        let lines: Vec<Value> = self
+            .live_pins(keys)
+            .into_iter()
+            .map(|p| {
+                json!({
+                    "place": format!("{}:{}", paths::contract(&p.path), p.line),
+                    "key": p.key,
+                    "value": p.value,
+                })
+            })
+            .collect();
+        let taken = self
+            .desk
+            .icon_pins
+            .iter()
+            .filter(|p| p.taken && keys.contains(&p.key.as_str()))
+            .count();
+        json!({ "lines": lines, "taken": taken })
     }
 }

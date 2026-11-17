@@ -19,6 +19,13 @@ Item {
     Component.onCompleted: App.run("icons.refresh")
     onVisibleChanged: if (visible) App.run("icons.refresh")
 
+    // The theme to set again once a line that set gsettings back is out:
+    // the one the other places agree on, since gsettings is what was reset.
+    function wanted(list) {
+        var others = (list || []).filter(function (s) { return s.place !== "gsettings" })
+        return others.length > 0 ? others[0].value : page.firstValue(list)
+    }
+
     function firstValue(list) {
         return list && list.length > 0 ? list[0].value : ""
     }
@@ -40,6 +47,15 @@ Item {
         if (order.length === 1)
             return order[0] + ", in " + byValue[order[0]].join(", ")
         return order.map(function (v) { return byValue[v].join(", ") + ": " + v }).join("   ·   ")
+    }
+
+    // The distinct values places hold, in the order first seen.
+    function values(list) {
+        var out = []
+        for (var i = 0; i < (list || []).length; ++i)
+            if (out.indexOf(list[i].value) < 0)
+                out.push(list[i].value)
+        return out
     }
 
     function sizesFor(themeId) {
@@ -82,6 +98,41 @@ Item {
                            && page.summary(page.current.icons).indexOf("·") >= 0 ? Theme.warn : Theme.fgDim
                     font.pixelSize: Theme.fontSize
                     wrapMode: Text.WordWrap
+                }
+
+                // The places disagree: gsettings was set back, most often.
+                Flow {
+                    width: parent.width
+                    visible: page.values(page.current.icons).length > 1
+                    spacing: Theme.gapSmall
+
+                    Text {
+                        height: 32
+                        verticalAlignment: Text.AlignVCenter
+                        text: "Use one everywhere:"
+                        color: Theme.fgDim
+                        font.pixelSize: Theme.fontSize
+                    }
+                    Repeater {
+                        model: page.values(page.current.icons)
+
+                        PillButton {
+                            required property string modelData
+                            text: modelData
+                            onClicked: App.run("icons.setIcons", { theme: modelData })
+                        }
+                    }
+                }
+
+                PinNote {
+                    width: parent.width
+                    pins: page.view.iconPins
+                    what: "the icon theme"
+                    onTake: App.run("icons.takePins", {
+                        kind: "icons",
+                        theme: page.values(page.current.icons).length > 1
+                               ? page.wanted(page.current.icons) : page.iconNow
+                    })
                 }
 
                 EmptyState {
@@ -180,6 +231,15 @@ Item {
                     color: page.summary(page.current.cursors).indexOf("·") >= 0 ? Theme.warn : Theme.fgDim
                     font.pixelSize: Theme.fontSize
                     wrapMode: Text.WordWrap
+                }
+
+                PinNote {
+                    width: parent.width
+                    pins: page.view.cursorPins
+                    what: "the cursor"
+                    onTake: App.run("icons.takePins", {
+                        kind: "cursor", theme: page.cursorNow, size: page.sizeNow
+                    })
                 }
 
                 FieldRow {
@@ -353,6 +413,50 @@ Item {
                     }
                 }
             }
+        }
+    }
+
+    // Lines in the Hyprland config that set a theme back with gsettings.
+    component PinNote: Column {
+        id: note
+
+        property var pins: ({ lines: [], taken: 0 })
+        property string what: ""
+        signal take()
+
+        readonly property var lines: (note.pins && note.pins.lines) || []
+
+        visible: note.lines.length > 0
+        spacing: Theme.gapSmall
+
+        Text {
+            width: parent.width
+            text: "Your Hyprland config sets " + note.what + " with gsettings each time Hyprland "
+                  + "starts or reloads, so what you pick here goes back to its value then, and "
+                  + "stays there: gsettings keeps whatever was set last. Take "
+                  + (note.lines.length === 1 ? "it" : "them")
+                  + " out and the lines are commented out with a note, and your pick is set again."
+            color: Theme.warn
+            font.pixelSize: Theme.fontSize
+            wrapMode: Text.WordWrap
+        }
+        Repeater {
+            model: note.lines
+
+            Text {
+                required property var modelData
+                width: parent.width
+                text: modelData.place + ":  " + modelData.key + " = " + modelData.value
+                color: Theme.fgDim
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.fontSizeSmall
+                elide: Text.ElideMiddle
+            }
+        }
+        PillButton {
+            text: note.lines.length === 1 ? "Take it out" : "Take them out"
+            primary: true
+            onClicked: note.take()
         }
     }
 }
