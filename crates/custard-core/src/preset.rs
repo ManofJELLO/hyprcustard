@@ -107,6 +107,9 @@ pub struct ColorChoices {
     /// Degrees to turn the wallpaper seed's hue.
     #[serde(default)]
     pub hue_nudge: f64,
+    /// Build base16's accents from the wallpaper's hues.
+    #[serde(default = "yes")]
+    pub wallpaper_accents: bool,
     /// How strongly surfaces are tinted; themes from before it have 1.
     #[serde(default = "one")]
     pub surface_tint: f64,
@@ -126,6 +129,7 @@ impl ColorChoices {
             whole_folder: settings.whole_folder,
             wallpaper_surfaces: settings.wallpaper_surfaces,
             hue_nudge: settings.hue_nudge,
+            wallpaper_accents: settings.wallpaper_accents,
             surface_tint: settings.surface_tint,
             opacity: settings.opacity,
         }
@@ -143,6 +147,7 @@ impl ColorChoices {
             whole_folder: self.whole_folder,
             wallpaper_surfaces: self.wallpaper_surfaces,
             hue_nudge: self.hue_nudge,
+            wallpaper_accents: self.wallpaper_accents,
             surface_tint: self.surface_tint,
             opacity: self.opacity,
             ..settings.clone()
@@ -363,6 +368,10 @@ fn resolve(
 
 fn one() -> f64 {
     1.0
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn format() -> u32 {

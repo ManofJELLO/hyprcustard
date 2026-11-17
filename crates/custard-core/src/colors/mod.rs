@@ -62,6 +62,10 @@ pub struct ColorSettings {
     /// building, -180 to 180: a photo's grading can make a yellow read as
     /// orange.
     pub hue_nudge: f64,
+    /// For the wallpaper, build base16's accents — what terminals and
+    /// prompts color with — from the wallpaper's own hues rather than from
+    /// base16's fixed eight, so a hue the picture lacks stays out.
+    pub wallpaper_accents: bool,
     /// How strongly surfaces are tinted, for anything built from a seed: 1
     /// is Material's own, 0 gray, up to [`scheme::MAX_TINT`].
     pub surface_tint: f64,
@@ -89,6 +93,7 @@ impl Default for ColorSettings {
             whole_folder: false,
             wallpaper_surfaces: false,
             hue_nudge: 0.0,
+            wallpaper_accents: true,
             surface_tint: 1.0,
             opacity: 1.0,
             off: Vec::new(),
@@ -163,14 +168,13 @@ pub fn build(settings: &ColorSettings, palettes: &[Named]) -> Result<Built> {
         let seed =
             scheme::parse(hex).ok_or_else(|| Error::other(format!("{hex:?} is not a color")))?;
         return Ok(Built {
-            scheme: scheme::from_seed_cast(
+            scheme: scheme::from_seed_with(
                 &scheme::hex(seed),
                 seed,
                 &s.style,
                 s.dark,
                 s.contrast,
-                None,
-                s.surface_tint,
+                &scheme::Shaping { tint: s.surface_tint, ..Default::default() },
             ),
             candidates: Vec::new(),
             wallpaper: None,
@@ -219,9 +223,20 @@ pub fn build_from(settings: &ColorSettings, found: &wallpaper::Found) -> Result<
     let ranked = extract::candidates(&pixels);
     let picked = extract::pick(&ranked, &s.pick);
     let seed = scheme::turn_hue(picked, s.hue_nudge);
-    let cast = s.wallpaper_surfaces.then(|| extract::cast(&pixels, s.dark));
-    let mut built =
-        scheme::from_seed_cast(&what, seed, &s.style, s.dark, s.contrast, cast, s.surface_tint);
+    let shaping = scheme::Shaping {
+        cast: s.wallpaper_surfaces.then(|| extract::cast(&pixels, s.dark)),
+        tint: s.surface_tint,
+        // Turned with the seed, so a nudge moves the whole picture's colors.
+        hues: if s.wallpaper_accents {
+            extract::hues(&pixels)
+                .into_iter()
+                .map(|h| scheme::Hue { hue: (h.hue + s.hue_nudge).rem_euclid(360.0), ..h })
+                .collect()
+        } else {
+            Vec::new()
+        },
+    };
+    let mut built = scheme::from_seed_with(&what, seed, &s.style, s.dark, s.contrast, &shaping);
     // The page marks the candidate the scheme came from, so the source stays
     // the one picked; `source_color` is the seed actually built on.
     built.source = scheme::hex(picked);

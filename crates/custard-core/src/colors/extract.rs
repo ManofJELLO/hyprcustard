@@ -14,7 +14,7 @@ use material_colors::hct::Hct;
 use material_colors::quantize::{Quantizer, QuantizerCelebi};
 use material_colors::score::Score;
 
-use super::scheme::Cast;
+use super::scheme::{Cast, Hue};
 use crate::error::{Error, Result};
 
 /// The side of the square each frame is shrunk to. Colors, not detail, are
@@ -249,6 +249,75 @@ pub fn cast(pixels: &[Rgb], dark: bool) -> Cast {
     Cast { hue: h.get_hue(), chroma: h.get_chroma() }
 }
 
+/// Below this HCT chroma a pixel counts as gray and has no hue to give.
+const HUE_MIN_CHROMA: f64 = 12.0;
+
+/// How far either side of a peak, in degrees, a hue family reaches.
+const HUE_REACH: usize = 25;
+
+/// The least share of the colored pixels a family must have to count.
+const HUE_MIN_SHARE: f64 = 0.04;
+
+/// The most families read.
+const HUE_MAX: usize = 6;
+
+/// The families of hue a wallpaper has, biggest first: what its accents can
+/// be built from, so a hue the picture does not have stays out of them.
+///
+/// Gray pixels are left out, and each colored one counts by its chroma as
+/// well as by being there, so a small bright subject still registers beside
+/// a large muted one. Empty for a picture with no color to speak of.
+pub fn hues(pixels: &[Rgb]) -> Vec<Hue> {
+    let mut weight = [0.0f64; 360];
+    let mut chroma = [0.0f64; 360];
+    for p in pixels {
+        let h = Hct::new(*p);
+        let (c, t) = (h.get_chroma(), h.get_tone());
+        if c < HUE_MIN_CHROMA || !(8.0..=97.0).contains(&t) {
+            continue;
+        }
+        let bin = (h.get_hue().round() as usize) % 360;
+        weight[bin] += c;
+        chroma[bin] += c * c;
+    }
+    let total: f64 = weight.iter().sum();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    let at = |i: isize| (i.rem_euclid(360)) as usize;
+    let reach = HUE_REACH as isize;
+    let mut out = Vec::new();
+    while out.len() < HUE_MAX {
+        // The window holding the most weight, its middle the peak.
+        let window = |w: &[f64; 360], i: isize| (-reach..=reach).map(|d| w[at(i + d)]).sum::<f64>();
+        let Some((peak, held)) =
+            (0..360isize).map(|i| (i, window(&weight, i))).max_by(|a, b| a.1.total_cmp(&b.1))
+        else {
+            break;
+        };
+        if held / total < HUE_MIN_SHARE {
+            break;
+        }
+        // The weighted mean hue, taken around the circle.
+        let (mut x, mut y, mut c) = (0.0, 0.0, 0.0);
+        for d in -reach..=reach {
+            let i = at(peak + d);
+            let r = (i as f64).to_radians();
+            x += weight[i] * r.cos();
+            y += weight[i] * r.sin();
+            c += chroma[i];
+            weight[i] = 0.0;
+            chroma[i] = 0.0;
+        }
+        out.push(Hue {
+            hue: y.atan2(x).to_degrees().rem_euclid(360.0),
+            chroma: c / held,
+            share: held / total,
+        });
+    }
+    out
+}
+
 /// Which candidate to build on.
 ///
 /// `prominent` takes the best-ranked one; `colorful`, the most saturated of
@@ -305,6 +374,24 @@ mod tests {
         assert!((40.0..100.0).contains(&light.hue), "light hue {}", light.hue);
         assert!(cast(&[Rgb::new(0x20, 0x20, 0x20); 10], true).chroma < 1.0);
         assert_eq!(cast(&[], true).chroma, 0.0);
+    }
+
+    #[test]
+    fn hues_are_the_pictures_own_biggest_first() {
+        // Mostly blue, some orange, a lot of gray, and a speck of green too
+        // small to count.
+        let mut pixels = vec![Rgb::from_u32(0x2a5db0); 500];
+        pixels.extend(vec![Rgb::from_u32(0xd9822b); 150]);
+        pixels.extend(vec![Rgb::from_u32(0x808080); 2000]);
+        pixels.extend(vec![Rgb::from_u32(0x30a040); 5]);
+        let h = hues(&pixels);
+        assert_eq!(h.len(), 2, "{h:?}");
+        let blue = Hct::new(Rgb::from_u32(0x2a5db0)).get_hue();
+        assert!((h[0].hue - blue).abs() < 2.0, "{h:?}");
+        assert!((40.0..80.0).contains(&h[1].hue), "{h:?}");
+        assert!(h[0].share > h[1].share && (h[0].share + h[1].share) > 0.97);
+        assert!(h[1].chroma > 30.0);
+        assert!(hues(&[Rgb::from_u32(0x808080); 100]).is_empty());
     }
 
     #[test]

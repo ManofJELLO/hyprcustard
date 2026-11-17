@@ -280,6 +280,17 @@ Item {
                     checked: page.choice.wallpaper_surfaces === true
                     onToggled: page.set({ wallpaper_surfaces: checked })
                 }
+                Toggle {
+                    visible: page.mode === "wallpaper"
+                    text: "Terminal and prompt colors from the wallpaper's own hues"
+                    tooltip: "Terminals, prompts like Starship and editors color with base16's eight "
+                             + "accents. Off, those are always red, orange, yellow, green, cyan, blue, "
+                             + "magenta and brown, only tinted toward the wallpaper. On, each takes the "
+                             + "wallpaper color nearest it, so a hue the picture lacks stays out. Red "
+                             + "stays red when the picture has none, since it marks errors."
+                    checked: page.choice.wallpaper_accents !== false
+                    onToggled: page.set({ wallpaper_accents: checked })
+                }
                 LabeledSlider {
                     visible: page.mode === "wallpaper"
                     width: parent.width

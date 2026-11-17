@@ -147,6 +147,36 @@ pub struct Cast {
     pub chroma: f64,
 }
 
+/// A family of hue a wallpaper has (see [`super::extract::hues`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hue {
+    /// HCT hue, 0 to 360.
+    pub hue: f64,
+    /// Its typical HCT chroma.
+    pub chroma: f64,
+    /// Its share of the picture's color, 0 to 1.
+    pub share: f64,
+}
+
+/// What a seed scheme is built with besides the seed, style and contrast.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shaping {
+    /// Tint the surfaces with this rather than the seed's hue.
+    pub cast: Option<Cast>,
+    /// How strongly surfaces are tinted: 1 is the style's own, 0 gray, up to
+    /// [`MAX_TINT`].
+    pub tint: f64,
+    /// The wallpaper's hue families, to build base16's accents from. Empty
+    /// keeps base16's own hues.
+    pub hues: Vec<Hue>,
+}
+
+impl Default for Shaping {
+    fn default() -> Self {
+        Self { cast: None, tint: 1.0, hues: Vec::new() }
+    }
+}
+
 /// The chroma at which a wallpaper's cast tints surfaces fully. Below it the
 /// tint fades, so a wallpaper with truly gray shadows gets gray surfaces
 /// rather than a hue read out of noise.
@@ -160,11 +190,10 @@ pub const MAX_TINT: f64 = 4.0;
 ///
 /// `contrast` runs from -1 (softer) through 0 (as designed) to 1 (sharper).
 pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) -> Scheme {
-    from_seed_cast(name, seed, style, dark, contrast, None, 1.0)
+    from_seed_with(name, seed, style, dark, contrast, &Shaping::default())
 }
 
-/// [`from_seed`], with the surfaces optionally tinted by `cast` instead of
-/// the seed.
+/// [`from_seed`], shaped further by `with`.
 ///
 /// Material gives every surface the seed's hue at low chroma, so an orange
 /// seed makes brown backgrounds even when the wallpaper's darks are cool.
@@ -172,21 +201,24 @@ pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) 
 /// palettes take the cast's hue. Their chroma stays the style's own, faded
 /// when the cast is weaker than [`FULL_CAST`].
 ///
-/// `tint` scales the surfaces' chroma, cast or not: 1 is the style's own,
+/// The tint scales the surfaces' chroma, cast or not: 1 is the style's own,
 /// 0 gray, up to [`MAX_TINT`]. Material keeps dark surfaces so faintly
 /// tinted that every style and seed reads as the same near-black in an app;
 /// more tint lets the wallpaper's color into backgrounds, bars and sidebars.
-pub fn from_seed_cast(
+///
+/// With hues, base16's accents are made from them (see
+/// [`wallpaper_accents`]) rather than from base16's own eight hues.
+pub fn from_seed_with(
     name: &str,
     seed: Rgb,
     style: &str,
     dark: bool,
     contrast: f64,
-    cast: Option<Cast>,
-    tint: f64,
+    with: &Shaping,
 ) -> Scheme {
     let mut s =
         DynamicScheme::by_variant(seed, &variant(style), dark, Some(contrast.clamp(-1.0, 1.0)));
+    let (cast, tint) = (with.cast, with.tint);
     let tint = if tint.is_finite() { tint.clamp(0.0, MAX_TINT) } else { 1.0 };
     let (hue, variant_hue, keep) = match cast {
         Some(c) => (c.hue, c.hue, (c.chroma / FULL_CAST).clamp(0.0, 1.0)),
@@ -207,7 +239,7 @@ pub fn from_seed_cast(
         dark,
         source: hex(seed),
         roles,
-        base16: base16_from_material(&s, seed, style, dark),
+        base16: base16_from_material(&s, seed, style, dark, &with.hues),
     }
 }
 
@@ -266,36 +298,160 @@ fn role_of(s: &DynamicScheme, name: &str) -> Rgb {
     }
 }
 
+/// base16's accents as designed — red, orange, yellow, green, cyan, blue,
+/// magenta, brown — as HCT (hue, chroma).
+const ACCENTS: [(f64, f64); 8] = [
+    (25.0, 60.0),
+    (55.0, 55.0),
+    (95.0, 50.0),
+    (145.0, 45.0),
+    (195.0, 40.0),
+    (265.0, 45.0),
+    (330.0, 45.0),
+    (50.0, 25.0),
+];
+
 /// base16 out of a Material scheme.
 ///
 /// The eight grays are tones of the scheme's neutral palette, so they carry
-/// its tint. The eight accents keep base16's meaning — base08 is a red,
-/// base0D a blue — because terminals and editors depend on that, but each
-/// is pulled a little toward the seed so they sit together, and their
-/// strength follows the style (see [`accent_strength`]).
-fn base16_from_material(s: &DynamicScheme, seed: Rgb, style: &str, dark: bool) -> Vec<String> {
+/// its tint. Without `hues` the eight accents keep base16's meaning —
+/// base08 is a red, base0D a blue — each pulled a little toward the seed so
+/// they sit together. With them, the accents come from the wallpaper (see
+/// [`wallpaper_accents`]). Either way their strength follows the style (see
+/// [`accent_strength`]).
+fn base16_from_material(
+    s: &DynamicScheme,
+    seed: Rgb,
+    style: &str,
+    dark: bool,
+    hues: &[Hue],
+) -> Vec<String> {
     let grays: [i32; 8] =
         if dark { [6, 12, 22, 50, 80, 90, 95, 99] } else { [98, 94, 87, 50, 30, 10, 6, 0] };
     let mut out: Vec<String> = grays.iter().map(|t| hex(s.neutral_palette.tone(*t))).collect();
-    // red, orange, yellow, green, cyan, blue, magenta, brown — in HCT hues.
-    let accents: [(f64, f64); 8] = [
-        (25.0, 60.0),
-        (55.0, 55.0),
-        (95.0, 50.0),
-        (145.0, 45.0),
-        (195.0, 40.0),
-        (265.0, 45.0),
-        (330.0, 45.0),
-        (50.0, 25.0),
-    ];
-    let tone = if dark { 75.0 } else { 40.0 };
     let strength = accent_strength(style, seed);
-    for (i, (hue, chroma)) in accents.into_iter().enumerate() {
+    let accents = if hues.is_empty() {
+        classic_accents(seed, strength, dark)
+    } else {
+        wallpaper_accents(hues, seed, strength, dark)
+    };
+    out.extend(accents.into_iter().map(hex));
+    out
+}
+
+/// The tone accents are drawn at.
+fn accent_tone(dark: bool) -> f64 {
+    if dark {
+        75.0
+    } else {
+        40.0
+    }
+}
+
+/// base16's own eight hues, each harmonized toward the seed.
+fn classic_accents(seed: Rgb, strength: f64, dark: bool) -> [Rgb; 8] {
+    let mut i = 0;
+    ACCENTS.map(|(hue, chroma)| {
         // Red is also the error color, which Material keeps red in every
         // style, so it never fades below the neutral style's.
         let k = if i == 0 { strength.max(ACCENT_STRENGTH_NEUTRAL) } else { strength };
-        let design: Rgb = Hct::from(hue, chroma * k, tone).into();
-        out.push(hex(harmonize(design, seed)));
+        i += 1;
+        classic(hue, chroma, seed, k, dark)
+    })
+}
+
+fn classic(hue: f64, chroma: f64, seed: Rgb, strength: f64, dark: bool) -> Rgb {
+    harmonize(Hct::from(hue, chroma * strength, accent_tone(dark)).into(), seed)
+}
+
+/// How far, in degrees, a wallpaper's hue may be from red and still stand
+/// in for base08.
+const RED_REACH: f64 = 45.0;
+
+/// The degrees of hue distance a family's whole share of the picture is
+/// worth when slots choose among families: a big one wins slots a little
+/// further from it than a small one.
+const SHARE_PULL: f64 = 40.0;
+
+/// The most tone the slots sharing one family spread either side of the
+/// accent tone.
+const TONE_SPREAD: f64 = 15.0;
+
+fn hue_distance(a: f64, b: f64) -> f64 {
+    let d = (a - b).rem_euclid(360.0);
+    d.min(360.0 - d)
+}
+
+/// `to - from`, the short way round, -180 to 180.
+fn hue_offset(from: f64, to: f64) -> f64 {
+    let d = (to - from).rem_euclid(360.0);
+    if d > 180.0 {
+        d - 360.0
+    } else {
+        d
+    }
+}
+
+/// base16's accents out of the wallpaper's hue families.
+///
+/// Each slot takes the family nearest its own hue, a big family reaching a
+/// little further than a small one, so the picture's colors fill the
+/// palette and a hue it does not have is left out: with no cyan in it,
+/// base0C becomes its nearest — a teal from the blues, or a green. Slots
+/// that land on the same family are told apart by tone, and lean a few
+/// degrees toward their own hue.
+///
+/// base08 is the exception: it is also the error color, so it stays a red
+/// when the picture has none near red.
+///
+/// Each family's own chroma sets the accents' strength, kept within reach
+/// of base16's design, and the style scales it as it does the classic ones.
+fn wallpaper_accents(hues: &[Hue], seed: Rgb, strength: f64, dark: bool) -> [Rgb; 8] {
+    let pick: Vec<usize> = ACCENTS
+        .iter()
+        .map(|(hue, _)| {
+            (0..hues.len())
+                .min_by(|&a, &b| {
+                    let cost = |f: &Hue| hue_distance(*hue, f.hue) - SHARE_PULL * f.share;
+                    cost(&hues[a]).total_cmp(&cost(&hues[b]))
+                })
+                .unwrap_or(0)
+        })
+        .collect();
+    let red_stays = hue_distance(ACCENTS[0].0, hues[pick[0]].hue) > RED_REACH;
+    // Within a family, the slot nearest it keeps the base tone and the
+    // others step away from it, alternately lighter and darker, the steps
+    // shrinking as more slots share it so all stay within the range.
+    let mut tone_offset = [0.0f64; 8];
+    for (f, family) in hues.iter().enumerate() {
+        let mut slots: Vec<usize> =
+            (0..8).filter(|&i| pick[i] == f && !(i == 0 && red_stays)).collect();
+        let distance = |i: usize| hue_distance(ACCENTS[i].0, family.hue);
+        slots.sort_by(|&a, &b| distance(a).total_cmp(&distance(b)));
+        let reach = slots.len().saturating_sub(1).div_ceil(2).max(1) as f64;
+        let step = (TONE_SPREAD / reach).min(9.0);
+        for (rank, &i) in slots.iter().enumerate() {
+            let side = if rank % 2 == 1 { 1.0 } else { -1.0 };
+            tone_offset[i] = rank.div_ceil(2) as f64 * side * step;
+        }
+    }
+    let base = accent_tone(dark);
+    // Lighter means away from the background: up when dark, down when light.
+    let away = if dark { 1.0 } else { -1.0 };
+    let mut out = [Rgb::new(0, 0, 0); 8];
+    for (i, (slot_hue, design)) in ACCENTS.into_iter().enumerate() {
+        let f = &hues[pick[i]];
+        let k = if i == 0 { strength.max(ACCENT_STRENGTH_NEUTRAL) } else { strength };
+        if i == 0 && red_stays {
+            out[i] = classic(slot_hue, design, seed, k, dark);
+            continue;
+        }
+        let lean = hue_offset(f.hue, slot_hue).clamp(-15.0, 15.0);
+        // base16's design chroma, against its typical 50, scales the
+        // family's: brown stays a muted one.
+        let chroma = f.chroma.clamp(24.0, 72.0) * design / 50.0 * k;
+        let tone = base + away * tone_offset[i];
+        out[i] = Hct::from((f.hue + lean).rem_euclid(360.0), chroma, tone).into();
     }
     out
 }
@@ -575,21 +731,44 @@ mod tests {
         let seed = Rgb::from_u32(0xdd882d);
         let plain = from_seed("p", seed, "tonal-spot", true, 0.0);
         let teal = Cast { hue: 190.0, chroma: 6.0 };
-        let cast = from_seed_cast("c", seed, "tonal-spot", true, 0.0, Some(teal), 1.0);
+        let cast = from_seed_with(
+            "c",
+            seed,
+            "tonal-spot",
+            true,
+            0.0,
+            &Shaping { cast: Some(teal), ..Default::default() },
+        );
         assert_eq!(plain.role("primary"), cast.role("primary"));
         let hue = |s: &Scheme, r: &str| Hct::new(parse(s.role(r)).unwrap()).get_hue();
         assert!(hue(&plain, "surface_container") < 90.0);
         assert!((150.0..230.0).contains(&hue(&cast, "surface_container")));
         // A gray cast makes gray surfaces, not ones tinted by noise.
         let gray = Cast { hue: 300.0, chroma: 0.0 };
-        let g = from_seed_cast("g", seed, "tonal-spot", true, 0.0, Some(gray), 1.0);
+        let g = from_seed_with(
+            "g",
+            seed,
+            "tonal-spot",
+            true,
+            0.0,
+            &Shaping { cast: Some(gray), ..Default::default() },
+        );
         assert!(chroma(parse(g.role("surface_container")).unwrap()) < 1.0);
     }
 
     #[test]
     fn tint_scales_the_surfaces_and_leaves_the_accents() {
         let seed = Rgb::from_u32(0xa45400);
-        let at = |tint: f64| from_seed_cast("t", seed, "tonal-spot", true, 0.0, None, tint);
+        let at = |tint: f64| {
+            from_seed_with(
+                "t",
+                seed,
+                "tonal-spot",
+                true,
+                0.0,
+                &Shaping { tint, ..Default::default() },
+            )
+        };
         let (plain, none, strong) = (at(1.0), at(0.0), at(3.0));
         assert_eq!(plain, from_seed("t", seed, "tonal-spot", true, 0.0));
         let c = |s: &Scheme, r: &str| chroma(parse(s.role(r)).unwrap());
@@ -603,6 +782,45 @@ mod tests {
         // Out of range is brought back into it.
         assert_eq!(at(f64::NAN), plain);
         assert_eq!(at(99.0), at(MAX_TINT));
+    }
+
+    #[test]
+    fn wallpaper_accents_keep_to_the_wallpapers_hues() {
+        let seed = Rgb::from_u32(0x2684e7);
+        let blue = Hue { hue: 260.0, chroma: 34.0, share: 0.9 };
+        let orange = Hue { hue: 50.0, chroma: 40.0, share: 0.1 };
+        let with = |hues: Vec<Hue>| Shaping { hues, ..Default::default() };
+        let s = from_seed_with("t", seed, "tonal-spot", true, 0.0, &with(vec![blue, orange]));
+        let hue = |s: &Scheme, n| Hct::new(parse(s.base(n)).unwrap()).get_hue();
+        let near = |h: f64, want: f64, by: f64| hue_distance(h, want) <= by;
+        // No cyan or green in the picture, so none in the palette: those
+        // slots come from its blue, leaning a little toward their own hue.
+        assert!(near(hue(&s, 0xC), 260.0, 20.0), "{}", hue(&s, 0xC));
+        assert!(near(hue(&s, 0xD), 260.0, 10.0), "{}", hue(&s, 0xD));
+        // Orange and brown take the orange.
+        assert!(near(hue(&s, 0x9), 50.0, 20.0), "{}", hue(&s, 0x9));
+        // Red is near enough the orange to come from it.
+        assert!(near(hue(&s, 0x8), 50.0, 20.0), "{}", hue(&s, 0x8));
+        // Slots sharing a family differ.
+        let accents: std::collections::BTreeSet<&str> = (8..16).map(|n| s.base(n)).collect();
+        assert_eq!(accents.len(), 8, "{:?}", s.base16);
+
+        // With only blue, red stays a red: it is the error color.
+        let b = from_seed_with("t", seed, "tonal-spot", true, 0.0, &with(vec![blue]));
+        assert!(near(hue(&b, 0x8), 25.0, 16.0), "{}", hue(&b, 0x8));
+        assert!((9..16).all(|n| near(hue(&b, n), 260.0, 20.0)), "{:?}", b.base16);
+        // Their tones stay usable as text on the background.
+        for n in 9..16 {
+            let t = Hct::new(parse(b.base(n)).unwrap()).get_tone();
+            assert!((58.0..=92.0).contains(&t), "base{n:02X} tone {t}");
+        }
+        // The style still sets their strength; no hues keeps the classic set.
+        let mono = from_seed_with("t", seed, "monochrome", true, 0.0, &with(vec![blue]));
+        assert!(chroma(parse(mono.base(0xD)).unwrap()) < 3.0);
+        let classic = from_seed_with("t", seed, "tonal-spot", true, 0.0, &with(vec![]));
+        assert_eq!(classic, from_seed("t", seed, "tonal-spot", true, 0.0));
+        // The Material roles are the same either way.
+        assert_eq!(classic.roles, s.roles);
     }
 
     #[test]
