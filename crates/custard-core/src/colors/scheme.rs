@@ -193,7 +193,7 @@ pub fn from_seed_cast(
         dark,
         source: hex(seed),
         roles,
-        base16: base16_from_material(&s, seed, dark),
+        base16: base16_from_material(&s, seed, style, dark),
     }
 }
 
@@ -257,8 +257,9 @@ fn role_of(s: &DynamicScheme, name: &str) -> Rgb {
 /// The eight grays are tones of the scheme's neutral palette, so they carry
 /// its tint. The eight accents keep base16's meaning — base08 is a red,
 /// base0D a blue — because terminals and editors depend on that, but each
-/// is pulled a little toward the seed so they sit together.
-fn base16_from_material(s: &DynamicScheme, seed: Rgb, dark: bool) -> Vec<String> {
+/// is pulled a little toward the seed so they sit together, and their
+/// strength follows the style (see [`accent_strength`]).
+fn base16_from_material(s: &DynamicScheme, seed: Rgb, style: &str, dark: bool) -> Vec<String> {
     let grays: [i32; 8] =
         if dark { [6, 12, 22, 50, 80, 90, 95, 99] } else { [98, 94, 87, 50, 30, 10, 6, 0] };
     let mut out: Vec<String> = grays.iter().map(|t| hex(s.neutral_palette.tone(*t))).collect();
@@ -274,11 +275,37 @@ fn base16_from_material(s: &DynamicScheme, seed: Rgb, dark: bool) -> Vec<String>
         (50.0, 25.0),
     ];
     let tone = if dark { 75.0 } else { 40.0 };
-    for (hue, chroma) in accents {
-        let design: Rgb = Hct::from(hue, chroma, tone).into();
+    let strength = accent_strength(style, seed);
+    for (i, (hue, chroma)) in accents.into_iter().enumerate() {
+        // Red is also the error color, which Material keeps red in every
+        // style, so it never fades below the neutral style's.
+        let k = if i == 0 { strength.max(ACCENT_STRENGTH_NEUTRAL) } else { strength };
+        let design: Rgb = Hct::from(hue, chroma * k, tone).into();
         out.push(hex(harmonize(design, seed)));
     }
     out
+}
+
+/// The neutral style's accent strength, and the least base08 gets.
+const ACCENT_STRENGTH_NEUTRAL: f64 = 0.4;
+
+/// How strong base16's accents are for a style, against tonal spot's 1.
+///
+/// Terminals and prompts draw almost everything colored with these, so they
+/// have to follow the style for the style to show there: monochrome makes
+/// grays, neutral muted colors, vibrant and fruit salad saturated ones.
+/// Content and fidelity follow the seed's own chroma, as their Material
+/// palettes do. The screen's gamut still caps the result.
+fn accent_strength(style: &str, seed: Rgb) -> f64 {
+    match style {
+        "monochrome" => 0.0,
+        "neutral" => ACCENT_STRENGTH_NEUTRAL,
+        "vibrant" => 1.5,
+        "fruit-salad" => 1.4,
+        "expressive" | "rainbow" => 1.25,
+        "content" | "fidelity" => (chroma(seed) / 48.0).clamp(ACCENT_STRENGTH_NEUTRAL, 1.5),
+        _ => 1.0,
+    }
 }
 
 /// Build a scheme from a base16 set, deriving the Material roles.
@@ -487,6 +514,26 @@ mod tests {
         assert!(near(hue(0x8), 25.0), "{}", hue(0x8));
         assert!(near(hue(0xB), 145.0), "{}", hue(0xB));
         assert!(near(hue(0xD), 265.0), "{}", hue(0xD));
+    }
+
+    #[test]
+    fn base16_accents_follow_the_style() {
+        let seed = Rgb::from_u32(0xa45400);
+        let accent_chroma = |style: &str| {
+            let s = from_seed("t", seed, style, true, 0.0);
+            (0x9..=0xE).map(|n| chroma(parse(s.base(n)).unwrap())).sum::<f64>() / 6.0
+        };
+        let (mono, neutral, spot, vibrant) = (
+            accent_chroma("monochrome"),
+            accent_chroma("neutral"),
+            accent_chroma("tonal-spot"),
+            accent_chroma("vibrant"),
+        );
+        assert!(mono < 3.0, "{mono}");
+        assert!(mono < neutral && neutral < spot && spot < vibrant, "{neutral} {spot} {vibrant}");
+        // Red stays a red even in monochrome: it is the error color.
+        let m = from_seed("t", seed, "monochrome", true, 0.0);
+        assert!(chroma(parse(m.base(0x8)).unwrap()) > 15.0);
     }
 
     #[test]
