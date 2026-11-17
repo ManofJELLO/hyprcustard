@@ -26,7 +26,7 @@ use crate::colors::toolkits::{gsettings_get, gsettings_set, ini_get, ini_set};
 use crate::error::{Error, Result};
 use crate::model::lua_quote;
 use crate::paths;
-use crate::walls::startup::{lines_outside_blocks, movable, split_keep};
+use crate::walls::startup::{lines_outside_blocks, movable, quote, split_keep};
 
 // ---------------------------------------------------------------------------
 // Where things are
@@ -558,7 +558,9 @@ pub fn body(name: &str, size: u32, hyprcursor: bool) -> String {
     out.push_str(&env("HYPRCURSOR_SIZE", &size.to_string()));
     out.push_str(&format!(
         "hl.on(\"hyprland.start\", function()\n    hl.exec_cmd({})\nend)\n",
-        lua_quote(&format!("hyprctl setcursor {name} {size}"))
+        // Run by a shell: a theme folder's name can hold anything a file
+        // name can.
+        lua_quote(&format!("hyprctl setcursor {} {size}", quote(name)))
     ));
     out
 }
@@ -842,5 +844,8 @@ end)
         let again = apply_block(&taken, &self::body("Adwaita", 24, true)).unwrap();
         assert!(again.contains("hl.env(\"HYPRCURSOR_THEME\", \"Adwaita\")"));
         assert_eq!(give_back(&again).unwrap(), CONFIG);
+        // A name the shell would split, or run, is quoted.
+        assert!(self::body("My Cursors;x", 24, false)
+            .contains(r#"hl.exec_cmd("hyprctl setcursor 'My Cursors;x' 24")"#));
     }
 }

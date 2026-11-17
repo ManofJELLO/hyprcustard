@@ -47,7 +47,7 @@ jobs:
           pacman -Syu --noconfirm --needed git github-cli cargo \
             qt6-base qt6-declarative ffmpeg adw-gtk-theme
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 

@@ -7,3 +7,12 @@
 # Claude Code's own directory: local working notes and per-machine settings,
 # not part of the project.
 .claude/
+
+# Editor helper for qmlls; it holds a path on the machine it was made on.
+.qmlls.ini
+
+# What makepkg leaves behind when the AUR package is built here.
+/packaging/aur-bin/pkg/
+/packaging/aur-bin/src/
+/packaging/aur-bin/*.tar.gz
+/packaging/aur-bin/*.pkg.tar.zst
