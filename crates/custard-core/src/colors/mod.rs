@@ -62,6 +62,9 @@ pub struct ColorSettings {
     /// building, -180 to 180: a photo's grading can make a yellow read as
     /// orange.
     pub hue_nudge: f64,
+    /// How strongly surfaces are tinted, for anything built from a seed: 1
+    /// is Material's own, 0 gray, up to [`scheme::MAX_TINT`].
+    pub surface_tint: f64,
     /// Opacity for bar and popup backgrounds, 0.3 to 1.
     pub opacity: f64,
     /// Targets turned off. Everything else that is installed is written.
@@ -86,6 +89,7 @@ impl Default for ColorSettings {
             whole_folder: false,
             wallpaper_surfaces: false,
             hue_nudge: 0.0,
+            surface_tint: 1.0,
             opacity: 1.0,
             off: Vec::new(),
             min_minutes: 5,
@@ -101,6 +105,11 @@ impl ColorSettings {
             if self.contrast.is_finite() { self.contrast.clamp(-1.0, 1.0) } else { 0.0 };
         self.hue_nudge =
             if self.hue_nudge.is_finite() { self.hue_nudge.clamp(-180.0, 180.0) } else { 0.0 };
+        self.surface_tint = if self.surface_tint.is_finite() {
+            self.surface_tint.clamp(0.0, scheme::MAX_TINT)
+        } else {
+            1.0
+        };
         self.opacity = if self.opacity.is_finite() { self.opacity.clamp(0.3, 1.0) } else { 1.0 };
         if !scheme::STYLES.iter().any(|(id, ..)| *id == self.style) {
             self.style = "tonal-spot".into();
@@ -154,7 +163,15 @@ pub fn build(settings: &ColorSettings, palettes: &[Named]) -> Result<Built> {
         let seed =
             scheme::parse(hex).ok_or_else(|| Error::other(format!("{hex:?} is not a color")))?;
         return Ok(Built {
-            scheme: scheme::from_seed(&scheme::hex(seed), seed, &s.style, s.dark, s.contrast),
+            scheme: scheme::from_seed_cast(
+                &scheme::hex(seed),
+                seed,
+                &s.style,
+                s.dark,
+                s.contrast,
+                None,
+                s.surface_tint,
+            ),
             candidates: Vec::new(),
             wallpaper: None,
             from: format!("Built from {}", scheme::hex(seed)),
@@ -203,7 +220,8 @@ pub fn build_from(settings: &ColorSettings, found: &wallpaper::Found) -> Result<
     let picked = extract::pick(&ranked, &s.pick);
     let seed = scheme::turn_hue(picked, s.hue_nudge);
     let cast = s.wallpaper_surfaces.then(|| extract::cast(&pixels, s.dark));
-    let mut built = scheme::from_seed_cast(&what, seed, &s.style, s.dark, s.contrast, cast);
+    let mut built =
+        scheme::from_seed_cast(&what, seed, &s.style, s.dark, s.contrast, cast, s.surface_tint);
     // The page marks the candidate the scheme came from, so the source stays
     // the one picked; `source_color` is the seed actually built on.
     built.source = scheme::hex(picked);

@@ -107,6 +107,9 @@ pub struct ColorChoices {
     /// Degrees to turn the wallpaper seed's hue.
     #[serde(default)]
     pub hue_nudge: f64,
+    /// How strongly surfaces are tinted; themes from before it have 1.
+    #[serde(default = "one")]
+    pub surface_tint: f64,
     /// Opacity for bar and popup backgrounds.
     pub opacity: f64,
 }
@@ -123,6 +126,7 @@ impl ColorChoices {
             whole_folder: settings.whole_folder,
             wallpaper_surfaces: settings.wallpaper_surfaces,
             hue_nudge: settings.hue_nudge,
+            surface_tint: settings.surface_tint,
             opacity: settings.opacity,
         }
     }
@@ -139,6 +143,7 @@ impl ColorChoices {
             whole_folder: self.whole_folder,
             wallpaper_surfaces: self.wallpaper_surfaces,
             hue_nudge: self.hue_nudge,
+            surface_tint: self.surface_tint,
             opacity: self.opacity,
             ..settings.clone()
         }
@@ -354,6 +359,10 @@ fn resolve(
         }
     });
     (rules, layers)
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 fn format() -> u32 {

@@ -152,11 +152,15 @@ pub struct Cast {
 /// rather than a hue read out of noise.
 const FULL_CAST: f64 = 4.0;
 
+/// The most a scheme's surfaces can be tinted, as a multiple of the style's
+/// own chroma.
+pub const MAX_TINT: f64 = 4.0;
+
 /// Build a scheme from one seed color.
 ///
 /// `contrast` runs from -1 (softer) through 0 (as designed) to 1 (sharper).
 pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) -> Scheme {
-    from_seed_cast(name, seed, style, dark, contrast, None)
+    from_seed_cast(name, seed, style, dark, contrast, None, 1.0)
 }
 
 /// [`from_seed`], with the surfaces optionally tinted by `cast` instead of
@@ -167,6 +171,11 @@ pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) 
 /// With a cast the accents still come from the seed, but the neutral
 /// palettes take the cast's hue. Their chroma stays the style's own, faded
 /// when the cast is weaker than [`FULL_CAST`].
+///
+/// `tint` scales the surfaces' chroma, cast or not: 1 is the style's own,
+/// 0 gray, up to [`MAX_TINT`]. Material keeps dark surfaces so faintly
+/// tinted that every style and seed reads as the same near-black in an app;
+/// more tint lets the wallpaper's color into backgrounds, bars and sidebars.
 pub fn from_seed_cast(
     name: &str,
     seed: Rgb,
@@ -174,14 +183,19 @@ pub fn from_seed_cast(
     dark: bool,
     contrast: f64,
     cast: Option<Cast>,
+    tint: f64,
 ) -> Scheme {
     let mut s =
         DynamicScheme::by_variant(seed, &variant(style), dark, Some(contrast.clamp(-1.0, 1.0)));
-    if let Some(c) = cast {
-        let keep = (c.chroma / FULL_CAST).clamp(0.0, 1.0);
-        s.neutral_palette = TonalPalette::of(c.hue, s.neutral_palette.chroma() * keep);
+    let tint = if tint.is_finite() { tint.clamp(0.0, MAX_TINT) } else { 1.0 };
+    let (hue, variant_hue, keep) = match cast {
+        Some(c) => (c.hue, c.hue, (c.chroma / FULL_CAST).clamp(0.0, 1.0)),
+        None => (s.neutral_palette.hue(), s.neutral_variant_palette.hue(), 1.0),
+    };
+    if cast.is_some() || tint != 1.0 {
+        s.neutral_palette = TonalPalette::of(hue, s.neutral_palette.chroma() * keep * tint);
         s.neutral_variant_palette =
-            TonalPalette::of(c.hue, s.neutral_variant_palette.chroma() * keep);
+            TonalPalette::of(variant_hue, s.neutral_variant_palette.chroma() * keep * tint);
     }
     let mut roles = BTreeMap::new();
     for name in ROLES {
@@ -561,15 +575,34 @@ mod tests {
         let seed = Rgb::from_u32(0xdd882d);
         let plain = from_seed("p", seed, "tonal-spot", true, 0.0);
         let teal = Cast { hue: 190.0, chroma: 6.0 };
-        let cast = from_seed_cast("c", seed, "tonal-spot", true, 0.0, Some(teal));
+        let cast = from_seed_cast("c", seed, "tonal-spot", true, 0.0, Some(teal), 1.0);
         assert_eq!(plain.role("primary"), cast.role("primary"));
         let hue = |s: &Scheme, r: &str| Hct::new(parse(s.role(r)).unwrap()).get_hue();
         assert!(hue(&plain, "surface_container") < 90.0);
         assert!((150.0..230.0).contains(&hue(&cast, "surface_container")));
         // A gray cast makes gray surfaces, not ones tinted by noise.
         let gray = Cast { hue: 300.0, chroma: 0.0 };
-        let g = from_seed_cast("g", seed, "tonal-spot", true, 0.0, Some(gray));
+        let g = from_seed_cast("g", seed, "tonal-spot", true, 0.0, Some(gray), 1.0);
         assert!(chroma(parse(g.role("surface_container")).unwrap()) < 1.0);
+    }
+
+    #[test]
+    fn tint_scales_the_surfaces_and_leaves_the_accents() {
+        let seed = Rgb::from_u32(0xa45400);
+        let at = |tint: f64| from_seed_cast("t", seed, "tonal-spot", true, 0.0, None, tint);
+        let (plain, none, strong) = (at(1.0), at(0.0), at(3.0));
+        assert_eq!(plain, from_seed("t", seed, "tonal-spot", true, 0.0));
+        let c = |s: &Scheme, r: &str| chroma(parse(s.role(r)).unwrap());
+        assert!(c(&none, "surface_container") < 1.5);
+        assert!(c(&strong, "surface_container") > 2.0 * c(&plain, "surface_container"));
+        assert!(c(&strong, "outline") > c(&plain, "outline"));
+        assert_eq!(plain.role("primary"), strong.role("primary"));
+        // The hue stays the style's when there is no cast.
+        let hue = |s: &Scheme| Hct::new(parse(s.role("surface_container")).unwrap()).get_hue();
+        assert!((hue(&strong) - hue(&plain)).abs() < 10.0);
+        // Out of range is brought back into it.
+        assert_eq!(at(f64::NAN), plain);
+        assert_eq!(at(99.0), at(MAX_TINT));
     }
 
     #[test]

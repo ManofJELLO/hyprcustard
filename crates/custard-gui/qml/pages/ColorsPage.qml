@@ -389,6 +389,19 @@ Item {
                     markValue: 0
                     onSettled: function (v) { page.set({ contrast: Math.round(v * 10) / 10 }) }
                 }
+                LabeledSlider {
+                    visible: page.mode !== "palette"
+                    width: parent.width
+                    label: "Surface tint (× Material's)"
+                    // Material keeps dark surfaces so faint that every style looks
+                    // near-black in apps; raising this lets the color show. 0 is gray.
+                    from: 0
+                    to: 4
+                    stepSize: 0.25
+                    value: page.choice.surface_tint === undefined ? 1 : page.choice.surface_tint
+                    markValue: 1
+                    onSettled: function (v) { page.set({ surface_tint: Math.round(v * 4) / 4 }) }
+                }
             }
 
             // -----------------------------------------------------------
