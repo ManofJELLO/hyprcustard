@@ -822,7 +822,7 @@ pub fn in_config(document: &str) -> Vec<HandRule> {
 
 /// `document` with the app's two blocks blanked out, byte for byte, so
 /// offsets still line up.
-fn outside_blocks(document: &str) -> String {
+pub(crate) fn outside_blocks(document: &str) -> String {
     let mut out = document.to_string();
     for markers in [crate::block::SHADE, look::MARKERS] {
         if let Some(begin) = out.find(markers.begin) {

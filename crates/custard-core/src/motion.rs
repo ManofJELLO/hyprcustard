@@ -290,6 +290,50 @@ pub fn curves_in_config(document: &str) -> BTreeMap<String, Option<Points>> {
     out
 }
 
+/// An `hl.animation` call in the user's own code, outside the app's blocks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandAnimation {
+    /// The leaf it sets.
+    pub leaf: String,
+    /// The call exactly as it is in the file.
+    pub text: String,
+    /// Its first line, counting from 1.
+    pub line: usize,
+    /// Whether it stands alone on its lines, so it can be commented out
+    /// without taking other code with it.
+    pub alone: bool,
+}
+
+/// The user's own `hl.animation` calls, in file order. Calls in comments or
+/// in the app's blocks do not count, and neither does a call whose leaf is
+/// not a plain string, since what it sets cannot be known without running
+/// the file.
+pub fn hand_animations(document: &str) -> Vec<HandAnimation> {
+    use std::sync::OnceLock;
+    static LEAF: OnceLock<regex::Regex> = OnceLock::new();
+    let leaf_re = LEAF
+        .get_or_init(|| regex::Regex::new(r#"[{,]\s*leaf\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap());
+    let outside = crate::rules::outside_blocks(document);
+    let code = crate::import::strip_comments(&outside);
+    crate::import::call_spans(&code, "hl.animation")
+        .into_iter()
+        .filter_map(|(at, end)| {
+            let c = leaf_re.captures(&code[at..end])?;
+            let leaf = c.get(1).or_else(|| c.get(2))?.as_str().to_string();
+            let line_start = code[..at].rfind('\n').map_or(0, |i| i + 1);
+            let line_end = code[end..].find('\n').map_or(code.len(), |i| end + i);
+            let alone =
+                code[line_start..at].trim().is_empty() && code[end..line_end].trim().is_empty();
+            Some(HandAnimation {
+                leaf,
+                text: document[at..end].to_string(),
+                line: document[..at].matches('\n').count() + 1,
+                alone,
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Checking what the UI sends
 // ---------------------------------------------------------------------------
@@ -466,6 +510,16 @@ pub fn not_sticking(saved: &BTreeMap<String, AnimSetting>, live: &LiveMotion) ->
         .collect()
 }
 
+/// The user's own animation lines, and the leaves whose line they chose to
+/// keep when the look block takes the leaf over.
+#[derive(Clone, Copy)]
+pub struct Theirs<'a> {
+    /// Their `hl.animation` calls, from [`hand_animations`].
+    pub animations: &'a [HandAnimation],
+    /// Leaves whose line stays even while the look block sets them.
+    pub keep: &'a std::collections::BTreeSet<String>,
+}
+
 /// The Animation page's state.
 ///
 /// `config_curves` is [`curves_in_config`] of the file: it decides which
@@ -478,10 +532,27 @@ pub fn view(
     saved_animations: &BTreeMap<String, AnimSetting>,
     live: &LiveMotion,
     config_curves: &BTreeMap<String, Option<Points>>,
+    theirs: Theirs,
 ) -> Value {
     let leaves: Vec<Value> = TREE
         .iter()
         .map(|l| {
+            // The user's own lines for this leaf, and what Save does to them
+            // while the look block sets it too.
+            let set_here = animations.contains_key(l.name);
+            let mine: Vec<Value> = theirs
+                .animations
+                .iter()
+                .filter(|h| h.leaf == l.name)
+                .map(|h| {
+                    json!({
+                        "line": h.line,
+                        "text": h.text,
+                        "alone": h.alone,
+                        "commentOut": set_here && h.alone && !theirs.keep.contains(l.name),
+                    })
+                })
+                .collect();
             let (setting, source) = effective(l.name, animations, live);
             let (source, from) = match source {
                 Source::Here => ("here", Value::Null),
@@ -501,6 +572,8 @@ pub fn view(
                 "from": from,
                 "overridden": animations.contains_key(l.name),
                 "changed": animations.get(l.name) != saved_animations.get(l.name),
+                "theirs": mine,
+                "keepMine": theirs.keep.contains(l.name),
             })
         })
         .collect();
@@ -695,6 +768,7 @@ hl.curve("sci", { type = "bezier", points = { {1e-1, .5}, {0.3, 1} } }) -- trail
             &BTreeMap::new(),
             &live,
             &config,
+            Theirs { animations: &[], keep: &Default::default() },
         );
         let source = |n: &str| {
             v["curves"].as_array().unwrap().iter().find(|c| c["name"] == n).unwrap()["source"]
@@ -717,7 +791,15 @@ hl.curve("sci", { type = "bezier", points = { {1e-1, .5}, {0.3, 1} } }) -- trail
         anims.insert("fade".to_string(), s(2.0, "quick"));
         let mut config = BTreeMap::new();
         config.insert("quick".to_string(), Some([0.15, 0.0, 0.1, 1.0]));
-        let v = view(&curves, &anims, &BTreeMap::new(), &BTreeMap::new(), &live, &config);
+        let v = view(
+            &curves,
+            &anims,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &live,
+            &config,
+            Theirs { animations: &[], keep: &Default::default() },
+        );
         let quick = v["curves"].as_array().unwrap().iter().find(|c| c["name"] == "quick").unwrap();
         assert_eq!(quick["source"], "here");
         assert_eq!(quick["points"], json!([0.2, 0.0, 0.1, 1.0]));

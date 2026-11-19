@@ -107,6 +107,26 @@ Item {
         }
         return "Hyprland's default"
     }
+    // The user's own lines Save will comment out, for leaves the look block
+    // now sets: "windowsIn (line 215)".
+    readonly property var takeOvers: {
+        var out = []
+        var ls = page.motion.leaves || []
+        for (var i = 0; i < ls.length; ++i) {
+            var t = ls[i].theirs || []
+            for (var j = 0; j < t.length; ++j)
+                if (t[j].commentOut)
+                    out.push(ls[i].name + " (line " + t[j].line + ")")
+        }
+        return out
+    }
+    function lineList(theirs) {
+        var out = []
+        for (var i = 0; i < theirs.length; ++i)
+            out.push(String(theirs[i].line))
+        return (out.length === 1 ? "line " : "lines ") + out.join(", ")
+    }
+
     function summary(s) {
         if (!s.enabled)
             return "off"
@@ -223,6 +243,26 @@ Item {
 
                 Card {
                     Layout.fillWidth: true
+                    visible: page.takeOvers.length > 0
+                    title: "Your own animation lines"
+
+                    Text {
+                        width: parent.width
+                        wrapMode: Text.WordWrap
+                        color: Theme.muted
+                        font.pixelSize: Theme.fontSizeSmall
+                        text: "Your config sets " + page.takeOvers.join(", ")
+                              + " itself, and the look block sets "
+                              + (page.takeOvers.length === 1 ? "it" : "them")
+                              + " too. Save comments your "
+                              + (page.takeOvers.length === 1 ? "line" : "lines")
+                              + " out, so each animation is set once. To keep one, pick it in "
+                              + "the list and turn off \u201cComment out my line on Save\u201d."
+                    }
+                }
+
+                Card {
+                    Layout.fillWidth: true
                     title: page.selected
                     subtitle: page.leaf ? page.leaf.label : ""
 
@@ -258,6 +298,54 @@ Item {
                               + " on its own, so it stops following " + (page.leaf ? page.leaf.from : "")
                               + ". Leave it alone to set " + (page.leaf ? page.leaf.from : "")
                               + " instead and change every animation under it."
+                    }
+
+                    // The user's own line for this leaf, and what Save does
+                    // with it once the look block sets the leaf too.
+                    Text {
+                        width: parent.width
+                        visible: page.leaf !== null && (page.leaf.theirs || []).length > 0
+                        wrapMode: Text.WordWrap
+                        color: Theme.muted
+                        font.pixelSize: Theme.fontSizeSmall
+                        text: {
+                            if (!page.leaf || !(page.leaf.theirs || []).length)
+                                return ""
+                            var theirs = page.leaf.theirs
+                            var where = "Your config sets " + page.selected + " on "
+                                        + page.lineList(theirs) + "."
+                            if (!page.leaf.overridden)
+                                return where
+                            var shared = false
+                            for (var i = 0; i < theirs.length; ++i)
+                                shared = shared || !theirs[i].alone
+                            if (shared)
+                                return where + " The look block sets it too, after yours, so "
+                                       + "the look block's wins. Your line shares its line with "
+                                       + "other code, so Save leaves it as it is."
+                            if (page.leaf.keepMine)
+                                return where + " The look block sets it too, after yours, so "
+                                       + "the look block's wins. Save leaves your line alone."
+                            return where + " Save comments it out, so " + page.selected
+                                   + " is set once, in the look block. Uncomment it to go back."
+                        }
+                    }
+
+                    Toggle {
+                        id: commentToggle
+                        visible: page.leaf !== null && page.leaf.overridden === true
+                                 && (page.leaf.theirs || []).some(function (t) { return t.alone })
+                        text: "Comment out my line on Save"
+                        tooltip: "Off keeps your own line too. It still loses to the look "
+                                 + "block, which comes later in the file."
+                        checked: page.leaf !== null && page.leaf.keepMine !== true
+                        onToggled: {
+                            var v = commentToggle.checked
+                            commentToggle.checked = Qt.binding(function () {
+                                return page.leaf !== null && page.leaf.keepMine !== true
+                            })
+                            App.run("motion.keepMine", { leaf: page.selected, keep: !v })
+                        }
                     }
 
                     Toggle {
