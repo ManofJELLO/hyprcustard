@@ -11,7 +11,7 @@
 //! be pushed to it live with `hyprctl eval`, which is cheap enough (a few ms)
 //! to follow a slider as it is dragged.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
@@ -779,6 +779,14 @@ pub struct Look {
     /// Window, layer and workspace rules, in the order they are written.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<crate::rules::Rule>,
+    /// Options whose entry in the user's own `hl.config` they chose to keep,
+    /// though this block sets them too. Any other such entry is commented
+    /// out on save.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub keep_values: BTreeSet<String>,
+    /// Animation leaves whose own `hl.animation` line the user chose to keep.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub keep_animations: BTreeSet<String>,
 }
 
 fn one() -> u32 {
@@ -793,6 +801,8 @@ impl Default for Look {
             curves: BTreeMap::new(),
             animations: BTreeMap::new(),
             rules: Vec::new(),
+            keep_values: BTreeSet::new(),
+            keep_animations: BTreeSet::new(),
         }
     }
 }
@@ -1100,10 +1110,24 @@ fn parse_live(text: &str) -> BTreeMap<String, LookValue> {
 /// `live` is what the compositor reported, `saved` what the file's look block
 /// holds. The shown value is the unsaved override if there is one, then the
 /// compositor's, then Hyprland's default.
-pub fn view(look: &Look, saved: &Look, live: &BTreeMap<String, LookValue>, running: bool) -> Value {
+///
+/// `theirs` is the user's own `hl.config` entries.
+pub fn view(
+    look: &Look,
+    saved: &Look,
+    live: &BTreeMap<String, LookValue>,
+    running: bool,
+    theirs: &[crate::theirs::HandValue],
+) -> Value {
     let options: Vec<Value> = OPTIONS
         .iter()
         .map(|o| {
+            let set_here = look.values.contains_key(o.key);
+            let mine: Vec<Value> = theirs
+                .iter()
+                .filter(|h| h.key == o.key)
+                .map(|h| h.view(set_here && h.alone && !look.keep_values.contains(o.key)))
+                .collect();
             let own = look.values.get(o.key);
             let reported = live.get(o.key);
             // Unset, and so showing whatever it follows.
@@ -1135,6 +1159,9 @@ pub fn view(look: &Look, saved: &Look, live: &BTreeMap<String, LookValue>, runni
                 // Not set anywhere, so it takes another option's value.
                 "following": following,
                 "follows": o.follows,
+                // The user's own entries for it, and what Save does to them.
+                "theirs": mine,
+                "keepMine": look.keep_values.contains(o.key),
             })
         })
         .collect();

@@ -23,6 +23,7 @@ use crate::rules::{self, HandRule, Rule, RuleKind};
 use crate::settings::Settings;
 use crate::shader::meta::{Param, ParamValue, ShaderInfo, KNOWN_UNIFORMS, MOTION_UNIFORMS};
 use crate::shader::{DraftItem, ShaderDraft};
+use crate::theirs;
 use crate::theme::Theme;
 use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme, walls};
 
@@ -157,9 +158,9 @@ pub struct Session {
     /// file. Each one whose leaf the look block sets is commented out on the
     /// next save, so the leaf is not defined twice.
     config_animations: Vec<motion::HandAnimation>,
-    /// Leaves whose own line the user asked to keep even though the look
-    /// block sets them too. Not saved: it is a choice about the next Save.
-    keep_animations: BTreeSet<String>,
+    /// The `key = value` entries in the user's own `hl.config` tables. One
+    /// whose option the look block sets is commented out on the next save.
+    config_values: Vec<theirs::HandValue>,
     /// The rule calls the user wrote themselves, read from the file.
     hand_rules: Vec<HandRule>,
     /// Hand-written rules moved into the look block: their text, and the id
@@ -249,6 +250,7 @@ impl Session {
 
         let config_curves = read_config_curves(&settings.resolved_config_path());
         let config_animations = read_config_animations(&settings.resolved_config_path());
+        let config_values = read_config_values(&settings.resolved_config_path());
         let hand_rules = read_hand_rules(&settings.resolved_config_path());
         let mut session = Session {
             settings,
@@ -258,7 +260,7 @@ impl Session {
             look,
             config_curves,
             config_animations,
-            keep_animations: BTreeSet::new(),
+            config_values,
             hand_rules,
             moves: Vec::new(),
             presets: Vec::new(),
@@ -532,6 +534,11 @@ impl Session {
         // The theme's rules replace the app's, moved ones included; a move
         // not yet saved is called off, so its original stays where it is.
         self.moves.clear();
+        // Which of their own lines they keep is about their file, not the
+        // theme, so it stays.
+        let mut look = look;
+        look.keep_values = std::mem::take(&mut self.look.keep_values);
+        look.keep_animations = std::mem::take(&mut self.look.keep_animations);
         self.look = look;
         if self.look_is_live() {
             self.resync_look()?;
@@ -585,6 +592,7 @@ impl Session {
         self.config != self.saved
             || self.look != self.saved_look
             || !self.animations_taken_over().is_empty()
+            || !self.values_taken_over().is_empty()
     }
 
     /// How many shaders have edits staged but not written.
@@ -715,6 +723,11 @@ impl Session {
                 None => lost_taken.push(hand.leaf.clone()),
             }
         }
+        // And their own entries for options the look block now sets.
+        let value_keys: BTreeSet<&str> =
+            self.values_taken_over().iter().map(|h| h.key.as_str()).collect();
+        let (next, taken_values) = theirs::comment_out(&updated, &value_keys);
+        updated = next;
         let shade_changed = self.config != self.saved;
         let shade_exists = block::split(&existing)?.is_some();
         if shade_changed && (shade_exists || self.config != Config::default()) {
@@ -733,7 +746,7 @@ impl Session {
         self.saved_look = self.look.clone();
         self.config_curves = motion::curves_in_config(&updated);
         self.config_animations = motion::hand_animations(&updated);
-        self.keep_animations.clear();
+        self.config_values = theirs::hand_values(&updated);
         self.hand_rules = rules::in_config(&updated);
         self.moves.clear();
 
@@ -756,6 +769,18 @@ impl Session {
                 if taken.len() == 1 { "" } else { "s" },
                 taken.join(", "),
                 if taken.len() == 1 { "it" } else { "them" },
+            ));
+        }
+        if !taken_values.is_empty() {
+            let labels: Vec<String> = taken_values
+                .iter()
+                .map(|k| look::find(k).map_or_else(|| k.clone(), |o| o.label.to_lowercase()))
+                .collect();
+            msg.push_str(&format!(
+                ". Commented out your own {}, which the look block now sets — uncomment {} to \
+                 go back",
+                labels.join(", "),
+                if labels.len() == 1 { "it" } else { "them" },
             ));
         }
         if !lost_taken.is_empty() {
@@ -820,7 +845,7 @@ impl Session {
         self.saved_look = look;
         self.config_curves = read_config_curves(&path);
         self.config_animations = read_config_animations(&path);
-        self.keep_animations.clear();
+        self.config_values = read_config_values(&path);
         self.hand_rules = read_hand_rules(&path);
         self.moves.clear();
         // Unsaved look edits are on the desktop as well as in the app.
@@ -919,7 +944,13 @@ impl Session {
                 .iter()
                 .map(|p| json!({ "path": p, "name": base_name(p) }))
                 .collect::<Vec<_>>(),
-            "look": look::view(&self.look, &self.saved_look, &self.live.look, self.live.running),
+            "look": look::view(
+                &self.look,
+                &self.saved_look,
+                &self.live.look,
+                self.live.running,
+                &self.config_values,
+            ),
             "presets": self.presets_view(),
             "lookRules": self.rules_view(),
             "colors": self.colors_view(),
@@ -936,7 +967,7 @@ impl Session {
                 &self.config_curves,
                 motion::Theirs {
                     animations: &self.config_animations,
-                    keep: &self.keep_animations,
+                    keep: &self.look.keep_animations,
                 },
             ),
             "tagCatalog": tag_catalog(),
@@ -1354,8 +1385,18 @@ impl Session {
                 self.look.values.insert(key.to_string(), value);
                 Ok(None)
             }
+            "look.keepMine" => {
+                let key = payload.get("key").and_then(Value::as_str).unwrap_or_default();
+                if payload.get("keep").and_then(Value::as_bool).unwrap_or(true) {
+                    self.look.keep_values.insert(key.to_string());
+                } else {
+                    self.look.keep_values.remove(key);
+                }
+                Ok(None)
+            }
             "look.reset" => {
                 let key = payload.get("key").and_then(Value::as_str).unwrap_or_default();
+                self.look.keep_values.remove(key);
                 if self.look.values.remove(key).is_some() && self.look_is_live() {
                     self.resync_look()?;
                 }
@@ -1364,6 +1405,7 @@ impl Session {
             "look.resetAll" => {
                 let n = self.look.values.len();
                 self.look.values.clear();
+                self.look.keep_values.clear();
                 if n > 0 && self.look_is_live() {
                     self.resync_look()?;
                 }
@@ -1375,6 +1417,7 @@ impl Session {
             "motion.set" => self.set_animation(payload),
             "motion.reset" => {
                 let name = payload.get("leaf").and_then(Value::as_str).unwrap_or_default();
+                self.look.keep_animations.remove(name);
                 if self.look.animations.remove(name).is_some() && self.look_is_live() {
                     self.resync_look()?;
                 }
@@ -1383,9 +1426,9 @@ impl Session {
             "motion.keepMine" => {
                 let name = payload.get("leaf").and_then(Value::as_str).unwrap_or_default();
                 if payload.get("keep").and_then(Value::as_bool).unwrap_or(true) {
-                    self.keep_animations.insert(name.to_string());
+                    self.look.keep_animations.insert(name.to_string());
                 } else {
-                    self.keep_animations.remove(name);
+                    self.look.keep_animations.remove(name);
                 }
                 Ok(None)
             }
@@ -1393,6 +1436,7 @@ impl Session {
                 let n = self.look.animations.len() + self.look.curves.len();
                 self.look.animations.clear();
                 self.look.curves.clear();
+                self.look.keep_animations.clear();
                 if n > 0 && self.look_is_live() {
                     self.resync_look()?;
                 }
@@ -2192,7 +2236,19 @@ impl Session {
             .filter(|h| {
                 h.alone
                     && self.look.animations.contains_key(&h.leaf)
-                    && !self.keep_animations.contains(&h.leaf)
+                    && !self.look.keep_animations.contains(&h.leaf)
+            })
+            .collect()
+    }
+
+    /// The user's own `hl.config` entries the next save comments out.
+    fn values_taken_over(&self) -> Vec<&theirs::HandValue> {
+        self.config_values
+            .iter()
+            .filter(|h| {
+                h.alone
+                    && self.look.values.contains_key(&h.key)
+                    && !self.look.keep_values.contains(&h.key)
             })
             .collect()
     }
@@ -2823,6 +2879,11 @@ fn read_config_curves(path: &Path) -> BTreeMap<String, Option<motion::Points>> {
     paths::read_to_string(path).map(|text| motion::curves_in_config(&text)).unwrap_or_default()
 }
 
+/// The entries of the `hl.config` tables in the file at `path`.
+fn read_config_values(path: &Path) -> Vec<theirs::HandValue> {
+    paths::read_to_string(path).map(|text| theirs::hand_values(&text)).unwrap_or_default()
+}
+
 /// The `hl.animation` calls in the file at `path`, outside the app's blocks.
 fn read_config_animations(path: &Path) -> Vec<motion::HandAnimation> {
     paths::read_to_string(path).map(|text| motion::hand_animations(&text)).unwrap_or_default()
@@ -3040,7 +3101,7 @@ mod tests {
             saved_look: Look::default(),
             config_curves: BTreeMap::new(),
             config_animations: Vec::new(),
-            keep_animations: BTreeSet::new(),
+            config_values: Vec::new(),
             hand_rules: Vec::new(),
             moves: Vec::new(),
             presets: preset::builtin()
@@ -3340,6 +3401,7 @@ mod tests {
         s.settings.backups_to_keep = 0;
         s.hand_rules = read_hand_rules(&cfg_path);
         s.config_animations = read_config_animations(&cfg_path);
+        s.config_values = read_config_values(&cfg_path);
         (dir, cfg_path, s)
     }
 
@@ -3923,17 +3985,77 @@ hl.animation({ leaf = 'fade', enabled = true, speed = 3, bezier = \"quick\" }) -
 
     #[test]
     fn a_line_of_theirs_left_from_an_earlier_save_lights_up_save() {
-        let (_dir, cfg_path, mut s) = rule_session(THEIR_ANIMATIONS);
-        set_windows_in(&mut s);
-        s.command("motion.keepMine", &json!({ "leaf": "windowsIn", "keep": true })).unwrap();
-        s.save().unwrap();
-        // As if saved by a version that did not comment lines out.
+        // Saved by a version that did not comment lines out: their line and
+        // the block's, both live.
+        let mut old = Look::default();
+        old.animations.insert(
+            "windowsIn".into(),
+            motion::AnimSetting {
+                enabled: true,
+                speed: 4.0,
+                bezier: "quick".into(),
+                style: String::new(),
+            },
+        );
+        let file = block::splice_with(THEIR_ANIMATIONS, &look::emit(&old).unwrap(), &look::MARKERS)
+            .unwrap();
+        let (_dir, cfg_path, mut s) = rule_session(&file);
         s.reload_from_disk().unwrap();
         assert!(s.dirty(), "their windowsIn line is still there to comment out");
         s.save().unwrap();
         assert!(!s.dirty());
         let written = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(motion::hand_animations(&written).iter().all(|h| h.leaf != "windowsIn"));
+    }
+
+    const THEIR_DECORATION: &str = "\
+hl.config({
+    decoration = {
+        rounding     = 8,
+        dim_strength = 0.5,
+    },
+})
+";
+
+    #[test]
+    fn taking_over_a_look_option_comments_their_entry_out_on_save() {
+        let (_dir, cfg_path, mut s) = rule_session(THEIR_DECORATION);
+        s.command("look.set", &json!({ "key": "decoration.dim_strength", "value": 0.3 })).unwrap();
+        let opt = s.state()["look"]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["key"] == "decoration.dim_strength")
+            .unwrap()
+            .clone();
+        assert_eq!(opt["theirs"][0]["line"], json!(4));
+        assert_eq!(opt["theirs"][0]["commentOut"], json!(true));
+
+        let msg = s.save().unwrap();
+        assert!(msg.contains("Commented out your own "), "{msg}");
+        let written = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(written.starts_with(
+            "hl.config({\n    decoration = {\n        rounding     = 8,\n        \
+             -- Moved into the HyprCustard look block:\n        -- dim_strength = 0.5,\n    },"
+        ));
+        assert!(!s.dirty());
+        assert!(s.config_values.iter().all(|h| h.key != "decoration.dim_strength"));
+    }
+
+    #[test]
+    fn keeping_their_look_entry_leaves_it_alone() {
+        let (_dir, cfg_path, mut s) = rule_session(THEIR_DECORATION);
+        s.command("look.set", &json!({ "key": "decoration.dim_strength", "value": 0.3 })).unwrap();
+        s.command("look.keepMine", &json!({ "key": "decoration.dim_strength", "keep": true }))
+            .unwrap();
+        s.save().unwrap();
+        assert!(std::fs::read_to_string(&cfg_path).unwrap().starts_with(THEIR_DECORATION));
+        // The choice is saved with the block, so Save does not light up
+        // again for it, now or after the file is read back.
+        assert!(!s.dirty());
+        s.reload_from_disk().unwrap();
+        assert!(s.look.keep_values.contains("decoration.dim_strength"));
+        assert!(!s.dirty());
     }
 
     #[test]
@@ -3945,6 +4067,13 @@ hl.animation({ leaf = 'fade', enabled = true, speed = 3, bezier = \"quick\" }) -
         assert!(!msg.contains("Commented out"), "{msg}");
         let written = std::fs::read_to_string(&cfg_path).unwrap();
         assert!(written.starts_with(THEIR_ANIMATIONS), "their lines changed");
+        // Kept for good: saved with the block, not asked again.
+        assert!(!s.dirty());
+        s.reload_from_disk().unwrap();
+        assert!(!s.dirty());
+        // Reset forgets the choice along with the setting.
+        s.command("motion.reset", &json!({ "leaf": "windowsIn" })).unwrap();
+        assert!(s.look.keep_animations.is_empty());
     }
 
     #[test]

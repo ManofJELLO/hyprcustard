@@ -175,6 +175,25 @@ Item {
         return App.gradientText(value)
     }
 
+    // Their own hl.config entries Save will comment out, for options set
+    // here too: "dim strength (line 125)".
+    readonly property var takeOvers: {
+        var groupLabel = ({})
+        var gs = page.look.groups || []
+        for (var g = 0; g < gs.length; ++g)
+            groupLabel[gs[g].id] = gs[g].label
+        var out = []
+        var opts = page.look.options || []
+        for (var i = 0; i < opts.length; ++i) {
+            var t = opts[i].theirs || []
+            for (var j = 0; j < t.length; ++j)
+                if (t[j].commentOut)
+                    out.push(opts[i].label.toLowerCase() + " (" + (groupLabel[opts[i].group] || "")
+                             + ", line " + t[j].line + ")")
+        }
+        return out
+    }
+
     // --- the page ------------------------------------------------------------
 
     PageScroll {
@@ -217,6 +236,18 @@ Item {
                                  + (page.liveEdits ? ", Discard puts the desktop back." : ".")
                         return s
                     }
+                }
+
+                Text {
+                    width: parent.width
+                    visible: page.takeOvers.length > 0
+                    wrapMode: Text.WordWrap
+                    color: Theme.fgDim
+                    font.pixelSize: Theme.fontSizeSmall
+                    text: "Your own hl.config also sets " + page.takeOvers.join(", ")
+                          + ". Save comments " + (page.takeOvers.length === 1 ? "that line" : "those lines")
+                          + " out, so each is set once; the note under each setting can keep "
+                          + "yours instead."
                 }
 
                 Text {

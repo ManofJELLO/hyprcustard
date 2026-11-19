@@ -25,6 +25,18 @@ Item {
 
     width: parent ? parent.width : 0
     implicitHeight: body.implicitHeight + (hintText.visible ? hintText.implicitHeight + 3 : 0)
+                    + (theirsText.visible ? theirsText.implicitHeight + 3 : 0)
+
+    // The user's own hl.config entries for this option. Only said while the
+    // option is set here too, when Save has something to do with them.
+    readonly property var theirs: row.opt.theirs || []
+    readonly property string theirLines: {
+        var out = []
+        for (var i = 0; i < row.theirs.length; ++i)
+            out.push(String(row.theirs[i].line))
+        return (out.length === 1 ? "Line " : "Lines ") + out.join(", ")
+    }
+    readonly property bool theirsShared: row.theirs.some(function (t) { return !t.alone })
     opacity: row.switchedOn ? 1 : 0.45
 
     // Set here: accent once saved, warning color while unsaved.
@@ -73,8 +85,8 @@ Item {
         enabled: row.opt.overridden === true
         opacity: enabled ? 1 : 0
         tooltip: row.removeFn ? "Take this off the rule."
-                              : "Stop setting this here. Your own config's value applies again "
-                                + "once you save."
+                              : "Stop setting this here. Once you save, your own config's value "
+                                + "applies again, or Hyprland's default if your config does not set it."
         onClicked: {
             if (row.removeFn)
                 row.removeFn(row.key)
@@ -93,6 +105,40 @@ Item {
         wrapMode: Text.WordWrap
         color: Theme.muted
         font.pixelSize: Theme.fontSizeSmall
+    }
+
+    Text {
+        id: theirsText
+        anchors.top: hintText.visible ? hintText.bottom : body.bottom
+        anchors.topMargin: 3
+        width: body.width
+        visible: row.removeFn === null && row.opt.overridden === true && row.theirs.length > 0
+        wrapMode: Text.WordWrap
+        color: Theme.muted
+        linkColor: Theme.accent
+        font.pixelSize: Theme.fontSizeSmall
+        textFormat: Text.StyledText
+        text: {
+            if (!theirsText.visible)
+                return ""
+            var where = row.theirLines + " of your config set" + (row.theirs.length === 1 ? "s" : "")
+                        + " this too. "
+            if (row.theirsShared)
+                return where + "It shares its line with other settings, so Save leaves it; "
+                       + "the value here wins, coming later in the file."
+            if (row.opt.keepMine === true)
+                return where + "Kept: the value here wins, coming later in the file. "
+                       + "<a href=\"comment\">Comment it out on Save</a>"
+            return where + "Save comments it out, so it is set once. "
+                   + "<a href=\"keep\">Keep mine</a>"
+        }
+        onLinkActivated: function (link) {
+            App.run("look.keepMine", { key: row.key, keep: link === "keep" })
+        }
+
+        HoverHandler {
+            cursorShape: theirsText.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+        }
     }
 
     Component {

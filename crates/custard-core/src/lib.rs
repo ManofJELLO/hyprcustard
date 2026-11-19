@@ -42,6 +42,7 @@ pub mod rules;
 pub mod session;
 pub mod settings;
 pub mod shader;
+pub mod theirs;
 pub mod theme;
 pub mod walls;
 
