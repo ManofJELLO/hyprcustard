@@ -55,6 +55,9 @@ pub enum Kind {
     /// One of a fixed list of names, held as text. Hyprland reports it as
     /// the name's index in the list.
     Choice,
+    /// A file's path, held as text, or empty for none. `~/` is expanded
+    /// when it is set: Hyprland takes the path as written.
+    Path,
 }
 
 /// The sections of the Look page, in the order it shows them.
@@ -69,6 +72,8 @@ pub enum Group {
     Shadow,
     /// Background blur.
     Blur,
+    /// Windows wobbling and blurring as they move.
+    Movement,
     /// A colored glow around windows.
     Glow,
     /// The desktop behind everything, the splash, and the cursor.
@@ -79,12 +84,13 @@ pub enum Group {
 
 impl Group {
     /// Every group, in page order.
-    pub const ALL: [Group; 7] = [
+    pub const ALL: [Group; 8] = [
         Group::Borders,
         Group::Windows,
         Group::Shadow,
         Group::Glow,
         Group::Blur,
+        Group::Movement,
         Group::Desktop,
         Group::Motion,
     ];
@@ -96,6 +102,7 @@ impl Group {
             Group::Windows => "Windows",
             Group::Shadow => "Shadow",
             Group::Blur => "Blur",
+            Group::Movement => "Wobble and motion blur",
             Group::Glow => "Glow",
             Group::Desktop => "Desktop and cursor",
             Group::Motion => "Animation",
@@ -249,6 +256,15 @@ pub static OPTIONS: &[Opt] = &[
         r##"{"colors":["#ff444444"],"angle":0}"##,
         "",
     ),
+    opt(
+        "decoration.border_part_of_window",
+        Group::Borders,
+        "Border is part of the window",
+        Kind::Bool,
+        NONE,
+        "true",
+        "Off, the border sits outside the window: rounding and opacity rules leave it alone.",
+    ),
     // --- windows ---
     opt(
         "decoration.rounding",
@@ -297,6 +313,33 @@ pub static OPTIONS: &[Opt] = &[
         "",
     ),
     opt("decoration.dim_strength", Group::Windows, "Dim strength", Kind::Float, UNIT, "0.5", ""),
+    opt(
+        "decoration.dim_special",
+        Group::Windows,
+        "Dim behind a special workspace",
+        Kind::Float,
+        UNIT,
+        "0.2",
+        "How much the rest of the screen darkens while a special workspace is open.",
+    ),
+    opt(
+        "decoration.dim_around",
+        Group::Windows,
+        "Dim-around strength",
+        Kind::Float,
+        UNIT,
+        "0.4",
+        "How much a dim-around rule darkens the screen behind its window.",
+    ),
+    opt(
+        "decoration.dim_modal",
+        Group::Windows,
+        "Dim a window behind its dialog",
+        Kind::Bool,
+        NONE,
+        "true",
+        "",
+    ),
     // --- shadow ---
     opt("decoration.shadow.enabled", Group::Shadow, "Shadows", Kind::Bool, NONE, "true", ""),
     opt("decoration.shadow.range", Group::Shadow, "Size", Kind::Int, (0.0, 100.0, 1.0), "4", ""),
@@ -926,6 +969,97 @@ pub static OPTIONS: &[Opt] = &[
         ),
         &["fluid_jar"],
     ),
+    // --- wobble and motion blur ---
+    opt(
+        "decoration.wobble.enabled",
+        Group::Movement,
+        "Wobble",
+        Kind::Bool,
+        NONE,
+        "false",
+        "Windows bend like jelly as they move and resize.",
+    ),
+    opt(
+        "decoration.wobble.intensity",
+        Group::Movement,
+        "Wobble strength",
+        Kind::Float,
+        (0.0, 2.0, 0.01),
+        "0.2",
+        "",
+    ),
+    opt(
+        "decoration.wobble.stiffness",
+        Group::Movement,
+        "Stiffness",
+        Kind::Float,
+        (1.0, 1000.0, 1.0),
+        "200",
+        "Stiffer springs wobble faster and settle sooner.",
+    ),
+    opt(
+        "decoration.wobble.damping",
+        Group::Movement,
+        "Damping",
+        Kind::Float,
+        (0.0, 100.0, 0.5),
+        "12",
+        "How quickly the wobbling dies down.",
+    ),
+    opt(
+        "decoration.wobble.mass",
+        Group::Movement,
+        "Weight",
+        Kind::Float,
+        (0.1, 20.0, 0.1),
+        "1",
+        "Heavier windows swing wider and slower.",
+    ),
+    opt(
+        "decoration.wobble.mesh",
+        Group::Movement,
+        "Smoothness",
+        Kind::Int,
+        (2.0, 32.0, 1.0),
+        "12",
+        "Points along each edge that bend. More is smoother and costs more.",
+    ),
+    opt(
+        "decoration.wobble.value_epsilon",
+        Group::Movement,
+        "Settle: distance",
+        Kind::Float,
+        (0.0, 10.0, 0.05),
+        "0.25",
+        "Below this movement, in pixels, a window counts as still. Rarely worth changing.",
+    ),
+    opt(
+        "decoration.wobble.velocity_epsilon",
+        Group::Movement,
+        "Settle: speed",
+        Kind::Float,
+        (0.0, 50.0, 0.5),
+        "2",
+        "Below this speed a window counts as still. Rarely worth changing.",
+    ),
+    opt(
+        "decoration.motion_blur.enabled",
+        Group::Movement,
+        "Motion blur",
+        Kind::Bool,
+        NONE,
+        "false",
+        "Moving and resizing windows smear in the direction they travel.",
+    ),
+    opt(
+        "decoration.motion_blur.samples",
+        Group::Movement,
+        "Motion blur samples",
+        Kind::Int,
+        (1.0, 64.0, 1.0),
+        "7",
+        "More is smoother and costs more GPU time.",
+    ),
     // --- desktop and cursor ---
     opt(
         "general.gaps_workspaces",
@@ -990,6 +1124,16 @@ pub static OPTIONS: &[Opt] = &[
         "false",
         "",
     ),
+    opt(
+        "decoration.screen_shader",
+        Group::Desktop,
+        "Screen shader",
+        Kind::Path,
+        NONE,
+        r#""""#,
+        "A GLSL fragment shader drawn over the whole screen, after everything else. Empty for \
+         none. Shaders for single windows are on the HyprWindowShade pages.",
+    ),
     // --- animation ---
     opt(
         "animations.enabled",
@@ -999,6 +1143,16 @@ pub static OPTIONS: &[Opt] = &[
         NONE,
         "true",
         "Every animation at once. Curves and speeds come later.",
+    ),
+    opt(
+        "animations.workspace_wraparound",
+        Group::Motion,
+        "Wrap around between the last and first workspace",
+        Kind::Bool,
+        NONE,
+        "false",
+        "Going from the last workspace to the first slides onward, as if they were next to \
+         each other, rather than back across all of them.",
     ),
 ];
 
@@ -1226,6 +1380,18 @@ pub fn parse_as(key: &str, kind: Kind, (min, max): (f64, f64), value: &Value) ->
             let x = a[0].as_f64().ok_or_else(wrong)?;
             let y = a[1].as_f64().ok_or_else(wrong)?;
             LookValue::Vec2([clamp(x), clamp(y)])
+        }
+        Kind::Path => {
+            let t = value.as_str().map(str::trim).ok_or_else(wrong)?;
+            if t.contains(['\n', '\r']) {
+                return Err(wrong());
+            }
+            let t = if t.starts_with('~') {
+                crate::paths::expand(t).to_string_lossy().into_owned()
+            } else {
+                t.to_string()
+            };
+            LookValue::Text(t)
         }
         Kind::Text | Kind::Choice => {
             let t = value.as_str().map(str::trim).ok_or_else(wrong)?;
@@ -1520,6 +1686,7 @@ pub fn read_live() -> Result<BTreeMap<String, LookValue>> {
              elseif v.top then s = 's ' .. v.top .. ' ' .. v.right .. ' ' .. v.bottom .. ' ' .. v.left \
              elseif v.x then s = 'v ' .. n(v.x) .. ' ' .. n(v.y) end \
            elseif t == 'string' and tonumber(v) then s = 'g 0 ' .. hex(v) \
+           elseif t == 'string' then s = 't ' .. v \
            end \
            if s then out[#out + 1] = k .. ' ' .. s end \
          end \
@@ -1555,6 +1722,7 @@ fn parse_live(text: &str) -> BTreeMap<String, LookValue> {
             ("i" | "f", Kind::Int) => num(0).map(|v| LookValue::Int(v.round() as i64)),
             ("i" | "f", Kind::Float) => num(0).map(LookValue::Float),
             ("i" | "f", Kind::Sides) => num(0).map(|v| LookValue::Sides([v as i64; 4])),
+            ("t", Kind::Path) => Some(LookValue::Text(rest.join(" "))),
             ("i" | "f", Kind::Choice) => num(0)
                 .and_then(|v| opt.choices.get(v as usize))
                 .map(|name| LookValue::Text(name.to_string())),
@@ -1704,6 +1872,22 @@ mod tests {
         let live = parse_live("decoration.blur.variant i 8\ndecoration.blur.size i 6");
         assert_eq!(live["decoration.blur.variant"], LookValue::Text("acrylic".into()));
         assert!(parse_live("decoration.blur.variant i 99").is_empty());
+    }
+
+    #[test]
+    fn a_path_may_be_empty_and_has_its_home_expanded() {
+        let o = find("decoration.screen_shader").unwrap();
+        assert_eq!(parse(o, &json!("")).unwrap(), LookValue::Text(String::new()));
+        let home = dirs::home_dir().unwrap();
+        let v = parse(o, &json!("~/shaders/crt.frag")).unwrap();
+        assert_eq!(v, LookValue::Text(home.join("shaders/crt.frag").to_string_lossy().into()));
+        assert!(parse(o, &json!("a\nb")).is_err());
+        // Read back as written; an empty one reads back empty.
+        let live =
+            parse_live("decoration.screen_shader t /tmp/a b.frag\ndecoration.dim_modal b true");
+        assert_eq!(live["decoration.screen_shader"], LookValue::Text("/tmp/a b.frag".into()));
+        let live = parse_live("decoration.screen_shader t ");
+        assert_eq!(live["decoration.screen_shader"], LookValue::Text(String::new()));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import dev.hyprcustard.gui
 
 // One row of the Look page: the control that fits the option's kind, a
@@ -75,6 +76,8 @@ Item {
                 return textControl
             case "choice":
                 return choiceControl
+            case "path":
+                return pathControl
             }
             return null
         }
@@ -525,6 +528,52 @@ Item {
             }
             Item {
                 Layout.fillWidth: true
+            }
+        }
+    }
+
+    // A file, or nothing: an empty field turns the option off.
+    Component {
+        id: pathControl
+
+        RowLayout {
+            spacing: Theme.gap
+            enabled: row.switchedOn
+
+            Text {
+                Layout.preferredWidth: 150
+                text: row.opt.label
+                color: Theme.fgDim
+                font.pixelSize: Theme.fontSize
+            }
+            LineEdit {
+                id: pathLine
+                Layout.fillWidth: true
+                mono: true
+                placeholderText: "None"
+                text: row.opt.value || ""
+                onCommit: function (v) {
+                    pathLine.text = Qt.binding(function () { return row.opt.value || "" })
+                    if (v.trim() !== (row.opt.value || ""))
+                        row.host.set(row.key, v.trim())
+                }
+            }
+            PillButton {
+                compact: true
+                text: "Choose…"
+                onClicked: pathDialog.open()
+            }
+            FileDialog {
+                id: pathDialog
+                title: row.opt.label
+                fileMode: FileDialog.OpenFile
+                nameFilters: ["Shaders (*.frag *.glsl)", "All files (*)"]
+                onAccepted: {
+                    var s = String(pathDialog.selectedFile)
+                    if (s.indexOf("file://") === 0)
+                        s = s.substring(7)
+                    row.host.set(row.key, decodeURIComponent(s))
+                }
             }
         }
     }

@@ -63,6 +63,10 @@ Item {
     function parentOf(key) {
         if (key === "decoration.dim_strength")
             return "decoration.dim_inactive"
+        if (key.indexOf("decoration.wobble.") === 0 && key !== "decoration.wobble.enabled")
+            return "decoration.wobble.enabled"
+        if (key === "decoration.motion_blur.samples")
+            return "decoration.motion_blur.enabled"
         if (key === "decoration.blur.popups_ignorealpha")
             return "decoration.blur.popups"
         if (key === "decoration.blur.input_methods_ignorealpha")

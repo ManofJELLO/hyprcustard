@@ -21,6 +21,8 @@ Option paths below use the Lua config's dots: `decoration.blur.variant`.
 
 ## P1 — the look
 
+*All done 2026-11-19.*
+
 1. **decoration.blur**. *Done 2026-11-19: the Look page now has every blur
    option.* What was missing:
    1. `variant`: kawase (the classic, default), frost, ripple, drops, water,
