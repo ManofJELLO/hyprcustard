@@ -24,6 +24,8 @@ Item {
                                        || ((row.host && row.host.byKey[row.parentKey]) || {}).value === true
 
     width: parent ? parent.width : 0
+    // A blur variant's settings are shown only while it is the one chosen.
+    visible: row.opt.shown !== false
     implicitHeight: body.implicitHeight + (hintText.visible ? hintText.implicitHeight + 3 : 0)
                     + (theirsText.visible ? theirsText.implicitHeight + 3 : 0)
 
@@ -71,6 +73,8 @@ Item {
                 return vecControl
             case "text":
                 return textControl
+            case "choice":
+                return choiceControl
             }
             return null
         }
@@ -482,6 +486,45 @@ Item {
                     if (v.trim() !== "" && v.trim() !== row.opt.value)
                         row.host.set(row.key, v.trim())
                 }
+            }
+        }
+    }
+
+    Component {
+        id: choiceControl
+
+        RowLayout {
+            spacing: Theme.gap
+            enabled: row.switchedOn
+
+            // "heat_shimmer" as "Heat shimmer".
+            function nice(name) {
+                var t = String(name).replace(/_/g, " ")
+                return t.charAt(0).toUpperCase() + t.slice(1)
+            }
+
+            Text {
+                Layout.preferredWidth: 150
+                text: row.opt.label
+                color: Theme.fgDim
+                font.pixelSize: Theme.fontSize
+            }
+            Dropdown {
+                id: pick
+                Layout.preferredWidth: 220
+                model: (row.opt.choices || []).map(function (c) { return parent.nice(c) })
+                currentIndex: (row.opt.choices || []).indexOf(row.opt.value)
+                onActivated: function (index) {
+                    var name = row.opt.choices[index]
+                    pick.currentIndex = Qt.binding(function () {
+                        return (row.opt.choices || []).indexOf(row.opt.value)
+                    })
+                    if (name !== row.opt.value)
+                        row.host.set(row.key, name)
+                }
+            }
+            Item {
+                Layout.fillWidth: true
             }
         }
     }

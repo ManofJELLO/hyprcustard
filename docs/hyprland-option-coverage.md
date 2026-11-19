@@ -21,7 +21,8 @@ Option paths below use the Lua config's dots: `decoration.blur.variant`.
 
 ## P1 — the look
 
-1. **decoration.blur** (the Look page has 13; these are missing):
+1. **decoration.blur**. *Done 2026-11-19: the Look page now has every blur
+   option.* What was missing:
    1. `variant`: kawase (the classic, default), frost, ripple, drops, water,
       fluid_jar, prism, heat_shimmer, acrylic, aurora, haze. Some variants
       are animated and cost GPU time, which the page should say.
@@ -31,9 +32,8 @@ Option paths below use the Lua config's dots: `decoration.blur.variant`.
       - `drops`: speed
       - `fluid_jar`: color, distortion, fill_amount, mass, precision, speed,
         turbulence
-      - `glass`: refraction, roughness, size. Hyprland says these are "for glass
-        blur types" without naming them; frost and prism are the likely ones,
-        which needs checking before building it.
+      - `glass`, read by frost, drops, prism, heat_shimmer and aurora
+        (checked in Hyprland's shaders): refraction, roughness, size
       - `haze`: intensity, iridescence
       - `heat_shimmer`: speed
       - `ripple`: duration, radius, strength, width

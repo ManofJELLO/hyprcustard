@@ -52,6 +52,9 @@ pub enum Kind {
     Vec2,
     /// A line of text. Only rules use it, for an animation style.
     Text,
+    /// One of a fixed list of names, held as text. Hyprland reports it as
+    /// the name's index in the list.
+    Choice,
 }
 
 /// The sections of the Look page, in the order it shows them.
@@ -126,6 +129,12 @@ pub struct Opt {
     /// shadow color is the focused one unless set — that other option's key.
     /// Empty otherwise.
     pub follows: &'static str,
+    /// For [`Kind::Choice`], the names it takes, in Hyprland's order.
+    pub choices: &'static [&'static str],
+    /// Shown only while the option named first holds one of the values
+    /// after it, as text: a blur variant's settings show only while that
+    /// variant is chosen. Empty key: always shown.
+    pub shown_when: (&'static str, &'static [&'static str]),
 }
 
 const fn opt(
@@ -137,8 +146,51 @@ const fn opt(
     default: &'static str,
     hint: &'static str,
 ) -> Opt {
-    Opt { key, group, label, hint, kind, min, max, step, default, follows: "" }
+    Opt {
+        key,
+        group,
+        label,
+        hint,
+        kind,
+        min,
+        max,
+        step,
+        default,
+        follows: "",
+        choices: &[],
+        shown_when: ("", &[]),
+    }
 }
+
+/// `o`, a choice between `names`.
+const fn choice(mut o: Opt, names: &'static [&'static str]) -> Opt {
+    o.choices = names;
+    o
+}
+
+/// `o`, shown only while the blur variant is one of `variants`.
+const fn for_variants(mut o: Opt, variants: &'static [&'static str]) -> Opt {
+    o.shown_when = ("decoration.blur.variant", variants);
+    o
+}
+
+/// Hyprland's blur variants, in the order its numbers for them run.
+pub const BLUR_VARIANTS: &[&str] = &[
+    "kawase",
+    "frost",
+    "ripple",
+    "drops",
+    "water",
+    "fluid_jar",
+    "prism",
+    "heat_shimmer",
+    "acrylic",
+    "aurora",
+    "haze",
+];
+
+/// The variants whose shaders read the `glass` settings.
+const GLASS: &[&str] = &["frost", "drops", "prism", "heat_shimmer", "aurora"];
 
 /// `o`, taking `key`'s value while it is not set itself.
 const fn following(mut o: Opt, key: &'static str) -> Opt {
@@ -382,7 +434,7 @@ pub static OPTIONS: &[Opt] = &[
         "Brightness",
         Kind::Float,
         (0.0, 2.0, 0.01),
-        "0.8172",
+        "1",
         "",
     ),
     opt(
@@ -448,6 +500,431 @@ pub static OPTIONS: &[Opt] = &[
         NONE,
         "true",
         "Cheaper blur that skips redrawing what has not changed. Leave on unless it misbehaves.",
+    ),
+    opt(
+        "decoration.blur.proportional",
+        Group::Blur,
+        "Follow window opacity",
+        Kind::Bool,
+        NONE,
+        "false",
+        "The more see-through a pixel, the less it blurs.",
+    ),
+    opt(
+        "decoration.blur.popups_ignorealpha",
+        Group::Blur,
+        "Popups: skip below opacity",
+        Kind::Float,
+        UNIT,
+        "0.2",
+        "Parts of a popup more see-through than this are not blurred.",
+    ),
+    opt(
+        "decoration.blur.input_methods_ignorealpha",
+        Group::Blur,
+        "Input method popups: skip below opacity",
+        Kind::Float,
+        UNIT,
+        "0.2",
+        "",
+    ),
+    // --- the blur variant, and each one's own settings ---
+    choice(
+        opt(
+            "decoration.blur.variant",
+            Group::Blur,
+            "Variant",
+            Kind::Choice,
+            NONE,
+            r#""kawase""#,
+            "Effects laid over the blur. Kawase is the plain one. The animated ones (drops, \
+             water, fluid jar, heat shimmer, aurora, ripple) keep the GPU busy, a lot for some.",
+        ),
+        BLUR_VARIANTS,
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.glass.refraction",
+            Group::Blur,
+            "Glass: refraction",
+            Kind::Float,
+            (0.0, 20.0, 0.5),
+            "20",
+            "How far the pattern bends what is behind it, in pixels.",
+        ),
+        GLASS,
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.glass.size",
+            Group::Blur,
+            "Glass: pattern size",
+            Kind::Float,
+            (4.0, 512.0, 1.0),
+            "40",
+            "",
+        ),
+        GLASS,
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.glass.roughness",
+            Group::Blur,
+            "Glass: relief",
+            Kind::Float,
+            UNIT,
+            "1",
+            "",
+        ),
+        GLASS,
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.acrylic.refraction",
+            Group::Blur,
+            "Acrylic: refraction",
+            Kind::Float,
+            (0.0, 48.0, 0.5),
+            "24",
+            "How far the curved edge bends what is behind it, in pixels.",
+        ),
+        &["acrylic"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.acrylic.bulb",
+            Group::Blur,
+            "Acrylic: edge width",
+            Kind::Float,
+            (4.0, 256.0, 1.0),
+            "48",
+            "",
+        ),
+        &["acrylic"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.acrylic.clarity",
+            Group::Blur,
+            "Acrylic: clarity",
+            Kind::Float,
+            UNIT,
+            "0.82",
+            "How much of the sharp background shows through.",
+        ),
+        &["acrylic"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.acrylic.aberration",
+            Group::Blur,
+            "Acrylic: color fringing",
+            Kind::Float,
+            (0.0, 0.25, 0.005),
+            "0.025",
+            "",
+        ),
+        &["acrylic"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.acrylic.tint",
+            Group::Blur,
+            "Acrylic: tint",
+            Kind::Color,
+            NONE,
+            r##""#ff14eef5""##,
+            "Its alpha is how much light the acrylic takes in.",
+        ),
+        &["acrylic"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.aurora.color1",
+            Group::Blur,
+            "Aurora: first color",
+            Kind::Color,
+            NONE,
+            r##""#ff29f0a0""##,
+            "",
+        ),
+        &["aurora"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.aurora.color2",
+            Group::Blur,
+            "Aurora: second color",
+            Kind::Color,
+            NONE,
+            r##""#ff7a4dff""##,
+            "",
+        ),
+        &["aurora"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.aurora.intensity",
+            Group::Blur,
+            "Aurora: strength",
+            Kind::Float,
+            UNIT,
+            "0.35",
+            "",
+        ),
+        &["aurora"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.aurora.speed",
+            Group::Blur,
+            "Aurora: speed",
+            Kind::Float,
+            (0.0, 10.0, 0.1),
+            "1",
+            "0 holds it still and costs nothing extra.",
+        ),
+        &["aurora"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.drops.speed",
+            Group::Blur,
+            "Drops: speed",
+            Kind::Float,
+            (0.0, 10.0, 0.1),
+            "3",
+            "0 holds them still. Moving drops cost a lot of GPU time.",
+        ),
+        &["drops"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.heat_shimmer.speed",
+            Group::Blur,
+            "Heat shimmer: speed",
+            Kind::Float,
+            (0.0, 10.0, 0.1),
+            "1",
+            "0 holds it still.",
+        ),
+        &["heat_shimmer"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.haze.intensity",
+            Group::Blur,
+            "Haze: sheen",
+            Kind::Float,
+            UNIT,
+            "0.35",
+            "",
+        ),
+        &["haze"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.haze.iridescence",
+            Group::Blur,
+            "Haze: color shift",
+            Kind::Float,
+            UNIT,
+            "0.7",
+            "",
+        ),
+        &["haze"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.ripple.strength",
+            Group::Blur,
+            "Ripple: strength",
+            Kind::Float,
+            (0.0, 32.0, 0.5),
+            "30",
+            "Ripples spread from each click, bending what is behind by up to this many pixels.",
+        ),
+        &["ripple"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.ripple.radius",
+            Group::Blur,
+            "Ripple: reach",
+            Kind::Float,
+            (1.0, 1000.0, 1.0),
+            "400",
+            "",
+        ),
+        &["ripple"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.ripple.width",
+            Group::Blur,
+            "Ripple: wave width",
+            Kind::Float,
+            (1.0, 200.0, 1.0),
+            "32",
+            "",
+        ),
+        &["ripple"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.ripple.duration",
+            Group::Blur,
+            "Ripple: duration (seconds)",
+            Kind::Float,
+            (0.05, 5.0, 0.05),
+            "0.45",
+            "",
+        ),
+        &["ripple"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.water.strength",
+            Group::Blur,
+            "Water: strength",
+            Kind::Float,
+            (0.0, 32.0, 0.5),
+            "32",
+            "The pointer stirs the water; this is how far it bends what is behind.",
+        ),
+        &["water"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.water.radius",
+            Group::Blur,
+            "Water: pointer size",
+            Kind::Float,
+            (1.0, 1000.0, 1.0),
+            "20",
+            "",
+        ),
+        &["water"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.water.speed",
+            Group::Blur,
+            "Water: wave speed",
+            Kind::Float,
+            (0.0, 10.0, 0.01),
+            "0.76",
+            "",
+        ),
+        &["water"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.water.damping",
+            Group::Blur,
+            "Water: damping",
+            Kind::Float,
+            UNIT,
+            "0.95",
+            "",
+        ),
+        &["water"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.water.duration",
+            Group::Blur,
+            "Water: longest ripple (seconds)",
+            Kind::Float,
+            (0.5, 60.0, 0.5),
+            "12",
+            "",
+        ),
+        &["water"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.color",
+            Group::Blur,
+            "Fluid jar: color",
+            Kind::Color,
+            NONE,
+            r##""#ffcc3399""##,
+            "",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.fill_amount",
+            Group::Blur,
+            "Fluid jar: how full",
+            Kind::Float,
+            UNIT,
+            "0.5",
+            "",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.speed",
+            Group::Blur,
+            "Fluid jar: speed",
+            Kind::Float,
+            (0.0, 10.0, 0.1),
+            "3.7",
+            "",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.mass",
+            Group::Blur,
+            "Fluid jar: weight",
+            Kind::Float,
+            (0.1, 10.0, 0.1),
+            "1.4",
+            "How slowly the fluid answers a window moving.",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.turbulence",
+            Group::Blur,
+            "Fluid jar: turbulence",
+            Kind::Float,
+            (0.0, 5.0, 0.1),
+            "1.2",
+            "",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.distortion",
+            Group::Blur,
+            "Fluid jar: distortion",
+            Kind::Float,
+            (0.0, 10.0, 0.1),
+            "8",
+            "",
+        ),
+        &["fluid_jar"],
+    ),
+    for_variants(
+        opt(
+            "decoration.blur.fluid_jar.precision",
+            Group::Blur,
+            "Fluid jar: precision",
+            Kind::Float,
+            (0.5, 8.0, 0.5),
+            "2",
+            "2 is a good balance; 4 and up cost a lot of GPU time.",
+        ),
+        &["fluid_jar"],
     ),
     // --- desktop and cursor ---
     opt(
@@ -691,7 +1168,17 @@ pub fn parse_color(text: &str) -> Result<String> {
 /// Read a value from the UI (or from an option's default) for `opt`,
 /// checking it fits and clamping numbers into the option's range.
 pub fn parse(opt: &Opt, value: &Value) -> Result<LookValue> {
-    parse_as(opt.key, opt.kind, (opt.min, opt.max), value)
+    let v = parse_as(opt.key, opt.kind, (opt.min, opt.max), value)?;
+    if let (Kind::Choice, LookValue::Text(t)) = (opt.kind, &v) {
+        if !opt.choices.contains(&t.as_str()) {
+            return Err(Error::other(format!(
+                "{} cannot be {t:?}; it takes {}",
+                opt.key,
+                opt.choices.join(", ")
+            )));
+        }
+    }
+    Ok(v)
 }
 
 /// [`parse`] for anything with a key, a kind and a range — a rule's fields
@@ -740,7 +1227,7 @@ pub fn parse_as(key: &str, kind: Kind, (min, max): (f64, f64), value: &Value) ->
             let y = a[1].as_f64().ok_or_else(wrong)?;
             LookValue::Vec2([clamp(x), clamp(y)])
         }
-        Kind::Text => {
+        Kind::Text | Kind::Choice => {
             let t = value.as_str().map(str::trim).ok_or_else(wrong)?;
             if t.is_empty() || t.contains(['\n', '\r']) {
                 return Err(wrong());
@@ -1068,6 +1555,9 @@ fn parse_live(text: &str) -> BTreeMap<String, LookValue> {
             ("i" | "f", Kind::Int) => num(0).map(|v| LookValue::Int(v.round() as i64)),
             ("i" | "f", Kind::Float) => num(0).map(LookValue::Float),
             ("i" | "f", Kind::Sides) => num(0).map(|v| LookValue::Sides([v as i64; 4])),
+            ("i" | "f", Kind::Choice) => num(0)
+                .and_then(|v| opt.choices.get(v as usize))
+                .map(|name| LookValue::Text(name.to_string())),
             ("g", Kind::Gradient) => {
                 let colors: Option<Vec<String>> =
                     rest[1..].iter().map(|c| parse_color(&format!("0x{c}")).ok()).collect();
@@ -1133,6 +1623,14 @@ pub fn view(
             // Unset, and so showing whatever it follows.
             let following = !o.follows.is_empty() && own.is_none() && reported.is_none();
             let shown = |key: &str| look.values.get(key).or_else(|| live.get(key)).cloned();
+            // Whether its condition holds, on what is shown for that option.
+            let visible = match o.shown_when {
+                ("", _) => true,
+                (key, values) => {
+                    let current = shown(key).or_else(|| find(key).map(default_of));
+                    matches!(current, Some(LookValue::Text(t)) if values.contains(&t.as_str()))
+                }
+            };
             let value = if following {
                 shown(o.follows).or_else(|| find(o.follows).map(default_of))
             } else {
@@ -1159,6 +1657,8 @@ pub fn view(
                 // Not set anywhere, so it takes another option's value.
                 "following": following,
                 "follows": o.follows,
+                "choices": o.choices,
+                "shown": visible,
                 // The user's own entries for it, and what Save does to them.
                 "theirs": mine,
                 "keepMine": look.keep_values.contains(o.key),
@@ -1192,6 +1692,41 @@ mod tests {
         keys.sort_unstable();
         keys.dedup();
         assert_eq!(keys.len(), OPTIONS.len());
+    }
+
+    #[test]
+    fn the_blur_variant_is_a_name_written_as_text() {
+        let o = find("decoration.blur.variant").unwrap();
+        assert_eq!(parse(o, &json!("acrylic")).unwrap(), LookValue::Text("acrylic".into()));
+        assert_eq!(parse(o, &json!("acrylic")).unwrap().to_lua(), "\"acrylic\"");
+        assert!(parse(o, &json!("nonsense")).is_err());
+        // Hyprland reports the variant's number.
+        let live = parse_live("decoration.blur.variant i 8\ndecoration.blur.size i 6");
+        assert_eq!(live["decoration.blur.variant"], LookValue::Text("acrylic".into()));
+        assert!(parse_live("decoration.blur.variant i 99").is_empty());
+    }
+
+    #[test]
+    fn a_variants_settings_show_only_while_it_is_chosen() {
+        let shown = |look: &Look, key: &str| {
+            view(look, look, &BTreeMap::new(), false, &[])["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["key"] == key)
+                .unwrap()["shown"]
+                .clone()
+        };
+        let mut look = Look::default();
+        // Kawase, the default, has none.
+        assert_eq!(shown(&look, "decoration.blur.acrylic.tint"), json!(false));
+        assert_eq!(shown(&look, "decoration.blur.size"), json!(true));
+        look.values.insert("decoration.blur.variant".into(), LookValue::Text("acrylic".into()));
+        assert_eq!(shown(&look, "decoration.blur.acrylic.tint"), json!(true));
+        assert_eq!(shown(&look, "decoration.blur.glass.size"), json!(false));
+        look.values.insert("decoration.blur.variant".into(), LookValue::Text("prism".into()));
+        assert_eq!(shown(&look, "decoration.blur.glass.size"), json!(true));
+        assert_eq!(shown(&look, "decoration.blur.acrylic.tint"), json!(false));
     }
 
     #[test]

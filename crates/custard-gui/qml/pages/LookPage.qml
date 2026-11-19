@@ -63,6 +63,10 @@ Item {
     function parentOf(key) {
         if (key === "decoration.dim_strength")
             return "decoration.dim_inactive"
+        if (key === "decoration.blur.popups_ignorealpha")
+            return "decoration.blur.popups"
+        if (key === "decoration.blur.input_methods_ignorealpha")
+            return "decoration.blur.input_methods"
         if (key.indexOf("decoration.shadow.") === 0 && key !== "decoration.shadow.enabled")
             return "decoration.shadow.enabled"
         if (key.indexOf("decoration.blur.") === 0 && key !== "decoration.blur.enabled")
