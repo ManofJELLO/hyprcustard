@@ -229,6 +229,15 @@ pub fn from_seed_with(
         s.neutral_variant_palette =
             TonalPalette::of(variant_hue, s.neutral_variant_palette.chroma() * keep * tint);
     }
+    let three = main_hues(seed, &with.hues);
+    // Secondary and tertiary take the wallpaper's next two hues, at the
+    // style's own strength, so the style still shows.
+    if let Some(f) = three.get(1) {
+        s.secondary_palette = TonalPalette::of(f.hue, s.secondary_palette.chroma());
+    }
+    if let Some(f) = three.get(2) {
+        s.tertiary_palette = TonalPalette::of(f.hue, s.tertiary_palette.chroma());
+    }
     let mut roles = BTreeMap::new();
     for name in ROLES {
         let rgb = if *name == "source_color" { seed } else { role_of(&s, name) };
@@ -239,9 +248,45 @@ pub fn from_seed_with(
         dark,
         source: hex(seed),
         roles,
-        base16: base16_from_material(&s, seed, style, dark, &with.hues),
+        base16: base16_from_material(&s, seed, style, dark, &three),
     }
 }
+
+/// The three hues a wallpaper's scheme is built from: the seed's own family
+/// first, as primary, then the biggest of the rest, as secondary and
+/// tertiary. Every other hue in the picture is left out, as if it were not
+/// there: matching to all of them made every wallpaper's palette alike.
+///
+/// The seed's family is the one within [`SEED_REACH`] of it. When it has
+/// none (a small bright subject picked as the most colorful color), the
+/// seed stands for itself.
+fn main_hues(seed: Rgb, hues: &[Hue]) -> Vec<Hue> {
+    if hues.is_empty() {
+        return Vec::new();
+    }
+    let mut by_share = hues.to_vec();
+    by_share.sort_by(|a, b| b.share.total_cmp(&a.share));
+    let s = Hct::new(seed);
+    let own = by_share
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| hue_distance(f.hue, s.get_hue()) <= SEED_REACH)
+        .min_by(|(_, a), (_, b)| {
+            hue_distance(a.hue, s.get_hue()).total_cmp(&hue_distance(b.hue, s.get_hue()))
+        })
+        .map(|(i, _)| i);
+    let primary = match own {
+        Some(i) => by_share.remove(i),
+        None => Hue { hue: s.get_hue(), chroma: s.get_chroma(), share: SEED_SHARE },
+    };
+    std::iter::once(primary).chain(by_share).take(3).collect()
+}
+
+/// How far from the seed, in degrees, a hue family counts as the seed's.
+const SEED_REACH: f64 = 30.0;
+
+/// The share a seed with no family of its own is counted as having.
+const SEED_SHARE: f64 = 0.05;
 
 fn role_of(s: &DynamicScheme, name: &str) -> Rgb {
     match name {
@@ -392,7 +437,8 @@ fn hue_offset(from: f64, to: f64) -> f64 {
     }
 }
 
-/// base16's accents out of the wallpaper's hue families.
+/// base16's accents out of the wallpaper's main hue families (see
+/// [`main_hues`]).
 ///
 /// Each slot takes the family nearest its own hue, a big family reaching a
 /// little further than a small one, so the picture's colors fill the
@@ -819,8 +865,58 @@ mod tests {
         assert!(chroma(parse(mono.base(0xD)).unwrap()) < 3.0);
         let classic = from_seed_with("t", seed, "tonal-spot", true, 0.0, &with(vec![]));
         assert_eq!(classic, from_seed("t", seed, "tonal-spot", true, 0.0));
-        // The Material roles are the same either way.
-        assert_eq!(classic.roles, s.roles);
+        // Primary is the seed's either way; secondary takes the picture's
+        // next hue, and with only two hues tertiary stays the style's own.
+        assert_eq!(classic.role("primary"), s.role("primary"));
+        let role_hue = |s: &Scheme, r| Hct::new(parse(s.role(r)).unwrap()).get_hue();
+        assert!(near(role_hue(&s, "secondary"), 50.0, 12.0), "{}", role_hue(&s, "secondary"));
+        assert_eq!(classic.role("tertiary"), s.role("tertiary"));
+    }
+
+    #[test]
+    fn only_the_three_main_hues_are_used() {
+        let seed = Rgb::from_u32(0x2684e7);
+        let hues = vec![
+            Hue { hue: 260.0, chroma: 34.0, share: 0.45 },
+            Hue { hue: 145.0, chroma: 30.0, share: 0.25 },
+            Hue { hue: 50.0, chroma: 40.0, share: 0.15 },
+            Hue { hue: 330.0, chroma: 50.0, share: 0.10 },
+            Hue { hue: 195.0, chroma: 30.0, share: 0.05 },
+        ];
+        let s = from_seed_with(
+            "t",
+            seed,
+            "tonal-spot",
+            true,
+            0.0,
+            &Shaping { hues: hues.clone(), ..Default::default() },
+        );
+        let hue = |c: &str| Hct::new(parse(c).unwrap()).get_hue();
+        let near = |h: f64, want: f64, by: f64| hue_distance(h, want) <= by;
+        assert!(near(hue(s.role("secondary")), 145.0, 12.0), "{}", hue(s.role("secondary")));
+        assert!(near(hue(s.role("tertiary")), 50.0, 12.0), "{}", hue(s.role("tertiary")));
+        // Every accent but the error red comes from blue, green or orange:
+        // the magenta and cyan in the picture are left out.
+        for n in 9..16 {
+            let h = hue(s.base(n));
+            assert!(
+                [260.0, 145.0, 50.0].iter().any(|&f| near(h, f, 16.0)),
+                "base{n:02X} hue {h}: {:?}",
+                s.base16
+            );
+        }
+        // No red among the three, so base08 stays red for errors.
+        assert!(near(hue(s.base(8)), 25.0, 16.0), "{}", hue(s.base(8)));
+
+        // A seed with no family of its own is primary, and the two biggest
+        // families follow it.
+        let three = main_hues(Rgb::from_u32(0xff2a6d), &hues);
+        assert_eq!(three.len(), 3);
+        assert!((three[1].hue - 260.0).abs() < 1e-9 && (three[2].hue - 145.0).abs() < 1e-9);
+        // The seed's own family is taken out of the running, not repeated.
+        let three = main_hues(Rgb::from_u32(0x30a040), &hues);
+        assert!((three[0].hue - 145.0).abs() < 1e-9, "{three:?}");
+        assert!((three[1].hue - 260.0).abs() < 1e-9 && (three[2].hue - 50.0).abs() < 1e-9);
     }
 
     #[test]

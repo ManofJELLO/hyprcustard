@@ -282,12 +282,14 @@ Item {
                 }
                 Toggle {
                     visible: page.mode === "wallpaper"
-                    text: "Terminal and prompt colors from the wallpaper's own hues"
-                    tooltip: "Terminals, prompts like Starship and editors color with base16's eight "
-                             + "accents. Off, those are always red, orange, yellow, green, cyan, blue, "
-                             + "magenta and brown, only tinted toward the wallpaper. On, each takes the "
-                             + "wallpaper color nearest it, so a hue the picture lacks stays out. Red "
-                             + "stays red when the picture has none, since it marks errors."
+                    text: "Build every color from the wallpaper's three main hues"
+                    tooltip: "On, the wallpaper's three most-used hues make the whole scheme: the "
+                             + "seed's as primary, the next two as secondary and tertiary, and "
+                             + "base16's eight accents (what terminals, Starship and editors color "
+                             + "with) from those three alone. Any other hue in the picture is left "
+                             + "out, so each wallpaper looks like itself. Red stays red when none of "
+                             + "the three is near it, since it marks errors. Off, secondary and "
+                             + "tertiary follow the style, and the accents are base16's usual eight."
                     checked: page.choice.wallpaper_accents !== false
                     onToggled: page.set({ wallpaper_accents: checked })
                 }

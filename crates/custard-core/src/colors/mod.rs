@@ -62,9 +62,9 @@ pub struct ColorSettings {
     /// building, -180 to 180: a photo's grading can make a yellow read as
     /// orange.
     pub hue_nudge: f64,
-    /// For the wallpaper, build base16's accents — what terminals and
-    /// prompts color with — from the wallpaper's own hues rather than from
-    /// base16's fixed eight, so a hue the picture lacks stays out.
+    /// For the wallpaper, build secondary, tertiary and base16's accents —
+    /// what terminals and prompts color with — from the wallpaper's three
+    /// main hues, rather than from the style and base16's fixed eight.
     pub wallpaper_accents: bool,
     /// How strongly surfaces are tinted, for anything built from a seed: 1
     /// is Material's own, 0 gray, up to [`scheme::MAX_TINT`].
