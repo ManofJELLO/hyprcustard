@@ -82,13 +82,14 @@ bump: upstream-check
 	sed -i 's/^pkgver=.*/pkgver=$(VERSION)/' packaging/PKGBUILD
 	$(CARGO) update -w -q
 
-# The app's shape shader, compiled for every graphics API Qt can use.
+# The app's shape shader and the bar's copy, compiled for every graphics API Qt can use.
 # Committed, so building does not need qsb (qt6-shadertools); run this after
 # changing the .frag.
 SHADERS := crates/custard-gui/shaders
 QSB ?= /usr/lib/qt6/bin/qsb
 shaders:
 	$(QSB) --glsl "100 es,120,150" --hlsl 50 --msl 12 -o $(SHADERS)/neu.frag.qsb $(SHADERS)/neu.frag
+	$(QSB) --glsl "100 es,120,150" --hlsl 50 --msl 12 -o crates/custard-core/bar/neu.frag.qsb crates/custard-core/bar/neu.frag
 
 # A pacman package of what is committed here, for using hyprcustard as a
 # user would between releases: see packaging/local/PKGBUILD. Built from a

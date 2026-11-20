@@ -260,7 +260,13 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             })
             .unwrap_or_else(|| panic!("the {name} did not open: {:?}", bar_layers(&nested.sig)));
             assert!((menu.0 + menu.2 / 2 - 800).abs() <= 1, "{name} centered across: {menu:?}");
-            assert!((menu.1 + menu.3 / 2 - 250).abs() <= 1, "{name} centered down: {menu:?}");
+            // Centered in the room the bar leaves: here the bar is at the
+            // bottom, so the menu is above it and clear of it.
+            let bar_top = bar_layers(&nested.sig).into_iter().map(|l| l.1).max().unwrap();
+            assert!(
+                (menu.1 + menu.3 / 2 - bar_top / 2).abs() <= 1,
+                "{name} centered down: {menu:?}"
+            );
             std::thread::sleep(Duration::from_millis(600));
             shot(&nested.socket, name);
             if target == "launcher" {
@@ -277,6 +283,45 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             }
             ipc(target, "open");
             assert_eq!(bar_layers(&nested.sig).len(), 2, "opening it again adds none");
+            ipc(target, "toggle");
+            wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
+                .unwrap_or_else(|| panic!("the {name} did not close"));
+        }
+
+        // Neumorphic, with the menus in the top right corner: the bar grows
+        // to make room for its shadow, and each menu sits a margin from the
+        // corner (the bar is at the bottom, so nothing is above them).
+        settings.style = "neumorphic".into();
+        settings.menu_position = "top-right".into();
+        settings.menu_margin = 20;
+        settings.power_layout = "column".into();
+        settings.power_items = ["lock", "reboot", "shutdown"].map(String::from).to_vec();
+        settings.launcher_icons = false;
+        settings.launcher_rows = 5;
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let grown = i64::from(settings.height) + 2 * 10;
+        wait_for(5, || bar_layers(&nested.sig).first().copied().filter(|l| l.3 == grown))
+            .unwrap_or_else(|| {
+                panic!("the bar did not grow to {grown}: {:?}", bar_layers(&nested.sig))
+            });
+        std::thread::sleep(Duration::from_millis(500));
+        shot(&nested.socket, "bar-neumorphic");
+        for (target, name) in
+            [("launcher", "launcher-neumorphic"), ("power", "power-menu-neumorphic")]
+        {
+            ipc(target, "toggle");
+            let menu = wait_for(5, || {
+                let layers = bar_layers(&nested.sig);
+                (layers.len() == 2).then(|| layers.into_iter().find(|l| l.2 < 1400).unwrap())
+            })
+            .unwrap_or_else(|| panic!("the {name} did not open"));
+            assert_eq!(
+                (menu.0 + menu.2, menu.1),
+                (1600 - 20, 20),
+                "{name} in the corner: {menu:?}"
+            );
+            std::thread::sleep(Duration::from_millis(600));
+            shot(&nested.socket, name);
             ipc(target, "toggle");
             wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
                 .unwrap_or_else(|| panic!("the {name} did not close"));

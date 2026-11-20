@@ -29,7 +29,7 @@ PanelWindow {
     // button, which must not open it again straight away.
     property double clearedAt: 0
 
-    readonly property int rows: 8
+    readonly property int rows: Config.launcherRows
     readonly property int rowHeight: Math.round(Theme.fontSize * 2.8)
     readonly property int gap: 8
 
@@ -43,8 +43,7 @@ PanelWindow {
     function show() {
         if (open || Date.now() - clearedAt < 300)
             return;
-        const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
-        root.screen = Quickshell.screens.find(s => s.name === name) ?? Quickshell.screens[0] ?? null;
+        root.screen = Config.menuScreen();
         readApps();
         if (search.text === "")
             refilter();
@@ -206,9 +205,22 @@ PanelWindow {
 
     visible: open
     color: "transparent"
-    implicitWidth: 600
+    implicitWidth: Config.launcherWidth + 2 * panel.pad
     implicitHeight: panel.pad * 2 + 2 * root.gap + root.rowHeight + root.gap + root.rows * root.rowHeight
-    exclusionMode: ExclusionMode.Ignore
+    // Kept out of the bar's space, so a menu at the top opens under it.
+    exclusionMode: ExclusionMode.Normal
+    anchors {
+        top: Config.menuTop
+        bottom: Config.menuBottom
+        left: Config.menuLeft
+        right: Config.menuRight
+    }
+    margins {
+        top: Config.menuMargin
+        bottom: Config.menuMargin
+        left: Config.menuMargin
+        right: Config.menuMargin
+    }
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell"
     WlrLayershell.keyboardFocus: open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
@@ -237,10 +249,18 @@ PanelWindow {
                 Layout.fillWidth: true
                 implicitHeight: root.rowHeight
 
+                // See-through like the card, flat or pressed in.
                 Rectangle {
+                    visible: !Config.neumorphic
                     anchors.fill: parent
                     radius: 2
-                    color: Theme.hardBackground
+                    color: Theme.glass(Theme.hardBackground)
+                }
+                Neu {
+                    visible: Config.neumorphic
+                    anchors.fill: parent
+                    sunk: true
+                    radius: 6
                 }
                 Text {
                     id: prompt
@@ -318,21 +338,30 @@ PanelWindow {
                     width: view.width
                     height: root.rowHeight
 
+                    // The chosen row is lit (flat) or pressed in (neumorphic).
                     Rectangle {
                         anchors.fill: parent
                         radius: 2
-                        color: row.chosen ? Theme.selection
-                             : hover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g, Theme.selection.b, 0.5)
+                        color: row.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
+                             : hover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g, Theme.selection.b,
+                                                       Config.opacity * 0.5)
                              : "transparent"
                     }
                     Rectangle {
-                        visible: row.chosen
+                        visible: row.chosen && !Config.neumorphic
                         anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
                         width: 3
                         color: Theme.aqua
                     }
+                    Neu {
+                        visible: row.chosen && Config.neumorphic
+                        anchors.fill: parent
+                        sunk: true
+                        radius: 6
+                    }
                     IconImage {
                         id: icon
+                        visible: Config.launcherIcons
                         x: 12
                         anchors.verticalCenter: parent.verticalCenter
                         implicitSize: Math.round(root.rowHeight * 0.62)
@@ -341,7 +370,11 @@ PanelWindow {
                     }
                     Text {
                         id: name
-                        anchors { left: icon.right; leftMargin: 10; verticalCenter: parent.verticalCenter }
+                        anchors {
+                            left: Config.launcherIcons ? icon.right : parent.left
+                            leftMargin: Config.launcherIcons ? 10 : 14
+                            verticalCenter: parent.verticalCenter
+                        }
                         width: Math.min(implicitWidth, row.width * 0.5)
                         elide: Text.ElideRight
                         text: row.modelData.name

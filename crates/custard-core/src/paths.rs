@@ -235,6 +235,11 @@ fn backup_order(name: &str, prefix: &str) -> (String, u32) {
 /// A half-written `hyprland.lua` is a broken session, so this never truncates
 /// the real file.
 pub fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    write_atomic_bytes(path, contents.as_bytes())
+}
+
+/// [`write_atomic`], for bytes that are not text.
+pub fn write_atomic_bytes(path: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
     }
@@ -251,7 +256,7 @@ pub fn write_atomic(path: &Path, contents: &str) -> Result<()> {
 
     {
         let mut f = std::fs::File::create(&tmp).map_err(|e| Error::io(&tmp, e))?;
-        f.write_all(contents.as_bytes()).map_err(|e| Error::io(&tmp, e))?;
+        f.write_all(contents).map_err(|e| Error::io(&tmp, e))?;
         f.sync_all().map_err(|e| Error::io(&tmp, e))?;
     }
 

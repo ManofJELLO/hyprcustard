@@ -2,6 +2,7 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
 
 // The bar's settings, from bar.json, which hyprcustard's Bar page writes.
@@ -42,6 +43,35 @@ Singleton {
     readonly property string font: get("font", "")
     readonly property int fontSize: get("font_size", 11)
     readonly property bool glyphs: get("glyphs", true)
+    // Neumorphic: raised and pressed-in shapes, like hyprcustard's window.
+    readonly property bool neumorphic: get("style", "flat") === "neumorphic"
+    // Where the launcher and power menu open, and on which monitor ("" is
+    // the focused one).
+    readonly property string menuPosition: get("menu_position", "center")
+    readonly property int menuMargin: get("menu_margin", 12)
+    readonly property string menuMonitor: get("menu_monitor", "")
+    readonly property int launcherWidth: get("launcher_width", 600)
+    readonly property int launcherRows: get("launcher_rows", 8)
+    readonly property bool launcherIcons: get("launcher_icons", true)
+    readonly property var powerItems: get("power_items", ["lock", "logout", "suspend", "reboot", "shutdown"])
+    readonly property bool powerColumn: get("power_layout", "row") === "column"
+    readonly property bool powerIcons: get("power_icons", true)
+    // The screen edges a menu is held to: none is the middle of the screen,
+    // one is the middle of that side, two a corner.
+    readonly property bool menuTop: root.menuPosition.startsWith("top")
+    readonly property bool menuBottom: root.menuPosition.startsWith("bottom")
+    readonly property bool menuLeft: root.menuPosition.endsWith("left")
+    readonly property bool menuRight: root.menuPosition.endsWith("right")
+
+    // The screen a menu opens on: the one the Bar page names while it is
+    // plugged in, else the focused one.
+    function menuScreen() {
+        const want = root.menuMonitor !== "" ? root.menuMonitor
+                   : Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "";
+        return Quickshell.screens.find(s => s.name === want)
+            ?? Quickshell.screens.find(s => Hyprland.focusedMonitor && s.name === Hyprland.focusedMonitor.name)
+            ?? Quickshell.screens[0] ?? null;
+    }
     readonly property var modules: get("modules", ["launcher", "clock", "workspaces", "window", "media",
                                                    "tray", "volume", "bluetooth", "network", "cpu",
                                                    "memory", "power"])

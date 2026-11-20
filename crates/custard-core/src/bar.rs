@@ -43,30 +43,32 @@ pub const COLORS_FILE: &str = "colors.json";
 /// file written, one per line.
 pub const STAMP: &str = ".hyprcustard-bar";
 
-/// The bar's QML, as shipped.
-pub const FILES: &[(&str, &str)] = &[
-    ("shell.qml", include_str!("../bar/shell.qml")),
-    ("Config.qml", include_str!("../bar/Config.qml")),
-    ("Theme.qml", include_str!("../bar/Theme.qml")),
-    ("Bar.qml", include_str!("../bar/Bar.qml")),
-    ("Module.qml", include_str!("../bar/Module.qml")),
-    ("Tooltip.qml", include_str!("../bar/Tooltip.qml")),
-    ("ClockModule.qml", include_str!("../bar/ClockModule.qml")),
-    ("WorkspacesModule.qml", include_str!("../bar/WorkspacesModule.qml")),
-    ("WindowModule.qml", include_str!("../bar/WindowModule.qml")),
-    ("MediaModule.qml", include_str!("../bar/MediaModule.qml")),
-    ("TrayModule.qml", include_str!("../bar/TrayModule.qml")),
-    ("TrayMenu.qml", include_str!("../bar/TrayMenu.qml")),
-    ("VolumeModule.qml", include_str!("../bar/VolumeModule.qml")),
-    ("BluetoothModule.qml", include_str!("../bar/BluetoothModule.qml")),
-    ("NetworkModule.qml", include_str!("../bar/NetworkModule.qml")),
-    ("CpuModule.qml", include_str!("../bar/CpuModule.qml")),
-    ("MemoryModule.qml", include_str!("../bar/MemoryModule.qml")),
-    ("LauncherModule.qml", include_str!("../bar/LauncherModule.qml")),
-    ("PowerModule.qml", include_str!("../bar/PowerModule.qml")),
-    ("Panel.qml", include_str!("../bar/Panel.qml")),
-    ("Launcher.qml", include_str!("../bar/Launcher.qml")),
-    ("PowerMenu.qml", include_str!("../bar/PowerMenu.qml")),
+/// The bar's QML and its shape shader, as shipped.
+pub const FILES: &[(&str, &[u8])] = &[
+    ("shell.qml", include_str!("../bar/shell.qml").as_bytes()),
+    ("Config.qml", include_str!("../bar/Config.qml").as_bytes()),
+    ("Theme.qml", include_str!("../bar/Theme.qml").as_bytes()),
+    ("Bar.qml", include_str!("../bar/Bar.qml").as_bytes()),
+    ("Module.qml", include_str!("../bar/Module.qml").as_bytes()),
+    ("Tooltip.qml", include_str!("../bar/Tooltip.qml").as_bytes()),
+    ("ClockModule.qml", include_str!("../bar/ClockModule.qml").as_bytes()),
+    ("WorkspacesModule.qml", include_str!("../bar/WorkspacesModule.qml").as_bytes()),
+    ("WindowModule.qml", include_str!("../bar/WindowModule.qml").as_bytes()),
+    ("MediaModule.qml", include_str!("../bar/MediaModule.qml").as_bytes()),
+    ("TrayModule.qml", include_str!("../bar/TrayModule.qml").as_bytes()),
+    ("TrayMenu.qml", include_str!("../bar/TrayMenu.qml").as_bytes()),
+    ("VolumeModule.qml", include_str!("../bar/VolumeModule.qml").as_bytes()),
+    ("BluetoothModule.qml", include_str!("../bar/BluetoothModule.qml").as_bytes()),
+    ("NetworkModule.qml", include_str!("../bar/NetworkModule.qml").as_bytes()),
+    ("CpuModule.qml", include_str!("../bar/CpuModule.qml").as_bytes()),
+    ("MemoryModule.qml", include_str!("../bar/MemoryModule.qml").as_bytes()),
+    ("LauncherModule.qml", include_str!("../bar/LauncherModule.qml").as_bytes()),
+    ("PowerModule.qml", include_str!("../bar/PowerModule.qml").as_bytes()),
+    ("Neu.qml", include_str!("../bar/Neu.qml").as_bytes()),
+    ("Panel.qml", include_str!("../bar/Panel.qml").as_bytes()),
+    ("Launcher.qml", include_str!("../bar/Launcher.qml").as_bytes()),
+    ("PowerMenu.qml", include_str!("../bar/PowerMenu.qml").as_bytes()),
+    ("neu.frag.qsb", include_bytes!("../bar/neu.frag.qsb")),
 ];
 
 /// The modules, in the order they sit on the bar, with what the page calls
@@ -165,7 +167,51 @@ pub struct BarSettings {
     pub power_reboot: String,
     /// Shut down. Empty: `systemctl poweroff`.
     pub power_shutdown: String,
+    /// `flat`, or `neumorphic`: raised and pressed-in shapes with soft
+    /// shadows, like hyprcustard's own window.
+    pub style: String,
+    /// Where the launcher and power menu open: `center`, or a side or
+    /// corner (`top`, `top-left`, ... `bottom-right`).
+    pub menu_position: String,
+    /// Their space from the screen's edges, when not centered.
+    pub menu_margin: u32,
+    /// The monitor they open on, by name. Empty: the focused one.
+    pub menu_monitor: String,
+    /// The launcher's width, in pixels.
+    pub launcher_width: u32,
+    /// How many apps the launcher lists at once.
+    pub launcher_rows: u32,
+    /// Whether the launcher shows the apps' icons.
+    pub launcher_icons: bool,
+    /// The power menu's buttons, by id from [`POWER_ITEMS`], in that order.
+    pub power_items: Vec<String>,
+    /// `row` or `column`.
+    pub power_layout: String,
+    /// Whether the power menu's buttons have icons (with a Nerd Font).
+    pub power_icons: bool,
 }
+
+/// The power menu's buttons, in their order, with what the page calls them.
+pub const POWER_ITEMS: &[(&str, &str)] = &[
+    ("lock", "Lock"),
+    ("logout", "Log out"),
+    ("suspend", "Suspend"),
+    ("reboot", "Reboot"),
+    ("shutdown", "Shut down"),
+];
+
+/// Where the menus can open.
+pub const MENU_POSITIONS: &[&str] = &[
+    "top-left",
+    "top",
+    "top-right",
+    "left",
+    "center",
+    "right",
+    "bottom-left",
+    "bottom",
+    "bottom-right",
+];
 
 impl Default for BarSettings {
     fn default() -> Self {
@@ -193,6 +239,16 @@ impl Default for BarSettings {
             power_suspend: String::new(),
             power_reboot: String::new(),
             power_shutdown: String::new(),
+            style: "flat".into(),
+            menu_position: "center".into(),
+            menu_margin: 12,
+            menu_monitor: String::new(),
+            launcher_width: 600,
+            launcher_rows: 8,
+            launcher_icons: true,
+            power_items: POWER_ITEMS.iter().map(|(id, _)| id.to_string()).collect(),
+            power_layout: "row".into(),
+            power_icons: true,
         }
     }
 }
@@ -223,6 +279,26 @@ impl BarSettings {
             self.clock_format = BarSettings::default().clock_format;
         }
         self.workspace_labels.truncate(20);
+        if self.style != "neumorphic" {
+            self.style = "flat".into();
+        }
+        if !MENU_POSITIONS.contains(&self.menu_position.as_str()) {
+            self.menu_position = "center".into();
+        }
+        self.menu_margin = self.menu_margin.min(400);
+        self.menu_monitor = self.menu_monitor.trim().to_string();
+        self.launcher_width = self.launcher_width.clamp(320, 1600);
+        self.launcher_rows = self.launcher_rows.clamp(3, 20);
+        // Kept in the menu's own order, once each.
+        let chosen = std::mem::take(&mut self.power_items);
+        self.power_items = POWER_ITEMS
+            .iter()
+            .filter(|(id, _)| chosen.iter().any(|c| c == id))
+            .map(|(id, _)| id.to_string())
+            .collect();
+        if self.power_layout != "column" {
+            self.power_layout = "row".into();
+        }
         self
     }
 }
@@ -330,8 +406,8 @@ fn write_files(config_home: &Path) -> Result<()> {
     let dir = dir(config_home);
     std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
     let old: Vec<String> = read_stamp(config_home).map(|(_, f)| f).unwrap_or_default();
-    for (name, text) in FILES {
-        paths::write_atomic(&dir.join(name), text)?;
+    for (name, bytes) in FILES {
+        paths::write_atomic_bytes(&dir.join(name), bytes)?;
     }
     for gone in old.iter().filter(|o| !FILES.iter().any(|(n, _)| n == o)) {
         // Only a plain file name from the stamp, never a path.
@@ -436,6 +512,16 @@ pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::V
         "bluetooth": pick(&settings.bluetooth, &machine.bluetooth),
         "terminal": pick(&settings.terminal, &machine.terminal),
         "power": power_commands(settings, machine),
+        "style": settings.style,
+        "menu_position": settings.menu_position,
+        "menu_margin": settings.menu_margin,
+        "menu_monitor": settings.menu_monitor,
+        "launcher_width": settings.launcher_width,
+        "launcher_rows": settings.launcher_rows,
+        "launcher_icons": settings.launcher_icons,
+        "power_items": settings.power_items,
+        "power_layout": settings.power_layout,
+        "power_icons": settings.power_icons,
     })
 }
 
@@ -768,6 +854,24 @@ mod control_tests {
     }
 
     #[test]
+    fn menu_choices_are_kept_in_range_and_in_the_menus_order() {
+        let s = BarSettings {
+            style: "glass".into(),
+            menu_position: "middle".into(),
+            launcher_rows: 99,
+            launcher_width: 10,
+            power_items: ["shutdown", "lock", "nope", "lock"].map(String::from).to_vec(),
+            power_layout: "grid".into(),
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!((s.style.as_str(), s.menu_position.as_str()), ("flat", "center"));
+        assert_eq!((s.launcher_rows, s.launcher_width), (20, 320));
+        assert_eq!(s.power_items, ["lock", "shutdown"]);
+        assert_eq!(s.power_layout, "row");
+    }
+
+    #[test]
     fn modules_are_kept_once_each_in_the_order_given() {
         let s = BarSettings {
             modules: ["clock", "cpu", "clock", "nope", "cpu", "tray"].map(String::from).to_vec(),
@@ -797,8 +901,8 @@ mod tests {
         let d = dir(home.path());
         install(home.path(), &BarSettings::default(), &Machine::default(), &scheme()).unwrap();
         assert!(installed(home.path()));
-        for (name, text) in FILES {
-            assert_eq!(&std::fs::read_to_string(d.join(name)).unwrap(), text);
+        for (name, bytes) in FILES {
+            assert_eq!(&std::fs::read(d.join(name)).unwrap(), bytes);
         }
         let colors: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(d.join(COLORS_FILE)).unwrap()).unwrap();

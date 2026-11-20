@@ -17,6 +17,9 @@ Item {
     property real padTop: 0
     property int edgeLeft: 0
     property int edgeRight: 0
+    // The colored edges are the flat style's; a neumorphic bar has none.
+    readonly property int _edgeLeft: Config.neumorphic ? 0 : edgeLeft
+    readonly property int _edgeRight: Config.neumorphic ? 0 : edgeRight
     property color edgeColor: "transparent"
     property real maxTextWidth: 0
     property bool rich: false
@@ -31,7 +34,7 @@ Item {
 
     visible: shown
     Layout.fillHeight: true
-    implicitWidth: edgeLeft + padLeft + labelBox.width + padRight + edgeRight
+    implicitWidth: _edgeLeft + padLeft + labelBox.width + padRight + _edgeRight
 
     TextMetrics {
         id: reserve
@@ -40,21 +43,21 @@ Item {
     }
 
     Rectangle {
-        visible: m.edgeLeft > 0
+        visible: m._edgeLeft > 0
         anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-        width: m.edgeLeft
+        width: m._edgeLeft
         color: m.edgeColor
     }
     Rectangle {
-        visible: m.edgeRight > 0
+        visible: m._edgeRight > 0
         anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
-        width: m.edgeRight
+        width: m._edgeRight
         color: m.edgeColor
     }
 
     Item {
         id: labelBox
-        x: m.edgeLeft + m.padLeft
+        x: m._edgeLeft + m.padLeft
         anchors.verticalCenter: parent.verticalCenter
         anchors.verticalCenterOffset: m.padTop / 2
         width: {

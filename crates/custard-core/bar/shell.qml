@@ -13,30 +13,32 @@ ShellRoot {
     Variants {
         model: Quickshell.screens.filter(s => Config.monitors.length === 0
                                               || Config.monitors.indexOf(s.name) >= 0)
+        // Named apart from the bar's own properties: inside Bar { }, a bare
+        // `launcher` would be the bar's own (empty) property, not this one.
         delegate: Bar {
-            launcher: launcher
-            powerMenu: powerMenu
+            launcher: launcherWindow
+            powerMenu: powerWindow
         }
     }
 
-    // One of each, opened on the focused monitor.
-    Launcher { id: launcher }
-    PowerMenu { id: powerMenu }
+    // One of each, opened on the focused monitor or the one the Bar page names.
+    Launcher { id: launcherWindow }
+    PowerMenu { id: powerWindow }
 
     // `qs ipc -p <this folder> call launcher toggle`, and `... call power
     // toggle`: what a key binding runs.
     IpcHandler {
         target: "launcher"
-        function toggle(): void { launcher.toggle(); }
-        function open(): void { launcher.show(); }
-        function close(): void { launcher.hide(); }
+        function toggle(): void { launcherWindow.toggle(); }
+        function open(): void { launcherWindow.show(); }
+        function close(): void { launcherWindow.hide(); }
         // Open with this already typed: `... call launcher search firefox`.
-        function search(query: string): void { launcher.showWith(query); }
+        function search(query: string): void { launcherWindow.showWith(query); }
     }
     IpcHandler {
         target: "power"
-        function toggle(): void { powerMenu.toggle(); }
-        function open(): void { powerMenu.show(); }
-        function close(): void { powerMenu.hide(); }
+        function toggle(): void { powerWindow.toggle(); }
+        function open(): void { powerWindow.show(); }
+        function close(): void { powerWindow.hide(); }
     }
 }

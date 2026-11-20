@@ -444,6 +444,9 @@ says when it is missing.
 * **Everything on the page applies at once**, to a running bar too, without a restart:
   which monitors it is on, top or bottom, its size and spacing, opacity, font, which modules
   show, the clock format, workspace labels, and what clicking volume or Bluetooth opens.
+* **Style**: flat, with a thin shadow and colored edges between modules, or **neumorphic**:
+  raised and pressed-in shapes with soft shadows, like hyprcustard's own window. The bar, the
+  launcher and the power menu all follow it.
 * **Icons** use a Nerd Font when one is installed, and words otherwise. A module with nothing
   to show hides itself: media while nothing plays, Bluetooth without an adapter.
 * **Colors** come from the Colors page, which lists the bar as one of its apps. A new scheme
@@ -457,8 +460,12 @@ says when it is missing.
   * The launcher searches the installed apps by name, kind and keywords; apps you start often
     come first. Up and Down (also Tab, Ctrl+N/P) move, Enter starts, Esc closes. Apps that run
     in a terminal open in the one the page names.
-  * The power menu has Lock, Log out, Suspend, Reboot and Shut down, each command changeable
-    on the page. Log out, Reboot and Shut down ask first.
+  * The power menu has Lock, Log out, Suspend, Reboot and Shut down: choose which, in a row
+    or a column, with or without icons, and change what each runs. Log out, Reboot and Shut
+    down ask first.
+  * Both open in the middle of the screen or at a side or corner you choose, clear of the bar,
+    on the focused monitor or one you name. The launcher's width, how many apps it lists and
+    whether it shows their icons are on the page too.
   * If a key in `hyprland.lua` opens rofi, wofi, fuzzel or another launcher, or a power menu,
     **Open the launcher with this key instead** comments that line out and binds the same key
     in a `HyprCustard keys` block. While the bar is not running, the key still runs your old

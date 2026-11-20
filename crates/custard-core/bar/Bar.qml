@@ -11,8 +11,17 @@ PanelWindow {
     required property var powerMenu
     screen: modelData
 
+    // The buttons call these; say so at once if either is missing, rather
+    // than only when a button is clicked.
+    Component.onCompleted: {
+        if (!bar.launcher || !bar.powerMenu)
+            console.error("Bar.qml: the bar was given no launcher or power menu");
+    }
+
     // Room around the box for its shadow.
-    readonly property int pad: 4
+    // Room around the box for its shadow: a neumorphic shadow reaches
+    // further than the flat one.
+    readonly property int pad: Config.neumorphic ? Theme.reach(Theme.depth) + 1 : 4
 
     anchors { top: !Config.bottom; bottom: Config.bottom; left: true; right: true }
     margins {
@@ -41,7 +50,7 @@ PanelWindow {
         // A soft shadow drawn outside the box only, so the translucent
         // background is not darkened from underneath.
         Repeater {
-            model: [0.55, 0.3, 0.14, 0.05]
+            model: Config.neumorphic ? [] : [0.55, 0.3, 0.14, 0.05]
             delegate: Rectangle {
                 required property real modelData
                 required property int index
@@ -55,9 +64,16 @@ PanelWindow {
         }
 
         Rectangle {
+            visible: !Config.neumorphic
             anchors.fill: parent
             radius: 2
             color: Theme.background
+        }
+
+        Neu {
+            visible: Config.neumorphic
+            anchors.fill: parent
+            radius: 8
         }
 
         RowLayout {

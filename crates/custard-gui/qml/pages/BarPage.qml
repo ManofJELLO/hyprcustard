@@ -394,7 +394,23 @@ Item {
             // -----------------------------------------------------------
             Card {
                 Layout.fillWidth: true
-                title: "Text and icons"
+                title: "Look"
+
+                FieldRow {
+                    width: parent.width
+                    label: "Style"
+                    hint: page.choice.style === "neumorphic"
+                          ? "Raised and pressed-in shapes with soft shadows, like this window. It looks "
+                            + "best with the background opacity near 1; the bar grows a little to make "
+                            + "room for its shadow."
+                          : "Flat, with a thin shadow and colored edges between modules."
+                    Dropdown {
+                        width: 260
+                        model: ["Flat", "Neumorphic"]
+                        currentIndex: page.choice.style === "neumorphic" ? 1 : 0
+                        onActivated: function (index) { page.set({ style: index === 1 ? "neumorphic" : "flat" }) }
+                    }
+                }
 
                 FieldRow {
                     width: parent.width
@@ -638,6 +654,93 @@ Item {
 
                 FieldRow {
                     width: parent.width
+                    label: "Where they open"
+                    hint: "Both menus open here, clear of the bar."
+                    Dropdown {
+                        width: 260
+                        readonly property var ids: ["center", "top-left", "top", "top-right", "left", "right",
+                                                    "bottom-left", "bottom", "bottom-right"]
+                        model: ["Middle of the screen", "Top left", "Top", "Top right", "Left", "Right",
+                                "Bottom left", "Bottom", "Bottom right"]
+                        currentIndex: Math.max(0, ids.indexOf(page.choice.menu_position || "center"))
+                        onActivated: function (index) { page.set({ menu_position: ids[index] }) }
+                    }
+                }
+                LabeledSlider {
+                    width: parent.width
+                    visible: (page.choice.menu_position || "center") !== "center"
+                    label: "Space from the screen's edges (px)"
+                    from: 0
+                    to: 200
+                    stepSize: 1
+                    integer: true
+                    value: page.choice.menu_margin === undefined ? 12 : page.choice.menu_margin
+                    markValue: 12
+                    onSettled: function (v) { page.set({ menu_margin: Math.round(v) }) }
+                }
+                FieldRow {
+                    width: parent.width
+                    label: "Monitor"
+                    Dropdown {
+                        width: 260
+                        readonly property var names: {
+                            var all = (page.bar.monitors || []).slice()
+                            var mine = page.choice.menu_monitor || ""
+                            if (mine !== "" && all.indexOf(mine) < 0)
+                                all.push(mine)
+                            return all
+                        }
+                        model: ["The focused one"].concat(names)
+                        currentIndex: (page.choice.menu_monitor || "") === "" ? 0
+                                      : names.indexOf(page.choice.menu_monitor) + 1
+                        onActivated: function (index) {
+                            page.set({ menu_monitor: index === 0 ? "" : names[index - 1] })
+                        }
+                    }
+                }
+
+            }
+
+            // -----------------------------------------------------------
+            Card {
+                Layout.fillWidth: true
+                title: "Launcher"
+                subtitle: "Type to search your apps; the ones you start often come first. Up and Down "
+                          + "move, Enter starts, Esc closes."
+
+                LabeledSlider {
+                    width: parent.width
+                    label: "Width (px)"
+                    from: 320
+                    to: 1600
+                    stepSize: 10
+                    integer: true
+                    value: page.choice.launcher_width || 600
+                    markValue: 600
+                    onSettled: function (v) { page.set({ launcher_width: Math.round(v) }) }
+                }
+                LabeledSlider {
+                    width: parent.width
+                    label: "Apps listed at once"
+                    from: 3
+                    to: 20
+                    stepSize: 1
+                    integer: true
+                    value: page.choice.launcher_rows || 8
+                    markValue: 8
+                    onSettled: function (v) { page.set({ launcher_rows: Math.round(v) }) }
+                }
+                FieldRow {
+                    width: parent.width
+                    label: "App icons"
+                    Toggle {
+                        checked: page.choice.launcher_icons !== false
+                        onToggled: page.set({ launcher_icons: checked })
+                    }
+                }
+
+                FieldRow {
+                    width: parent.width
                     label: "Terminal for terminal apps"
                     hint: page.bar.terminalFound
                           ? "Apps that run in a terminal (btop, yazi…) open in this. Empty uses "
@@ -653,11 +756,67 @@ Item {
                     }
                 }
 
+            }
+
+            // -----------------------------------------------------------
+            Card {
+                Layout.fillWidth: true
+                title: "Power menu"
+
+                FieldRow {
+                    width: parent.width
+                    label: "Buttons"
+                    hint: "Log out, Reboot and Shut down ask first."
+                    Flow {
+                        width: parent.width
+                        spacing: Theme.gap
+                        Repeater {
+                            model: [
+                                { id: "lock", label: "Lock" },
+                                { id: "logout", label: "Log out" },
+                                { id: "suspend", label: "Suspend" },
+                                { id: "reboot", label: "Reboot" },
+                                { id: "shutdown", label: "Shut down" }
+                            ]
+                            Toggle {
+                                required property var modelData
+                                text: modelData.label
+                                checked: (page.choice.power_items || []).indexOf(modelData.id) >= 0
+                                onToggled: {
+                                    var id = modelData.id
+                                    var now = (page.choice.power_items || []).filter(function (i) { return i !== id })
+                                    if (checked)
+                                        now.push(id)
+                                    page.set({ power_items: now })
+                                }
+                            }
+                        }
+                    }
+                }
+                FieldRow {
+                    width: parent.width
+                    label: "Layout"
+                    Dropdown {
+                        width: 260
+                        model: ["In a row", "In a column"]
+                        currentIndex: page.choice.power_layout === "column" ? 1 : 0
+                        onActivated: function (index) { page.set({ power_layout: index === 1 ? "column" : "row" }) }
+                    }
+                }
+                FieldRow {
+                    width: parent.width
+                    label: "Icons"
+                    hint: page.bar.nerdFont ? "" : "Icons need a Nerd Font; without one the buttons show words."
+                    Toggle {
+                        checked: page.choice.power_icons !== false
+                        onToggled: page.set({ power_icons: checked })
+                    }
+                }
+
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Power menu commands. Log out, Reboot and Shut down ask first; a command "
-                          + "left empty runs the one shown."
+                    text: "What each button runs. One left empty runs the command shown."
                     color: Theme.fgDim
                     font.pixelSize: Theme.fontSize
                 }

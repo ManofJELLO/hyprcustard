@@ -45,4 +45,32 @@ Singleton {
     // The launcher's and power menu's selected row, and their quieter text.
     readonly property color selection: pick("surface_container_high", "#3c3836")
     readonly property color dim: pick("on_surface_variant", "#a89984")
+
+    // A color as see-through as the bar's background, for the shapes on it.
+    function glass(c) { return Qt.rgba(c.r, c.g, c.b, Config.opacity); }
+
+    // Neumorphic shading, worked out from the background as hyprcustard's
+    // own window does: a dark shadow and a light one, and the floor of a
+    // pressed-in shape.
+    function mix(a, b, amount) {
+        return Qt.rgba(a.r * amount + b.r * (1 - amount), a.g * amount + b.g * (1 - amount),
+                       a.b * amount + b.b * (1 - amount), 1);
+    }
+    function shade(c, amount) {
+        return amount >= 0 ? mix(Qt.rgba(1, 1, 1, 1), c, amount) : mix(Qt.rgba(0, 0, 0, 1), c, -amount);
+    }
+    function wash(c, a) { return Qt.rgba(c.r, c.g, c.b, a); }
+    readonly property bool dark: 0.299 * base.r + 0.587 * base.g + 0.114 * base.b < 0.5
+    readonly property color shadowDark: shade(base, dark ? -0.55 : -0.20)
+    readonly property color shadowLight: dark ? wash(shade(base, 0.12), 0.7) : Qt.rgba(1, 1, 1, 0.85)
+    readonly property color innerDark: wash(shade(base, dark ? -0.6 : -0.25), dark ? 0.75 : 0.5)
+    readonly property color innerLight: dark ? wash(shade(base, 0.12), 0.45) : Qt.rgba(1, 1, 1, 0.7)
+    readonly property color well: shade(base, dark ? -0.16 : -0.05)
+    // How far a shape stands out: the bar and the menus, and the small
+    // shapes on them.
+    readonly property int depth: 3
+    readonly property int depthSmall: 2
+    // How far a shadow reaches past its shape before it is under half a
+    // level: room to leave around a shape, and half the space between two.
+    function reach(d) { return d + Math.ceil(d * 0.9 * 2); }
 }
