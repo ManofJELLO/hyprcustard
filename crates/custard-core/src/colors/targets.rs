@@ -170,6 +170,22 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
             replaces: false,
         },
         Target {
+            id: "bar",
+            name: "hyprcustard's bar",
+            installed: crate::bar::installed(config_home),
+            config: crate::bar::dir(config_home).join("shell.qml"),
+            file: crate::bar::dir(config_home).join(crate::bar::COLORS_FILE),
+            line: String::new(),
+            place: "",
+            wired: true,
+            usage: "The bar from the Bar page, which uses these colors by itself and follows \
+                    a new scheme at once. Its opacity is set on the Bar page."
+                .into(),
+            warning: String::new(),
+            fix: String::new(),
+            replaces: false,
+        },
+        Target {
             id: "dunst",
             name: "Dunst",
             installed: installed("dunst"),
@@ -254,17 +270,7 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
 
 /// GTK 3, GTK 4, qt6ct, qt5ct and Kvantum. See [`toolkits`].
 fn toolkit_targets(config_home: &Path, desk: &Desktop, pins: &[Pin]) -> Vec<Target> {
-    let lib = |name: &str| {
-        [
-            "/usr/lib",
-            "/usr/lib64",
-            "/usr/lib/x86_64-linux-gnu",
-            "/usr/lib/aarch64-linux-gnu",
-            "/lib64",
-        ]
-        .iter()
-        .any(|d| Path::new(d).join(name).exists())
-    };
+    let lib = toolkits::has_lib;
     let follows = desk.gtk_theme_follows();
     let mut out = Vec::new();
 
@@ -459,9 +465,11 @@ fn loads(config: &Path, file: &Path) -> bool {
 ///
 /// The one a running Quickshell was started with (`-c name` or `-p path`),
 /// else the default `quickshell/shell.qml`, else the only named config,
-/// else the default folder.
+/// else the default folder. hyprcustard's own bar is never it: that has a
+/// target of its own.
 fn quickshell_dir(config_home: &Path) -> PathBuf {
     let root = config_home.join("quickshell");
+    let bar = crate::bar::dir(config_home);
     // A test must never find, and so write into, a real shell's folder.
     if !cfg!(test) {
         let mut pids = crate::procs::named("qs");
@@ -470,7 +478,7 @@ fn quickshell_dir(config_home: &Path) -> PathBuf {
             let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else { continue };
             let args: Vec<String> =
                 raw.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect();
-            if let Some(dir) = quickshell_arg(&args, &root) {
+            if let Some(dir) = quickshell_arg(&args, &root).filter(|d| *d != bar) {
                 return dir;
             }
         }
@@ -482,7 +490,7 @@ fn quickshell_dir(config_home: &Path) -> PathBuf {
         .into_iter()
         .flatten()
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.join("shell.qml").is_file())
+        .filter(|p| p.join("shell.qml").is_file() && *p != bar)
         .collect();
     match named.as_slice() {
         [only] => only.clone(),
@@ -491,7 +499,7 @@ fn quickshell_dir(config_home: &Path) -> PathBuf {
 }
 
 /// The config folder a Quickshell command line names, if it names one.
-fn quickshell_arg(args: &[String], root: &Path) -> Option<PathBuf> {
+pub(crate) fn quickshell_arg(args: &[String], root: &Path) -> Option<PathBuf> {
     let mut it = args.iter().skip(1);
     while let Some(a) = it.next() {
         let (flag, value) = match a.split_once('=') {
@@ -623,6 +631,14 @@ pub fn render(id: &str, scheme: &Scheme, opacity: f64) -> String {
             }
             out.push_str("}\n");
             out
+        }
+        "bar" => {
+            let mut map = serde_json::Map::new();
+            map.insert("scheme".into(), scheme.name.clone().into());
+            for (k, v) in &named {
+                map.insert(k.to_string(), v.to_string().into());
+            }
+            format!("{}\n", serde_json::to_string_pretty(&map).unwrap_or_default())
         }
         "quickshell" => {
             let mut out = String::from("pragma Singleton\n\n");
@@ -815,7 +831,7 @@ pub fn wire(target: &Target, keep: usize) -> Result<Option<PathBuf>> {
         crate::paths::write_atomic(&target.config, &next)?;
         return Ok(backup);
     }
-    if target.id == "quickshell" {
+    if target.id == "quickshell" || target.id == "bar" {
         return Err(Error::other(
             "Quickshell needs no line: use HyprcustardColors in your shell's QML",
         ));

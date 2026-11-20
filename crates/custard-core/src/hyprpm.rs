@@ -764,7 +764,7 @@ pub fn open_in_terminal(op: &Op) -> Result<()> {
 }
 
 /// The terminal emulator to use, and the arguments that mean "run this".
-fn terminal() -> Option<(PathBuf, Vec<String>)> {
+pub(crate) fn terminal() -> Option<(PathBuf, Vec<String>)> {
     const KNOWN: &[(&str, &[&str])] = &[
         ("kitty", &["-e"]),
         ("foot", &["-e"]),

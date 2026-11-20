@@ -1,0 +1,828 @@
+//! hyprcustard's bar: a Quickshell config that ships with the app.
+//!
+//! Setting it up writes the bar's QML to `~/.config/quickshell/hyprcustard`,
+//! which Quickshell runs as `qs -c hyprcustard`, beside any config of the
+//! user's own. The folder is the app's: it is rewritten when the app updates,
+//! and a list of what was written ([`STAMP`]) lets removing it delete exactly
+//! those files. The bar reads its settings from `bar.json` there and follows
+//! a change at once. Its colors come from the Colors page, which writes them
+//! beside it as `colors.json` like any other target; the bar watches that
+//! file too, rather than leaving it to Quickshell's reload of the whole
+//! config, which rebuilds the bar's windows and did not always fire.
+//!
+//! Quickshell itself is the user's to install: the page says which package,
+//! and never runs a package manager.
+//!
+//! Starting it at login is a managed block in the Hyprland config, like the
+//! wallpaper's: other bars' start lines can be handed over (commented out,
+//! marked) and given back exactly.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::block::{self, Markers};
+use crate::colors::Scheme;
+use crate::error::{Error, Result};
+use crate::model::lua_quote;
+use crate::paths;
+use crate::walls::startup::{has_word, lines_outside_blocks, movable, split_keep};
+
+/// The Quickshell config's name: its folder under `quickshell/`, and what
+/// `qs -c` is given.
+pub const CONFIG_NAME: &str = "hyprcustard";
+
+/// The bar's settings file, beside its QML.
+pub const SETTINGS_FILE: &str = "bar.json";
+
+/// The colors the Colors page writes for the bar.
+pub const COLORS_FILE: &str = "colors.json";
+
+/// What marks the folder as the app's: the version that wrote it, then each
+/// file written, one per line.
+pub const STAMP: &str = ".hyprcustard-bar";
+
+/// The bar's QML, as shipped.
+pub const FILES: &[(&str, &str)] = &[
+    ("shell.qml", include_str!("../bar/shell.qml")),
+    ("Config.qml", include_str!("../bar/Config.qml")),
+    ("Theme.qml", include_str!("../bar/Theme.qml")),
+    ("Bar.qml", include_str!("../bar/Bar.qml")),
+    ("Module.qml", include_str!("../bar/Module.qml")),
+    ("Tooltip.qml", include_str!("../bar/Tooltip.qml")),
+    ("ClockModule.qml", include_str!("../bar/ClockModule.qml")),
+    ("WorkspacesModule.qml", include_str!("../bar/WorkspacesModule.qml")),
+    ("WindowModule.qml", include_str!("../bar/WindowModule.qml")),
+    ("MediaModule.qml", include_str!("../bar/MediaModule.qml")),
+    ("TrayModule.qml", include_str!("../bar/TrayModule.qml")),
+    ("TrayMenu.qml", include_str!("../bar/TrayMenu.qml")),
+    ("VolumeModule.qml", include_str!("../bar/VolumeModule.qml")),
+    ("BluetoothModule.qml", include_str!("../bar/BluetoothModule.qml")),
+    ("NetworkModule.qml", include_str!("../bar/NetworkModule.qml")),
+    ("CpuModule.qml", include_str!("../bar/CpuModule.qml")),
+    ("MemoryModule.qml", include_str!("../bar/MemoryModule.qml")),
+];
+
+/// The modules, in the order they sit on the bar, with what the page calls
+/// them.
+pub const MODULES: &[(&str, &str)] = &[
+    ("clock", "Clock"),
+    ("workspaces", "Workspaces"),
+    ("window", "Window title"),
+    ("media", "Media"),
+    ("tray", "Tray"),
+    ("volume", "Volume"),
+    ("bluetooth", "Bluetooth"),
+    ("network", "Network"),
+    ("cpu", "CPU"),
+    ("memory", "Memory"),
+];
+
+/// Mixers the volume module can open, best first.
+const MIXERS: &[&str] = &["pwvucontrol", "pavucontrol", "pavucontrol-qt", "hyprpwcenter"];
+
+/// Bluetooth apps with a window of their own, best first.
+const BLUETOOTH_APPS: &[&str] = &["blueman-manager", "overskride", "blueberry"];
+
+/// Bluetooth apps that run in a terminal.
+const BLUETOOTH_TUIS: &[&str] = &["bluetui", "bluetuith"];
+
+/// The Bar page's choices, kept in the app's settings and written to
+/// [`SETTINGS_FILE`] for the bar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BarSettings {
+    /// Monitors to show it on, by name. Empty is every monitor.
+    pub monitors: Vec<String>,
+    /// `top` or `bottom`.
+    pub position: String,
+    /// The bar's own height, in pixels.
+    pub height: u32,
+    /// Space between the bar and the screen's edge.
+    pub edge_margin: u32,
+    /// Space between the bar and the screen's sides.
+    pub side_margin: u32,
+    /// How opaque the background is, 0 to 1.
+    pub opacity: f64,
+    /// The font family. Empty follows Qt's (qt6ct's or the desktop's).
+    pub font: String,
+    /// The text size, in pixels.
+    pub font_size: u32,
+    /// `auto` (Nerd Font icons when one is installed), `glyphs` or `text`.
+    pub icons: String,
+    /// Ids from [`MODULES`] that are shown.
+    pub modules: Vec<String>,
+    /// The clock, as a Qt date format.
+    pub clock_format: String,
+    /// Each bar lists only its own monitor's workspaces.
+    pub workspaces_per_monitor: bool,
+    /// Labels for workspaces 1, 2, 3...; an empty or missing one shows the
+    /// workspace's name.
+    pub workspace_labels: Vec<String>,
+    /// The media player to show, by part of its name. Empty: whichever plays.
+    pub player: String,
+    /// What right-clicking the volume runs. Empty: a mixer that is installed.
+    pub mixer: String,
+    /// What clicking Bluetooth runs. Empty: a Bluetooth app that is installed.
+    pub bluetooth: String,
+}
+
+impl Default for BarSettings {
+    fn default() -> Self {
+        Self {
+            monitors: Vec::new(),
+            position: "top".into(),
+            height: 36,
+            edge_margin: 4,
+            side_margin: 0,
+            opacity: 0.8,
+            font: String::new(),
+            font_size: 11,
+            icons: "auto".into(),
+            modules: MODULES.iter().map(|(id, _)| id.to_string()).collect(),
+            clock_format: "ddd MM/dd  h:mm AP".into(),
+            workspaces_per_monitor: false,
+            workspace_labels: Vec::new(),
+            player: String::new(),
+            mixer: String::new(),
+            bluetooth: String::new(),
+        }
+    }
+}
+
+impl BarSettings {
+    /// Within the ranges the page offers, with unknown values put right.
+    pub fn sanitized(mut self) -> Self {
+        if self.position != "bottom" {
+            self.position = "top".into();
+        }
+        self.height = self.height.clamp(20, 80);
+        self.edge_margin = self.edge_margin.min(200);
+        self.side_margin = self.side_margin.min(2000);
+        self.opacity = if self.opacity.is_finite() { self.opacity.clamp(0.0, 1.0) } else { 0.8 };
+        self.font_size = self.font_size.clamp(6, 40);
+        if !["auto", "glyphs", "text"].contains(&self.icons.as_str()) {
+            self.icons = "auto".into();
+        }
+        let mut seen: Vec<String> = Vec::new();
+        self.modules.retain(|m| {
+            let keep = MODULES.iter().any(|(id, _)| id == m) && !seen.contains(m);
+            seen.push(m.clone());
+            keep
+        });
+        self.monitors.retain(|m| !m.trim().is_empty());
+        if self.clock_format.trim().is_empty() {
+            self.clock_format = BarSettings::default().clock_format;
+        }
+        self.workspace_labels.truncate(20);
+        self
+    }
+}
+
+/// What the bar needs that depends on the machine: worked out when its
+/// settings are written, so the bar itself never has to look.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Machine {
+    /// Whether a Nerd Font is installed, for the icons.
+    pub nerd_font: bool,
+    /// The mixer found, as a command.
+    pub mixer: Option<String>,
+    /// The Bluetooth app found, as a command.
+    pub bluetooth: Option<String>,
+}
+
+impl Machine {
+    /// Look.
+    pub fn detect() -> Self {
+        if cfg!(test) {
+            return Self::default();
+        }
+        let first =
+            |list: &[&str]| list.iter().find(|p| paths::which(p).is_some()).map(|p| p.to_string());
+        let bluetooth = first(BLUETOOTH_APPS).or_else(|| {
+            let tui = BLUETOOTH_TUIS.iter().find(|p| paths::which(p).is_some())?;
+            let (term, args) = crate::hyprpm::terminal()?;
+            let mut argv = vec![term.to_string_lossy().into_owned()];
+            argv.extend(args);
+            argv.push(tui.to_string());
+            Some(argv.iter().map(|a| crate::walls::startup::quote(a)).collect::<Vec<_>>().join(" "))
+        });
+        Self { nerd_font: nerd_font(), mixer: first(MIXERS), bluetooth }
+    }
+}
+
+/// Whether fontconfig knows a Nerd Font.
+fn nerd_font() -> bool {
+    Command::new("fc-list")
+        .args([":", "family"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("nerd font"))
+        .unwrap_or(false)
+}
+
+/// The bar's folder.
+pub fn dir(config_home: &Path) -> PathBuf {
+    config_home.join("quickshell").join(CONFIG_NAME)
+}
+
+/// Quickshell's program, `qs` or `quickshell`.
+pub fn program() -> Option<PathBuf> {
+    paths::which("qs").or_else(|| paths::which("quickshell"))
+}
+
+/// The command that starts the bar.
+pub fn start_command(program: &Path) -> String {
+    let name = program.file_name().map(|n| n.to_string_lossy().into_owned());
+    format!("{} -c {CONFIG_NAME}", name.as_deref().unwrap_or("qs"))
+}
+
+/// Whether the bar is set up: the folder holds the app's stamp.
+pub fn installed(config_home: &Path) -> bool {
+    dir(config_home).join(STAMP).is_file()
+}
+
+/// The version that wrote the bar's files, and the files it wrote.
+fn read_stamp(config_home: &Path) -> Option<(String, Vec<String>)> {
+    let text = std::fs::read_to_string(dir(config_home).join(STAMP)).ok()?;
+    let mut lines = text.lines();
+    let version = lines.next()?.trim().to_string();
+    Some((version, lines.map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect()))
+}
+
+/// The version that wrote the installed files, if they are installed.
+pub fn installed_version(config_home: &Path) -> Option<String> {
+    read_stamp(config_home).map(|(v, _)| v)
+}
+
+/// Write the bar's QML and stamp, leaving its settings and colors alone, and
+/// take out any file an older version wrote that this one no longer ships.
+fn write_files(config_home: &Path) -> Result<()> {
+    let dir = dir(config_home);
+    std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+    let old: Vec<String> = read_stamp(config_home).map(|(_, f)| f).unwrap_or_default();
+    for (name, text) in FILES {
+        paths::write_atomic(&dir.join(name), text)?;
+    }
+    for gone in old.iter().filter(|o| !FILES.iter().any(|(n, _)| n == o)) {
+        // Only a plain file name from the stamp, never a path.
+        if !gone.contains('/') && gone != ".." {
+            let _ = std::fs::remove_file(dir.join(gone));
+        }
+    }
+    let mut stamp = format!("{}\n", crate::VERSION);
+    for (name, _) in FILES {
+        stamp.push_str(name);
+        stamp.push('\n');
+    }
+    paths::write_atomic(&dir.join(STAMP), &stamp)
+}
+
+/// Set the bar up: its QML, its settings and its colors.
+///
+/// Refused when the folder holds a Quickshell config that is not the app's,
+/// which would be overwritten.
+pub fn install(
+    config_home: &Path,
+    settings: &BarSettings,
+    machine: &Machine,
+    scheme: &Scheme,
+) -> Result<()> {
+    let dir = dir(config_home);
+    if !installed(config_home) && dir.join("shell.qml").exists() {
+        return Err(Error::other(format!(
+            "{} already holds a Quickshell config that is not hyprcustard's. Move it \
+             elsewhere and try again",
+            paths::contract(&dir)
+        )));
+    }
+    write_files(config_home)?;
+    write_settings(config_home, settings, machine)?;
+    write_colors(config_home, scheme)
+}
+
+/// Rewrite the QML when the app is newer than the files. Returns whether it
+/// did. An older app leaves a newer bar alone: it would put back older
+/// files, and take out the ones only the newer version has.
+pub fn update_if_stale(config_home: &Path) -> Result<bool> {
+    match installed_version(config_home) {
+        Some(v) if newer(crate::VERSION, &v) => write_files(config_home).map(|()| true),
+        _ => Ok(false),
+    }
+}
+
+/// Whether version `a` comes after `b`, by their dotted numbers. A version
+/// that is not numbers counts as older than any that is.
+fn newer(a: &str, b: &str) -> bool {
+    let parse = |v: &str| -> Option<Vec<u64>> {
+        v.trim().trim_start_matches('v').split('.').map(|p| p.parse().ok()).collect()
+    };
+    match (parse(a), parse(b)) {
+        (Some(a), Some(b)) => a > b,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+/// The colors file, for a scheme.
+pub fn write_colors(config_home: &Path, scheme: &Scheme) -> Result<()> {
+    paths::write_atomic(
+        &dir(config_home).join(COLORS_FILE),
+        &crate::colors::targets::render("bar", scheme, 1.0),
+    )
+}
+
+/// What [`SETTINGS_FILE`] holds: the settings, with what is left to the
+/// machine filled in.
+pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::Value {
+    let glyphs = match settings.icons.as_str() {
+        "glyphs" => true,
+        "text" => false,
+        _ => machine.nerd_font,
+    };
+    let pick = |mine: &str, found: &Option<String>| {
+        if mine.trim().is_empty() {
+            found.clone().unwrap_or_default()
+        } else {
+            mine.trim().to_string()
+        }
+    };
+    json!({
+        "monitors": settings.monitors,
+        "position": settings.position,
+        "height": settings.height,
+        "edge_margin": settings.edge_margin,
+        "side_margin": settings.side_margin,
+        "opacity": settings.opacity,
+        "font": settings.font,
+        "font_size": settings.font_size,
+        "glyphs": glyphs,
+        "modules": settings.modules,
+        "clock_format": settings.clock_format,
+        "workspaces_per_monitor": settings.workspaces_per_monitor,
+        "workspace_labels": settings.workspace_labels,
+        "player": settings.player,
+        "mixer": pick(&settings.mixer, &machine.mixer),
+        "bluetooth": pick(&settings.bluetooth, &machine.bluetooth),
+    })
+}
+
+/// Write [`SETTINGS_FILE`], which a running bar follows at once.
+pub fn write_settings(config_home: &Path, settings: &BarSettings, machine: &Machine) -> Result<()> {
+    let text = serde_json::to_string_pretty(&settings_json(settings, machine))?;
+    paths::write_atomic(&dir(config_home).join(SETTINGS_FILE), &format!("{text}\n"))
+}
+
+/// Take the bar's files out: exactly the ones the stamp lists, its settings,
+/// colors and stamp, then the folder if that leaves it empty. Anything else
+/// the user put there stays.
+pub fn uninstall(config_home: &Path) -> Result<()> {
+    let dir = dir(config_home);
+    let Some((_, files)) = read_stamp(config_home) else { return Ok(()) };
+    let ours = files
+        .iter()
+        .map(String::as_str)
+        .chain([SETTINGS_FILE, COLORS_FILE, STAMP])
+        .filter(|n| !n.contains('/') && *n != "..");
+    for name in ours {
+        let p = dir.join(name);
+        if p.exists() {
+            std::fs::remove_file(&p).map_err(|e| Error::io(&p, e))?;
+        }
+    }
+    // Fails, harmlessly, when the user left something of their own there.
+    let _ = std::fs::remove_dir(&dir);
+    Ok(())
+}
+
+/// Running Quickshells that run the bar.
+pub fn running_pids(config_home: &Path) -> Vec<u32> {
+    let root = config_home.join("quickshell");
+    let mine = dir(config_home);
+    let mut pids = crate::procs::named("qs");
+    pids.extend(crate::procs::named("quickshell"));
+    pids.into_iter()
+        .filter(|pid| {
+            let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else { return false };
+            let args: Vec<String> =
+                raw.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect();
+            crate::colors::targets::quickshell_arg(&args, &root).is_some_and(|d| d == mine)
+        })
+        .collect()
+}
+
+/// Ask Hyprland to start the bar. Hyprland starts it, so it gets the
+/// session's environment rather than the app's, and outlives the app. It
+/// is not running yet when this returns: see [`Control`].
+pub fn start(program: &Path) -> Result<()> {
+    if cfg!(test) {
+        return Ok(());
+    }
+    if !crate::hyprctl::is_running() {
+        return Err(Error::other(
+            "Hyprland is not running, so there is nothing to start the bar in",
+        ));
+    }
+    crate::look::eval(&format!("hl.exec_cmd({})", lua_quote(&start_command(program))))
+}
+
+/// Stop every copy of the bar: asked to first, then made to if one is
+/// still there after two seconds. Slow, so not on the window's thread.
+pub fn stop(config_home: &Path) -> Result<()> {
+    if cfg!(test) {
+        return Ok(());
+    }
+    for (signal, wait) in [("-TERM", 2000), ("-KILL", 1000)] {
+        let pids: Vec<String> = running_pids(config_home).iter().map(u32::to_string).collect();
+        if pids.is_empty() {
+            return Ok(());
+        }
+        let _ = Command::new("kill")
+            .arg(signal)
+            .args(&pids)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let gone = wait_for(wait, || running_pids(config_home).is_empty());
+        if gone {
+            return Ok(());
+        }
+    }
+    Err(Error::other("the bar did not stop, even when made to"))
+}
+
+/// Poll `done` every 25 ms for up to `ms` milliseconds.
+fn wait_for(ms: u64, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    loop {
+        if done() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// Starting, stopping or restarting the bar, made on the window's thread
+/// and run on another: each waits until the bar has really started or
+/// stopped, so the page never says one thing while the other is true.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Control {
+    /// `start`, `stop`, `restart` or `remove` (which stops it first).
+    pub op: String,
+    /// Quickshell, for starting.
+    pub program: std::path::PathBuf,
+    /// `$XDG_CONFIG_HOME`.
+    pub config_home: std::path::PathBuf,
+}
+
+impl Control {
+    /// Do it. The message says what happened.
+    pub fn run(&self) -> Result<String> {
+        let home = &self.config_home;
+        match self.op.as_str() {
+            "stop" => stop(home).map(|()| "Stopped the bar".into()),
+            "remove" => stop(home).map(|()| String::new()),
+            "start" if !cfg!(test) && !running_pids(home).is_empty() => {
+                Ok("The bar is already running".into())
+            }
+            "start" => self.start_and_see().map(|()| "Started the bar".into()),
+            "restart" => {
+                // A copy that would not stop must not get a second beside it.
+                stop(home)?;
+                self.start_and_see().map(|()| "Restarted the bar".into())
+            }
+            other => Err(Error::other(format!("the bar cannot {other}"))),
+        }
+    }
+
+    fn start_and_see(&self) -> Result<()> {
+        start(&self.program)?;
+        if cfg!(test) || wait_for(5000, || !running_pids(&self.config_home).is_empty()) {
+            return Ok(());
+        }
+        Err(Error::other(format!(
+            "Hyprland was asked to start the bar, but it has not appeared after five seconds. \
+             Run {} in a terminal to see why",
+            start_command(&self.program)
+        )))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Starting at login
+// ---------------------------------------------------------------------------
+
+/// The login block's markers.
+pub const MARKERS: Markers = Markers {
+    begin: "-- >>> HyprCustard bar (managed by hyprcustard) >>>",
+    end: "-- <<< HyprCustard bar (managed by hyprcustard) <<<",
+    name: "HyprCustard bar",
+};
+
+/// What a handed-over line starts with, after its indentation.
+pub const MOVED: &str = "-- [moved to the HyprCustard bar block] ";
+
+/// Programs whose start line means another bar or shell.
+const BARS: &[&str] = &[
+    "waybar",
+    "qs",
+    "quickshell",
+    "hyprpanel",
+    "ags",
+    "astal",
+    "eww",
+    "nwg-panel",
+    "yambar",
+    "ironbar",
+    "sfwbar",
+    "gBar",
+    "ashell",
+];
+
+/// The block's body.
+pub fn body(command: &str) -> String {
+    format!(
+        "-- Starts hyprcustard's bar at login. Turn it off on hyprcustard's Bar page,\n\
+         -- where \"Give them back\" also brings back any lines this replaced.\n\
+         hl.on(\"hyprland.start\", function()\n    hl.exec_cmd({})\nend)\n",
+        lua_quote(command)
+    )
+}
+
+/// A line in the user's config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Line {
+    /// 1-based.
+    pub number: usize,
+    /// The line, trimmed.
+    pub text: String,
+    /// Whether it is one start command on its own line.
+    pub movable: bool,
+}
+
+/// Lines outside every managed block, not commented out and not key
+/// bindings, that start a bar or shell.
+pub fn user_lines(text: &str) -> Vec<Line> {
+    lines_outside_blocks(text)
+        .filter(|(_, l)| {
+            let t = l.trim_start();
+            !t.starts_with("--")
+                && !t.starts_with('#')
+                && t.contains("exec")
+                && !t.contains("bind")
+                && BARS.iter().any(|w| has_word(t, w))
+        })
+        .map(|(number, l)| Line { number, text: l.trim().to_string(), movable: movable(l) })
+        .collect()
+}
+
+/// Lines the app commented out when it took over.
+pub fn moved_lines(text: &str) -> Vec<Line> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            let rest = l.trim_start().strip_prefix(MOVED)?;
+            Some(Line { number: i + 1, text: rest.trim().to_string(), movable: true })
+        })
+        .collect()
+}
+
+/// Whether the block is there.
+pub fn managed(text: &str) -> bool {
+    matches!(block::split_with(text, &MARKERS), Ok(Some(_)))
+}
+
+/// The block as it is in the config: the line its opening marker is on and
+/// what is between the markers.
+pub fn block_text(text: &str) -> Option<(usize, String)> {
+    let split = block::split_with(text, &MARKERS).ok()??;
+    let line = split.before.lines().count() + 1;
+    Some((line, split.inner.trim_end().to_string()))
+}
+
+/// The config with the block written, the user's lines left as they are.
+pub fn add_block(text: &str, command: &str) -> Result<String> {
+    block::splice_with(text, &body(command), &MARKERS)
+}
+
+/// Comment the user's bar lines out and write the block.
+///
+/// Refused, with nothing changed, when such a line holds other code too.
+pub fn hand_over(text: &str, command: &str) -> Result<String> {
+    let lines = user_lines(text);
+    let stuck: Vec<String> =
+        lines.iter().filter(|l| !l.movable).map(|l| l.number.to_string()).collect();
+    if !stuck.is_empty() {
+        return Err(Error::other(format!(
+            "{} {} of hyprland.lua starts a bar alongside other code, so it cannot be \
+             commented out on its own. Put the start command on a line of its own, or \
+             remove it yourself, and try again",
+            if stuck.len() == 1 { "Line" } else { "Lines" },
+            stuck.join(", ")
+        )));
+    }
+    let numbers: Vec<usize> = lines.iter().map(|l| l.number).collect();
+    let mut out = String::new();
+    for (i, l) in split_keep(text).into_iter().enumerate() {
+        if numbers.contains(&(i + 1)) {
+            let indent = &l[..l.len() - l.trim_start().len()];
+            out.push_str(&format!("{indent}{MOVED}{}", &l[indent.len()..]));
+        } else {
+            out.push_str(l);
+        }
+    }
+    add_block(&out, command)
+}
+
+/// Take the block out and put the user's lines back as they were.
+pub fn give_back(text: &str) -> Result<String> {
+    let text = block::remove_with(text, &MARKERS)?;
+    Ok(split_keep(&text)
+        .into_iter()
+        .map(|l| {
+            let indent = &l[..l.len() - l.trim_start().len()];
+            match l[indent.len()..].strip_prefix(MOVED) {
+                Some(rest) => format!("{indent}{rest}"),
+                None => l.to_string(),
+            }
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod control_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_newer_app_rewrites_the_bar() {
+        assert!(newer("0.11.0", "0.10.1"));
+        assert!(newer("0.10.10", "0.10.9"), "by number, not by text");
+        assert!(!newer("0.10.1", "0.11.0"), "an older app leaves a newer bar alone");
+        assert!(!newer("0.10.1", "0.10.1"));
+        assert!(newer("0.10.1", "unknown"));
+        assert!(!newer("dev", "0.10.1"));
+    }
+
+    #[test]
+    fn modules_are_kept_once_each_in_the_order_given() {
+        let s = BarSettings {
+            modules: ["clock", "cpu", "clock", "nope", "cpu", "tray"].map(String::from).to_vec(),
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(s.modules, ["clock", "cpu", "tray"]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scheme() -> Scheme {
+        crate::colors::build(
+            &crate::colors::ColorSettings::default(),
+            &crate::colors::named::builtins(),
+        )
+        .unwrap()
+        .scheme
+    }
+
+    #[test]
+    fn installing_writes_every_file_and_removing_takes_only_those_out() {
+        let home = tempfile::tempdir().unwrap();
+        let d = dir(home.path());
+        install(home.path(), &BarSettings::default(), &Machine::default(), &scheme()).unwrap();
+        assert!(installed(home.path()));
+        for (name, text) in FILES {
+            assert_eq!(&std::fs::read_to_string(d.join(name)).unwrap(), text);
+        }
+        let colors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(d.join(COLORS_FILE)).unwrap()).unwrap();
+        assert!(colors["on_surface"].as_str().unwrap().starts_with('#'));
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(d.join(SETTINGS_FILE)).unwrap()).unwrap();
+        assert_eq!(json["position"], "top");
+        assert_eq!(installed_version(home.path()).as_deref(), Some(crate::VERSION));
+
+        std::fs::write(d.join("Mine.qml"), "// the user's").unwrap();
+        uninstall(home.path()).unwrap();
+        assert!(!installed(home.path()));
+        assert!(d.join("Mine.qml").exists(), "a file of the user's stays");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        std::fs::remove_file(d.join("Mine.qml")).unwrap();
+        install(home.path(), &BarSettings::default(), &Machine::default(), &scheme()).unwrap();
+        uninstall(home.path()).unwrap();
+        assert!(!d.exists(), "an empty folder goes too");
+    }
+
+    #[test]
+    fn a_config_of_the_users_in_the_folder_is_not_overwritten() {
+        let home = tempfile::tempdir().unwrap();
+        let d = dir(home.path());
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("shell.qml"), "// mine").unwrap();
+        let err = install(home.path(), &BarSettings::default(), &Machine::default(), &scheme());
+        assert!(err.is_err());
+        assert_eq!(std::fs::read_to_string(d.join("shell.qml")).unwrap(), "// mine");
+    }
+
+    #[test]
+    fn an_older_install_is_rewritten_and_loses_files_no_longer_shipped() {
+        let home = tempfile::tempdir().unwrap();
+        let d = dir(home.path());
+        install(home.path(), &BarSettings::default(), &Machine::default(), &scheme()).unwrap();
+        assert!(!update_if_stale(home.path()).unwrap());
+        std::fs::write(d.join("Old.qml"), "old").unwrap();
+        std::fs::write(d.join("Bar.qml"), "stale").unwrap();
+        std::fs::write(d.join(STAMP), "0.0.1\nOld.qml\nBar.qml\n").unwrap();
+        let settings = std::fs::read_to_string(d.join(SETTINGS_FILE)).unwrap();
+        assert!(update_if_stale(home.path()).unwrap());
+        assert!(!d.join("Old.qml").exists());
+        assert_ne!(std::fs::read_to_string(d.join("Bar.qml")).unwrap(), "stale");
+        assert_eq!(std::fs::read_to_string(d.join(SETTINGS_FILE)).unwrap(), settings);
+    }
+
+    #[test]
+    fn the_machine_fills_in_what_the_settings_leave_open() {
+        let m = Machine {
+            nerd_font: false,
+            mixer: Some("pavucontrol".into()),
+            bluetooth: Some("blueman-manager".into()),
+        };
+        let mut s = BarSettings::default();
+        let j = settings_json(&s, &m);
+        assert_eq!(
+            (j["glyphs"].as_bool(), j["mixer"].as_str()),
+            (Some(false), Some("pavucontrol"))
+        );
+        s.icons = "glyphs".into();
+        s.mixer = "my-mixer --tab 3".into();
+        let j = settings_json(&s, &m);
+        assert_eq!(
+            (j["glyphs"].as_bool(), j["mixer"].as_str()),
+            (Some(true), Some("my-mixer --tab 3"))
+        );
+        assert_eq!(j["bluetooth"], "blueman-manager");
+    }
+
+    #[test]
+    fn settings_are_kept_in_range() {
+        let s = BarSettings {
+            position: "left".into(),
+            height: 5,
+            opacity: f64::NAN,
+            icons: "emoji".into(),
+            modules: vec!["clock".into(), "nonsense".into()],
+            clock_format: " ".into(),
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!((s.position.as_str(), s.height, s.opacity), ("top", 20, 0.8));
+        assert_eq!(s.icons, "auto");
+        assert_eq!(s.modules, vec!["clock".to_string()]);
+        assert!(!s.clock_format.trim().is_empty());
+    }
+
+    #[test]
+    fn other_bars_are_found_handed_over_and_given_back() {
+        let mine = "\
+hl.on(\"hyprland.start\", function()
+    hl.exec_cmd(\"qs\")
+    hl.exec_cmd(\"waybar -c ~/.config/waybar/top.jsonc\")
+    hl.exec_cmd(\"dunst\")
+end)
+hl.bind(\"SUPER + B\", hl.dsp.exec_cmd(\"pkill waybar || waybar\"))
+-- hl.exec_cmd(\"eww open bar\")
+";
+        let found: Vec<usize> = user_lines(mine).iter().map(|l| l.number).collect();
+        assert_eq!(found, vec![2, 3], "not dunst, a binding or a comment");
+        let over = hand_over(mine, "qs -c hyprcustard").unwrap();
+        assert!(managed(&over));
+        assert!(user_lines(&over).is_empty(), "the block's own line is not one of theirs");
+        assert_eq!(moved_lines(&over).len(), 2);
+        assert!(over.contains(&format!("    {MOVED}hl.exec_cmd(\"qs\")")));
+        assert_eq!(give_back(&over).unwrap(), mine);
+    }
+
+    #[test]
+    fn a_line_holding_other_code_is_refused_whole() {
+        let mine = "hl.on(\"hyprland.start\", function() hl.exec_cmd(\"waybar\") end)\n";
+        assert!(hand_over(mine, "qs -c hyprcustard").is_err());
+        let both = add_block(mine, "qs -c hyprcustard").unwrap();
+        assert!(both.starts_with(mine) && managed(&both));
+        assert_eq!(give_back(&both).unwrap(), mine);
+    }
+
+    #[test]
+    fn the_start_command_names_the_config() {
+        assert_eq!(start_command(Path::new("/usr/bin/qs")), "qs -c hyprcustard");
+        assert_eq!(start_command(Path::new("/usr/bin/quickshell")), "quickshell -c hyprcustard");
+        assert!(body("qs -c hyprcustard").contains("hl.exec_cmd(\"qs -c hyprcustard\")"));
+    }
+}

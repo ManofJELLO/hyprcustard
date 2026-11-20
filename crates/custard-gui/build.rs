@@ -29,6 +29,7 @@ fn main() {
         "qml/components/Toggle.qml",
         "qml/pages/ActionEditor.qml",
         "qml/pages/AnimationPage.qml",
+        "qml/pages/BarPage.qml",
         "qml/pages/BindsPage.qml",
         "qml/pages/ColorsPage.qml",
         "qml/pages/FscPage.qml",
@@ -45,6 +46,7 @@ fn main() {
         "qml/pages/SettingsPage.qml",
         "qml/pages/ShadersPage.qml",
         "qml/pages/ThemesPage.qml",
+        "qml/pages/ToolkitsPage.qml",
     ];
 
     let module = QmlModule::new("dev.hyprcustard.gui")
@@ -57,6 +59,9 @@ fn main() {
     CxxQtBuilder::new_qml_module(module)
         .qt_module("Quick")
         .qt_module("QuickControls2")
+        // Only for the Qt preview, drawn in a child process (src/render.rs).
+        .qt_module("Widgets")
+        .cpp_file("src/qt_preview.cpp")
         .files(["src/bridge.rs"])
         // PNGs, so the app needs no SVG support to show its own icon. `make
         // icons` renders them from the SVGs beside them. The shader is

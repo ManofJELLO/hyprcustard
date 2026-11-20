@@ -27,8 +27,10 @@ use crate::theirs;
 use crate::theme::Theme;
 use crate::{block, colors, emit, hyprctl, hyprpm, import, paths, shader, theme, walls};
 
+mod bar_page;
 mod fsc_page;
 mod icons_page;
+mod toolkits_page;
 mod walls_page;
 pub use walls_page::{WallJob, WallOutcome};
 
@@ -107,6 +109,19 @@ struct Desk {
     /// Lines in the Hyprland config, and the files it sources, that set the
     /// icon or cursor theme with gsettings, live or taken out.
     icon_pins: Vec<colors::pins::Pin>,
+    /// The Bar page: what it found about the machine, read only when it
+    /// asks; whether the bar is set up, by which version, and running; and
+    /// the lines that start bars at login.
+    bar_scan: Option<bar_page::BarScan>,
+    toolkit_scan: Option<toolkits_page::ToolkitScan>,
+    /// Whether GTK 3 and Kvantum are installed, for the nav.
+    toolkits_found: (bool, bool),
+    bar_installed: bool,
+    bar_version: Option<String>,
+    bar_running: bool,
+    bar_login_lines: Vec<crate::bar::Line>,
+    bar_login_moved: Vec<crate::bar::Line>,
+    bar_login_block: Option<(usize, String)>,
 }
 
 /// Which part of the app noticed a problem.
@@ -194,6 +209,9 @@ pub struct Session {
     pub colors_building: bool,
     /// The scheme last applied, as `current.json` has it.
     colors_applied: Option<colors::Scheme>,
+    /// What the bar is being made to do on another thread: `start`, `stop`,
+    /// `restart` or `remove`. Another is refused until it is done.
+    bar_busy: Option<String>,
     /// A wallpaper a theme asked for, waiting for the UI to put it up.
     theme_wallpaper: Option<Value>,
     /// Changes to Fishsticks & Custard's config staged on its page and not
@@ -213,6 +231,18 @@ pub struct Session {
 }
 
 impl Session {
+    /// Give a bar set up by an older version this version's QML; a running
+    /// one reloads itself. For the window to call once it starts: reading
+    /// the state (`--print-state`) must not write files.
+    pub fn update_bar_files(&mut self) {
+        if let Err(e) = crate::bar::update_if_stale(&paths::apps_config_home()) {
+            self.problems.push(Problem {
+                source: Source::Settings,
+                text: format!("hyprcustard's bar could not be updated: {e}"),
+            });
+        }
+    }
+
     /// Load settings, the config and the shader list.
     pub fn load() -> Self {
         let (settings, settings_problem) = Settings::load();
@@ -220,7 +250,6 @@ impl Session {
             .into_iter()
             .map(|text| Problem { source: Source::Settings, text })
             .collect();
-
         let config = match read_config(&settings.resolved_config_path()) {
             Ok(c) => c,
             Err(e) => {
@@ -274,6 +303,7 @@ impl Session {
             colors_built: None,
             colors_building: false,
             colors_applied: colors::current(),
+            bar_busy: None,
             theme_wallpaper: None,
             fsc_pending: serde_json::Map::new(),
             systemd_session: colors::follow::systemd_available(),
@@ -957,6 +987,9 @@ impl Session {
             "wallpaper": self.wall_view(),
             "fsc": self.fsc_view(),
             "icons": self.icons_view(),
+            "bar": self.bar_view(),
+            "toolkits": self.toolkits_view(),
+            "toolkitsFound": toolkits_page::found_view(self.desk.toolkits_found),
             "presetDir": paths::contract(&preset::dir()),
             "motion": motion::view(
                 &self.look.curves,
@@ -1092,6 +1125,16 @@ impl Session {
             qt_style_advice: Default::default(),
             fsc_facts: self.desk.fsc_facts.take(),
             icon_scan: self.desk.icon_scan.take(),
+            toolkit_scan: self.desk.toolkit_scan.take(),
+            toolkits_found: toolkits_page::installed(),
+            bar_scan: self.desk.bar_scan.take(),
+            bar_installed: crate::bar::installed(&paths::apps_config_home()),
+            bar_version: crate::bar::installed_version(&paths::apps_config_home()),
+            bar_running: !cfg!(test)
+                && !crate::bar::running_pids(&paths::apps_config_home()).is_empty(),
+            bar_login_lines: crate::bar::user_lines(&text),
+            bar_login_moved: crate::bar::moved_lines(&text),
+            bar_login_block: crate::bar::block_text(&text),
             cursor_lines: crate::icons::user_lines(&text),
             cursor_moved: crate::icons::moved_lines(&text),
             cursor_managed: crate::icons::managed(&text),
@@ -1578,6 +1621,8 @@ impl Session {
             c if c.starts_with("wallpaper.") => self.wall_command(c, payload),
             c if c.starts_with("fsc.") => self.fsc_command(c, payload),
             c if c.starts_with("icons.") => self.icons_command(c, payload),
+            c if c.starts_with("toolkits.") => self.toolkits_command(c, payload),
+            c if c.starts_with("bar.") => self.bar_command(c, payload),
 
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
@@ -3118,6 +3163,7 @@ mod tests {
             colors_built: None,
             colors_building: false,
             colors_applied: None,
+            bar_busy: None,
             theme_wallpaper: None,
             fsc_pending: serde_json::Map::new(),
             systemd_session: false,
@@ -3127,6 +3173,19 @@ mod tests {
         };
         s.refresh_desk();
         s
+    }
+
+    #[test]
+    fn bar_choices_merge_and_unknown_ones_are_refused() {
+        let mut s = session();
+        s.command("bar.set", &json!({ "position": "bottom", "height": 30 })).unwrap();
+        assert_eq!(s.settings.bar.position, "bottom");
+        assert_eq!(s.settings.bar.height, 30);
+        assert_eq!(s.settings.bar.font_size, 11, "the others are kept");
+        assert!(s.command("bar.set", &json!({ "colour": "red" })).is_err());
+        s.command("bar.set", &json!({ "height": 1 })).unwrap();
+        assert_eq!(s.settings.bar.height, 20, "clamped");
+        assert_eq!(s.state()["bar"]["settings"]["position"], "bottom");
     }
 
     #[test]
@@ -3452,6 +3511,65 @@ mod tests {
 
         s.command("fsc.giveBack", &json!({})).unwrap();
         assert_eq!(std::fs::read_to_string(&cfg).unwrap(), mine);
+    }
+
+    #[test]
+    fn the_bar_is_made_to_do_one_thing_at_a_time() {
+        let (_dir, _cfg, mut s) = rule_session("");
+        // Refused before anything is marked busy.
+        let e = s.bar_control("bar.start").unwrap_err().to_string();
+        assert!(e.contains("Set the bar up first"), "{e}");
+        assert!(s.state()["bar"]["busy"].is_null());
+
+        let job = s.bar_control("bar.stop").unwrap();
+        assert_eq!(s.state()["bar"]["busy"], "stop");
+        let e = s.bar_control("bar.restart").unwrap_err().to_string();
+        assert!(e.contains("Still waiting for the bar to stop"), "{e}");
+        // A failure still frees it, and is passed on.
+        let failed = s.bar_control_done(&job, Err(Error::other("would not stop")));
+        assert!(failed.is_err());
+        assert!(s.state()["bar"]["busy"].is_null());
+        let msg = s.command("bar.stop", &json!({})).unwrap().unwrap();
+        assert_eq!(msg, "Stopped the bar");
+    }
+
+    #[test]
+    fn a_kvantum_theme_is_listed_previewed_and_used() {
+        let (_dir, _cfg, mut s) = rule_session("");
+        let home = paths::apps_config_home();
+        let theme = home.join("Kvantum/Mine");
+        std::fs::create_dir_all(&theme).unwrap();
+        std::fs::write(
+            theme.join("Mine.kvconfig"),
+            "[GeneralColors]\nwindow.color=#202020\ntext.color=#e0e0e0\n",
+        )
+        .unwrap();
+        std::fs::write(theme.join("Mine.svg"), "<svg/>").unwrap();
+        s.command("toolkits.refresh", &json!({})).unwrap();
+        let view = &s.state()["toolkits"];
+        assert!(view["qt"]["themes"].as_array().unwrap().iter().any(|t| t["id"] == "Mine"));
+
+        let job = s.toolkit_preview_job(&json!({ "kind": "qt", "theme": "Mine" })).unwrap();
+        assert!(job.out.starts_with(crate::toolkit_themes::preview_dir()));
+        assert!(s.toolkit_preview_job(&json!({ "kind": "qt", "theme": "Nope" })).is_err());
+
+        // Recoloring needs a scheme applied first.
+        s.colors_applied = None;
+        let e = s.command("toolkits.useKvantum", &json!({ "theme": "Mine", "recolor": true }));
+        assert!(e.unwrap_err().to_string().contains("apply one on the Colors page"));
+        let msg = s.command("toolkits.useKvantum", &json!({ "theme": "Mine" })).unwrap().unwrap();
+        assert!(msg.starts_with("Qt apps now use Mine"), "{msg}");
+        assert_eq!(s.state()["toolkits"]["qt"]["now"], "Mine");
+
+        let nord = colors::named::builtins().iter().find(|n| n.id == "nord").unwrap().scheme();
+        s.colors_applied = Some(nord);
+        let msg = s
+            .command("toolkits.useKvantum", &json!({ "theme": "Mine", "recolor": true }))
+            .unwrap()
+            .unwrap();
+        assert!(msg.contains("recolored with Nord"), "{msg}");
+        let qt = &s.state()["toolkits"]["qt"];
+        assert_eq!((qt["recolored"].as_bool(), qt["base"].as_str()), (Some(true), Some("Mine")));
     }
 
     #[test]

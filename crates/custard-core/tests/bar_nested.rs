@@ -1,0 +1,219 @@
+//! hyprcustard's bar, run by a real Quickshell in a real Hyprland.
+//!
+//! Sets the bar up in a scratch folder, starts a nested, headless Hyprland
+//! (its own output is disabled before it opens, so nothing appears on
+//! screen), runs the bar there with `qs -p`, and checks that it loads with no
+//! QML errors, sits where its settings say, and follows a change to them
+//! without restarting. Ignored by default because it needs Hyprland,
+//! Quickshell and a Wayland session:
+//!
+//! cargo test -p custard-core --test bar_nested -- --ignored --nocapture
+//!
+//! With `CUSTARD_SHOT_DIR` set, it saves a screenshot of each step there.
+
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
+use custard_core::bar::{self, BarSettings, Machine};
+use custard_core::colors::named;
+use custard_core::hyprctl;
+
+struct Nested {
+    hyprland: Child,
+    sig: String,
+    socket: String,
+}
+
+impl Drop for Nested {
+    fn drop(&mut self) {
+        let _ = self.hyprland.kill();
+        let _ = self.hyprland.wait();
+    }
+}
+
+fn start_hyprland(config: &Path) -> Nested {
+    let before = hyprctl::instances().unwrap_or_default();
+    let mut child = Command::new("Hyprland")
+        .arg("-c")
+        .arg(config)
+        .env_remove("HYPRLAND_INSTANCE_SIGNATURE")
+        .env_remove("HYPRLAND_CMD")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("start a nested Hyprland");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        if let Ok(now) = hyprctl::instances() {
+            if let Some(new) = now.iter().find(|i| !before.iter().any(|b| b.instance == i.instance))
+            {
+                let nested = Nested {
+                    hyprland: child,
+                    sig: new.instance.clone(),
+                    socket: new.wl_socket.clone(),
+                };
+                hyprctl::on_instance(&nested.sig, &["output", "create", "headless"]).unwrap();
+                std::thread::sleep(Duration::from_millis(500));
+                return nested;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    panic!("the nested Hyprland did not come up");
+}
+
+/// The bar's layer surfaces in the nested instance: (x, y, w, h) each.
+fn bar_layers(sig: &str) -> Vec<(i64, i64, i64, i64)> {
+    let out = hyprctl::on_instance(sig, &["layers", "-j"]).unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap_or_default();
+    let mut found = Vec::new();
+    for (_, monitor) in v.as_object().into_iter().flatten() {
+        for (_, level) in monitor["levels"].as_object().into_iter().flatten() {
+            for layer in level.as_array().into_iter().flatten() {
+                if layer["namespace"] == "quickshell" {
+                    let n = |k: &str| layer[k].as_i64().unwrap_or(-1);
+                    found.push((n("x"), n("y"), n("w"), n("h")));
+                }
+            }
+        }
+    }
+    found
+}
+
+fn wait_for<T>(secs: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    while Instant::now() < deadline {
+        if let Some(v) = f() {
+            return Some(v);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    None
+}
+
+/// One pixel of the nested screen, as `#rrggbb`.
+fn pixel(socket: &str, x: usize, y: usize) -> String {
+    let out = Command::new("grim")
+        .args(["-t", "ppm", "-"])
+        .env("WAYLAND_DISPLAY", socket)
+        .output()
+        .expect("grim");
+    // P6, width, height, max value, then RGB triples.
+    let mut fields = Vec::new();
+    let mut i = 0;
+    while fields.len() < 4 {
+        while out.stdout[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let start = i;
+        while !out.stdout[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        fields.push(String::from_utf8_lossy(&out.stdout[start..i]).into_owned());
+    }
+    let width: usize = fields[1].parse().unwrap();
+    let at = i + 1 + 3 * (y * width + x);
+    let p = &out.stdout[at..at + 3];
+    format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2])
+}
+
+fn shot(socket: &str, name: &str) {
+    let Some(dir) = std::env::var_os("CUSTARD_SHOT_DIR").map(PathBuf::from) else { return };
+    let _ = Command::new("grim")
+        .arg(dir.join(format!("{name}.png")))
+        .env("WAYLAND_DISPLAY", socket)
+        .status();
+}
+
+#[test]
+#[ignore = "starts a nested Hyprland and Quickshell"]
+fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
+    let qs = bar::program().expect("Quickshell is installed");
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("config");
+    let config = dir.path().join("nested.lua");
+    std::fs::write(
+        &config,
+        "hl.monitor({ output = \"WAYLAND-1\", disabled = true })\n\
+         hl.monitor({ output = \"\", mode = \"1600x500\", position = \"0x0\", scale = 1 })\n",
+    )
+    .unwrap();
+
+    let scheme = named::builtins().iter().find(|n| n.id == "nord").unwrap().scheme();
+    let machine = Machine { nerd_font: true, mixer: None, bluetooth: None };
+    // Opaque, so a pixel of the bar is the scheme's background exactly.
+    let mut settings = BarSettings { opacity: 1.0, ..Default::default() };
+    bar::install(&home, &settings, &machine, &scheme).unwrap();
+
+    let nested = start_hyprland(&config);
+    let log_path = dir.path().join("qs.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let mut qs = Command::new(&qs)
+        .arg("-p")
+        .arg(bar::dir(&home))
+        .env("WAYLAND_DISPLAY", &nested.socket)
+        .env("HYPRLAND_INSTANCE_SIGNATURE", &nested.sig)
+        .env("QT_QPA_PLATFORM", "wayland")
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .expect("start Quickshell");
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let top = wait_for(10, || bar_layers(&nested.sig).first().copied())
+            .expect("the bar maps a layer surface");
+        shot(&nested.socket, "bar-top");
+        let h = i64::from(settings.height) + 8;
+        assert_eq!((top.1, top.3), (i64::from(settings.edge_margin), h), "at the top: {top:?}");
+        assert_eq!(top.2, 1600, "the whole width");
+
+        // A change to its settings moves it, without a restart.
+        settings.position = "bottom".into();
+        settings.side_margin = 100;
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let bottom = wait_for(5, || bar_layers(&nested.sig).first().copied().filter(|l| l.1 > 200))
+            .expect("the bar moves to the bottom");
+        shot(&nested.socket, "bar-bottom");
+        assert_eq!(bottom.1 + bottom.3, 500 - i64::from(settings.edge_margin), "{bottom:?}");
+        assert_eq!((bottom.0, bottom.2), (100, 1400), "{bottom:?}");
+
+        // Words instead of icons, and fewer modules: still no errors.
+        settings.icons = "text".into();
+        settings.modules = vec!["clock".into(), "cpu".into(), "memory".into()];
+        bar::write_settings(&home, &settings, &Machine { nerd_font: false, ..machine.clone() })
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(1500));
+        shot(&nested.socket, "bar-text");
+
+        // A new scheme shows at once, the bar's own surface kept: the middle
+        // of the bar, empty with no window open, is the scheme's background.
+        let (mx, my) = (800, (bottom.1 + bottom.3 / 2) as usize);
+        assert_eq!(pixel(&nested.socket, mx, my), scheme.role("background"));
+        let gruvbox = named::builtins().iter().find(|n| n.id == "gruvbox-dark").unwrap().scheme();
+        bar::write_colors(&home, &gruvbox).unwrap();
+        let want = gruvbox.role("background").to_string();
+        wait_for(5, || (pixel(&nested.socket, mx, my) == want).then_some(()))
+            .unwrap_or_else(|| panic!("the bar did not turn {want}"));
+        shot(&nested.socket, "bar-recolored");
+        assert_eq!(bar_layers(&nested.sig).len(), 1, "still one bar");
+    }));
+
+    let _ = qs.kill();
+    let _ = qs.wait();
+    drop(nested);
+    let text = std::fs::read_to_string(&log_path).unwrap_or_default();
+    println!("--- quickshell log ---\n{text}");
+    if let Err(e) = result {
+        std::panic::resume_unwind(e);
+    }
+    let bad: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains("ERROR") || (l.contains("WARN") && l.contains(".qml")))
+        .collect();
+    assert!(bad.is_empty(), "QML problems:\n{}", bad.join("\n"));
+}

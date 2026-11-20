@@ -124,7 +124,7 @@ impl Desktop {
 
 /// Whether a GTK stylesheet's rules refer to the named colors rather than
 /// having their own built in: twenty uses outside `@define-color` lines.
-fn draws_with_names(css: &str) -> bool {
+pub(crate) fn draws_with_names(css: &str) -> bool {
     static NAMES: OnceLock<Regex> = OnceLock::new();
     let re = NAMES.get_or_init(|| {
         Regex::new(
@@ -280,7 +280,7 @@ pub fn use_adw_gtk3(config_home: &Path, desk: &Desktop, dark: bool, keep: usize)
 
 /// Set the GTK theme everywhere GTK reads it from. `keep` backups of each
 /// `settings.ini` changed are kept; none are taken for zero.
-fn set_gtk_theme(config_home: &Path, name: &str, keep: usize) -> Result<()> {
+pub(crate) fn set_gtk_theme(config_home: &Path, name: &str, keep: usize) -> Result<()> {
     gsettings_set("gtk-theme", name);
     for v in ["gtk-3.0", "gtk-4.0"] {
         let path = config_home.join(v).join("settings.ini");
@@ -424,11 +424,29 @@ pub fn kvantum_base(config_home: &Path, desk: &Desktop) -> Option<KvantumBase> {
             name = dark;
         }
     }
-    let kvconfig = find(&name, "kvconfig")?;
+    kvantum_named(config_home, desk, &name)
+}
+
+/// The files of the Kvantum theme called `name`: the user's own copy first,
+/// then the system's.
+pub fn kvantum_named(config_home: &Path, desk: &Desktop, name: &str) -> Option<KvantumBase> {
+    let dirs: Vec<PathBuf> =
+        std::iter::once(config_home.join("Kvantum")).chain(desk.kvantum_dirs.clone()).collect();
+    let find = |n: &str, ext: &str| {
+        dirs.iter().map(|d| d.join(n).join(format!("{n}.{ext}"))).find(|p| p.is_file())
+    };
+    let kvconfig = find(name, "kvconfig")?;
     // A theme edited in Kvantum Manager is saved as `<name>#`, with only its
     // settings; the images are still the original's.
-    let svg = find(&name, "svg").or_else(|| find(name.trim_end_matches('#'), "svg"))?;
-    Some(KvantumBase { name, kvconfig, svg })
+    let svg = find(name, "svg").or_else(|| find(name.trim_end_matches('#'), "svg"))?;
+    Some(KvantumBase { name: name.to_string(), kvconfig, svg })
+}
+
+/// Whether a shared library is installed, by its soname.
+pub(crate) fn has_lib(name: &str) -> bool {
+    ["/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/lib64"]
+        .iter()
+        .any(|d| Path::new(d).join(name).exists())
 }
 
 /// Whether Qt is drawing with Kvantum.

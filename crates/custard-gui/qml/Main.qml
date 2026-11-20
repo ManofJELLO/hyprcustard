@@ -54,6 +54,9 @@ ApplicationWindow {
         { label: "Wallpaper", hint: "Pick and put up",     section: "Desktop", saves: "now" },
         { label: "Colors",    hint: "One scheme, every app", section: "Desktop", saves: "now" },
         { label: "Icons",     hint: "Icon and cursor themes", section: "Desktop", saves: "now" },
+        // Shown only where GTK 3 or Kvantum is installed.
+        { label: "GTK and Qt", hint: "App themes",          section: "Desktop", saves: "now", needs: "toolkitsFound" },
+        { label: "Bar",       hint: "A Quickshell bar",    section: "Desktop", saves: "now" },
         { label: "Rules",     hint: "Shaders on windows",  section: "HyprWindowShade", saves: "save" },
         { label: "Shaders",   hint: "Files",               section: "HyprWindowShade", saves: "own" },
         { label: "Layers",    hint: "Bars, launchers",     section: "HyprWindowShade", saves: "save" },
@@ -457,6 +460,8 @@ ApplicationWindow {
                                 readonly property bool startsSection: navItem.index === 0
                                     || (window.pages[navItem.index - 1].section || "") !== navItem.section
 
+                                visible: !navItem.modelData.needs
+                                         || (App.state[navItem.modelData.needs] || {}).any === true
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 40
                                 // Room for the section's heading, or just a gap
@@ -587,6 +592,18 @@ ApplicationWindow {
             }
             Item {
                 IconsPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pageMargin
+                }
+            }
+            Item {
+                ToolkitsPage {
+                    anchors.fill: parent
+                    anchors.margins: Theme.pageMargin
+                }
+            }
+            Item {
+                BarPage {
                     anchors.fill: parent
                     anchors.margins: Theme.pageMargin
                 }

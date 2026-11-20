@@ -71,6 +71,17 @@ pub mod qobject {
         #[cxx_name = "wallpaperThumbReady"]
         fn wallpaper_thumb_ready(self: Pin<&mut Backend>, file: &QString, thumb: &QString);
 
+        /// A GTK or Qt theme's preview is drawn: `request` is the payload
+        /// `toolkitPreview` was given, `path` the PNG, or `error` why not.
+        #[qsignal]
+        #[cxx_name = "toolkitPreviewReady"]
+        fn toolkit_preview_ready(
+            self: Pin<&mut Backend>,
+            request: &QString,
+            path: &QString,
+            error: &QString,
+        );
+
         /// One line of output from the running hyprpm operation.
         ///
         /// `transient` marks a progress bar redrawn in place: it should
@@ -150,6 +161,22 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "wallpaperSet"]
         fn wallpaper_set(self: Pin<&mut Backend>, payload: &QString);
+
+        /// Start, stop, restart or remove hyprcustard's bar: `start`,
+        /// `stop`, `restart` or `remove`. Returns at once; the bar's state
+        /// says `busy` until it has really started or stopped, then the
+        /// toast says how it went.
+        #[qinvokable]
+        #[cxx_name = "barControl"]
+        fn bar_control(self: Pin<&mut Backend>, op: &QString);
+
+        /// Draw a GTK or Qt theme's preview, `{"kind": "gtk"|"qt", "theme":
+        /// ..., "recolor": bool}`, on a thread. `toolkitPreviewReady` comes
+        /// with the same payload when it is done, at once if it was drawn
+        /// before.
+        #[qinvokable]
+        #[cxx_name = "toolkitPreview"]
+        fn toolkit_preview(self: Pin<&mut Backend>, payload: &QString);
 
         /// Make the previews missing for these files (a JSON array of
         /// paths), in order, replacing any previous request.
@@ -335,7 +362,8 @@ impl cxx_qt::Initialize for qobject::Backend {
         let thread = self.qt_thread();
         crate::instance::serve(move || thread.queue(|backend| backend.show_requested()).is_ok());
 
-        let session = Session::load();
+        let mut session = Session::load();
+        session.update_bar_files();
         let problems = session.messages();
         self.as_mut().rust_mut().session = Some(session);
         self.as_mut().push_state();
@@ -556,6 +584,80 @@ impl qobject::Backend {
                     Ok(None) => {}
                     Err(e) => backend.as_mut().notify(&QString::from(&e.to_string()), true),
                 }
+            });
+        });
+    }
+
+    /// Make the bar start or stop away from the Qt thread: each waits for
+    /// Quickshell to really appear or go.
+    pub fn bar_control(mut self: Pin<&mut Self>, op: &QString) {
+        let name = format!("bar.{op}");
+        let job = match self.as_mut().rust_mut().session.as_mut() {
+            Some(session) => session.bar_control(&name),
+            None => Err(custard_core::Error::other("the backend is still starting up")),
+        };
+        let job = match job {
+            Ok(job) => job,
+            Err(e) => {
+                let m = QString::from(&e.to_string());
+                self.as_mut().notify(&m, true);
+                return;
+            }
+        };
+        // The page shows it is busy.
+        self.as_mut().push_state();
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let outcome = job.run();
+            let _ = thread.queue(move |mut backend| {
+                let result = match backend.as_mut().rust_mut().session.as_mut() {
+                    Some(session) => session.bar_control_done(&job, outcome),
+                    None => Ok(None),
+                };
+                backend.as_mut().push_state();
+                match result {
+                    Ok(Some(m)) => backend.as_mut().notify(&QString::from(&m), false),
+                    Ok(None) => {}
+                    Err(e) => backend.as_mut().notify(&QString::from(&e.to_string()), true),
+                }
+            });
+        });
+    }
+
+    /// Draw a theme's preview away from the Qt thread: in a child process
+    /// of this program, which is the renderer as well as the app.
+    pub fn toolkit_preview(mut self: Pin<&mut Self>, payload: &QString) {
+        let request = payload.clone();
+        let job = match self.rust().session.as_ref() {
+            Some(s) => s.toolkit_preview_job(&parse_payload(&payload.to_string())),
+            None => Err(custard_core::Error::other("the backend is still starting up")),
+        };
+        let job = match job {
+            Ok(job) if job.ready() => {
+                let path = QString::from(&job.out.to_string_lossy().into_owned());
+                self.as_mut().toolkit_preview_ready(&request, &path, &QString::default());
+                return;
+            }
+            Ok(job) => job,
+            Err(e) => {
+                let e = QString::from(&e.to_string());
+                self.as_mut().toolkit_preview_ready(&request, &QString::default(), &e);
+                return;
+            }
+        };
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let program = std::env::current_exe().unwrap_or_else(|_| "hyprcustard".into());
+            let (path, error) = match job.run(&program) {
+                Ok(p) => (p.to_string_lossy().into_owned(), String::new()),
+                Err(e) => (String::new(), e.to_string()),
+            };
+            let _ = thread.queue(move |backend| {
+                backend.toolkit_preview_ready(
+                    &request,
+                    &QString::from(&path),
+                    &QString::from(&error),
+                );
             });
         });
     }

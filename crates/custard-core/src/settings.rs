@@ -43,6 +43,8 @@ pub struct Settings {
     pub font: String,
     /// The Fishsticks & Custard page's start and key choices.
     pub fsc: crate::fsc::FscSettings,
+    /// The Bar page's choices.
+    pub bar: crate::bar::BarSettings,
 }
 
 /// Where the plugin is installed from unless someone says otherwise.
@@ -67,6 +69,7 @@ impl Default for Settings {
             tray: false,
             font: String::new(),
             fsc: crate::fsc::FscSettings::default(),
+            bar: crate::bar::BarSettings::default(),
         }
     }
 }
@@ -120,6 +123,7 @@ impl Settings {
         self.colors = self.colors.sanitized();
         self.wallpaper = self.wallpaper.sanitized();
         self.fsc = self.fsc.sanitized();
+        self.bar = self.bar.sanitized();
         self
     }
 

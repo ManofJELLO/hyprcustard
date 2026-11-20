@@ -321,7 +321,7 @@ pub fn services() -> Vec<String> {
         .collect()
 }
 
-fn has_word(line: &str, word: &str) -> bool {
+pub(crate) fn has_word(line: &str, word: &str) -> bool {
     let part = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
     line.match_indices(word).any(|(i, _)| {
         let before = line[..i].chars().next_back();

@@ -22,6 +22,10 @@ What you can do with it:
   Hyprland, Waybar, Quickshell, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt apps. It can keep
   following your wallpaper as it changes.
 * **Icons and cursors**: choose an icon theme and a cursor theme for every app at once.
+* **GTK and Qt themes**: preview the GTK 3 and Kvantum themes you have installed, drawn by the
+  toolkit itself, and use one with a click. A Kvantum theme can take on your color scheme.
+* **Bar**: a ready-made bar for the top or bottom of the screen, running in Quickshell, that
+  follows your color scheme. Set it up, choose what it shows, and have it start at login.
 * **Window shaders**: if you use the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade)
   plugin, set up its shaders on windows, bars and launchers, tune them with sliders, and preview
   them on a real window before you save.
@@ -36,7 +40,7 @@ it writes, and can undo each thing it does.
 - [Install](#install) · [What you need](#what-you-need)
 - [First steps](#first-steps) · [How saving works](#how-saving-works) · [What it changes in your files](#what-it-changes-in-your-files)
 - Hyprland: [Look](#look) · [Look rules](#look-rules) · [Animation](#animation) · [Themes](#themes)
-- Desktop: [Wallpaper](#wallpaper) · [Colors](#colors) · [Icons](#icons)
+- Desktop: [Wallpaper](#wallpaper) · [Colors](#colors) · [Icons](#icons) · [GTK and Qt](#gtk-and-qt) · [Bar](#bar)
 - HyprWindowShade: [Rules and Layers](#rules-and-layers) · [Shaders](#shaders) · [Keybinds](#keybinds) · [Preview and import](#preview-and-import) · [Plugin](#plugin)
 - [Fishsticks & Custard](#fishsticks--custard) · [Settings](#settings) · [Command line](#command-line)
 - [Undoing things](#undoing-things) · [Good to know](#good-to-know)
@@ -118,6 +122,8 @@ Each of these is optional, and only matters for the page that uses it:
 | Window shaders | the HyprWindowShade plugin, which the **Plugin** page installs for you through `hyprpm` (on Arch, the `hyprpm` package) |
 | The shader preview | `grim`; `swaybg` to show your wallpaper behind it; a terminal such as kitty, foot, alacritty, ghostty, wezterm or xterm |
 | SVG icon previews | `qt6-svg` |
+| The GTK and Qt page | GTK 3 (`gtk3`) for GTK themes, Kvantum (`kvantum`) for Qt themes. The page shows only when one of them is installed. |
+| The Bar page | Quickshell (`quickshell` on Arch). hyprcustard does not install it for you. |
 
 Hyprland doesn't have to be running. Without it you can still edit your config and shaders,
 but nothing is shown live and the list of open windows is empty.
@@ -146,7 +152,7 @@ There are three kinds of page, and each says which it is at the top:
   the window with something unsaved asks first.
 * **Has its own Save**: Shaders (**Save shader** writes the one file you are looking at), and
   the settings on the Fishsticks page.
-* **Saves at once**: Wallpaper, Colors, Icons and Settings. On Colors, **Apply** is the moment
+* **Saves at once**: Wallpaper, Colors, Icons, GTK and Qt, Bar and Settings. On Colors, **Apply** is the moment
   your apps change.
 
 Themes mix the two: saving or deleting a theme happens at once, and applying one shows its look
@@ -165,8 +171,8 @@ between two marker comments of its own, like this:
 ```
 
 There is one block for each feature you use: **look** (Look, Look rules and Animation),
-**HyprWindowShade** (shader rules), **wallpaper**, **colors**, **cursor**, **autostart** and
-**Fishsticks & Custard**. Everything above and below them stays exactly as you wrote it. The
+**HyprWindowShade** (shader rules), **wallpaper**, **colors**, **cursor**, **bar**, **autostart**
+and **Fishsticks & Custard**. Everything above and below them stays exactly as you wrote it. The
 **Preview** page shows the HyprWindowShade block before it is written.
 
 * **Don't edit inside a block by hand.** The app rewrites it on the next save. If you delete a
@@ -400,6 +406,56 @@ Pick an icon theme and a cursor theme from what's installed, with a preview of e
 
 ---
 
+## GTK and Qt
+
+This page shows only when GTK 3 or Kvantum is installed, with a card for each one that is.
+
+Click a theme to preview it. The preview is a set of real widgets drawn by GTK or Kvantum
+themselves, offscreen, so nothing opens on your screen. Nothing changes until you press **Use**.
+
+* **GTK 3 apps**: lists the themes in `~/.local/share/themes`, `~/.themes` and
+  `/usr/share/themes` that have GTK 3 files. **Use** sets the theme in gsettings and in GTK's
+  `settings.ini`, and most open apps switch at once. The preview includes your own `gtk.css`, so
+  it shows what your apps will look like. A theme with colors of its own keeps them whatever your
+  color scheme is; the page says which themes follow the scheme. GTK 4 apps built on libadwaita
+  take no theme, so they follow the Colors page instead.
+* **Qt apps (Kvantum)**: lists the themes in `~/.config/Kvantum` and `/usr/share/Kvantum`.
+  **Use** sets the theme in Kvantum's settings and makes Kvantum the style in qt6ct and qt5ct.
+  If you have applied a color scheme, **Recolor it with your color scheme** uses the theme's
+  shapes with your colors, and the Colors page keeps it up to date from then on. Qt apps change
+  the next time they start.
+* If your `hyprland.lua` sets the GTK theme with gsettings, a theme used here lasts only until
+  Hyprland reloads. **Take it out** comments out that line.
+
+---
+
+## Bar
+
+A bar for the top or bottom of the screen: a clock (with a month calendar on hover),
+workspaces, the window title, what is playing, the tray, volume, Bluetooth, network, CPU and
+memory. It runs in [Quickshell](https://quickshell.org), which you install yourself; the page
+says when it is missing.
+
+* **Set up the bar** writes it to `~/.config/quickshell/hyprcustard/`, beside any Quickshell
+  config of your own, and it runs as `qs -c hyprcustard`. **Start it**, **Stop it** and
+  **Restart it** work on the running bar.
+* **Everything on the page applies at once**, to a running bar too, without a restart:
+  which monitors it is on, top or bottom, its size and spacing, opacity, font, which modules
+  show, the clock format, workspace labels, and what clicking volume or Bluetooth opens.
+* **Icons** use a Nerd Font when one is installed, and words otherwise. A module with nothing
+  to show hides itself: media while nothing plays, Bluetooth without an adapter.
+* **Colors** come from the Colors page, which lists the bar as one of its apps. A new scheme
+  shows on the bar at once.
+* **At login**: **Start it at login** adds a `HyprCustard bar` block to `hyprland.lua`. If your
+  config already starts a bar (Waybar, your own Quickshell, and others), the page shows those
+  lines. **Start it instead** comments them out so only this bar starts, and **Give them
+  back** restores them.
+* The folder belongs to hyprcustard and is rewritten when the app updates. To make the bar
+  your own, copy the folder under another name and start that one. **Remove the bar** deletes
+  only the files hyprcustard wrote, and takes its start out of your config.
+
+---
+
 ## Rules and Layers
 
 These pages are for the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade) plugin,
@@ -528,6 +584,8 @@ the window opens after a minute anyway.
 | A wallpaper taking over your login line | **Give it back** on the Wallpaper page |
 | Colors taking over your Waybar or Rofi colors | **Give them back** under that app on the Colors page |
 | The cursor taking over your config's lines | **Give them back** on the Icons page |
+| The bar taking over your config's bar lines | **Give them back** on the Bar page |
+| A theme used on the GTK and Qt page | Use your old one again on the same page; Kvantum's and qt6ct's settings are backed up first |
 | The shader block | **Remove managed block** on the Preview page |
 | Anything else | Copy a file back from `~/.config/hyprcustard/backups/` |
 

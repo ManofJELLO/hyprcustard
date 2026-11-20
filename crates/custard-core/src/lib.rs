@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 pub mod autostart;
+pub mod bar;
 pub mod block;
 pub mod colors;
 pub mod emit;
@@ -44,6 +45,7 @@ pub mod settings;
 pub mod shader;
 pub mod theirs;
 pub mod theme;
+pub mod toolkit_themes;
 pub mod walls;
 
 // Run by `make upstream-check` before a release.

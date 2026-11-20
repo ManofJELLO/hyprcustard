@@ -4,6 +4,7 @@
 
 pub mod bridge;
 pub mod instance;
+pub mod render;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
@@ -40,6 +41,24 @@ fn main() {
             None => args.get(1).map(String::as_str),
         };
         std::process::exit(custard_core::hyprpm::askpass(prompt.unwrap_or("Password:")));
+    }
+
+    // The GTK and Qt page's previews: this program again, started by the app
+    // to draw one offscreen and exit. See custard_core::toolkit_themes.
+    use custard_core::toolkit_themes::{GTK_PREVIEW_FLAG, QT_PREVIEW_FLAG};
+    if let Some(i) = args.iter().position(|a| a == GTK_PREVIEW_FLAG || a == QT_PREVIEW_FLAG) {
+        let arg = |n: usize| args.get(i + n).map(String::as_str).unwrap_or("");
+        let out = std::path::Path::new(arg(1));
+        let done = if args[i] == GTK_PREVIEW_FLAG {
+            render::render_gtk(out)
+        } else {
+            render::render_qt(out, arg(2), arg(3))
+        };
+        if let Err(e) = done {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+        return;
     }
 
     // Answered without opening a window, as a packaged binary should: a
