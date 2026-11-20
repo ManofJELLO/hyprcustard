@@ -144,7 +144,7 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
     .unwrap();
 
     let scheme = named::builtins().iter().find(|n| n.id == "nord").unwrap().scheme();
-    let machine = Machine { nerd_font: true, mixer: None, bluetooth: None };
+    let machine = Machine { nerd_font: true, ..Default::default() };
     // Opaque, so a pixel of the bar is the scheme's background exactly.
     let mut settings = BarSettings { opacity: 1.0, ..Default::default() };
     bar::install(&home, &settings, &machine, &scheme).unwrap();
@@ -234,6 +234,53 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             .unwrap_or_else(|| panic!("the bar did not turn {want}"));
         shot(&nested.socket, "bar-recolored");
         assert_eq!(bar_layers(&nested.sig).len(), 1, "still one bar");
+
+        // The launcher and the power menu open and close over IPC, centered
+        // on the screen, and only one at a time of each.
+        settings.icons = "glyphs".into();
+        settings.modules = BarSettings::default().modules;
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let program = bar::program().unwrap();
+        let ipc = |target: &str, call: &str| {
+            let out = Command::new(&program)
+                .args(["ipc", "-p"])
+                .arg(bar::dir(&home))
+                .args(["call", target, call])
+                // It looks for the bar on this display only.
+                .env("WAYLAND_DISPLAY", &nested.socket)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "qs ipc call {target} {call}: {out:?}");
+        };
+        for (target, name) in [("launcher", "launcher"), ("power", "power-menu")] {
+            ipc(target, "toggle");
+            let menu = wait_for(5, || {
+                let layers = bar_layers(&nested.sig);
+                (layers.len() == 2).then(|| layers.into_iter().find(|l| l.2 < 1400).unwrap())
+            })
+            .unwrap_or_else(|| panic!("the {name} did not open: {:?}", bar_layers(&nested.sig)));
+            assert!((menu.0 + menu.2 / 2 - 800).abs() <= 1, "{name} centered across: {menu:?}");
+            assert!((menu.1 + menu.3 / 2 - 250).abs() <= 1, "{name} centered down: {menu:?}");
+            std::thread::sleep(Duration::from_millis(600));
+            shot(&nested.socket, name);
+            if target == "launcher" {
+                let out = Command::new(&program)
+                    .args(["ipc", "-p"])
+                    .arg(bar::dir(&home))
+                    .args(["call", "launcher", "search", "term"])
+                    .env("WAYLAND_DISPLAY", &nested.socket)
+                    .output()
+                    .unwrap();
+                assert!(out.status.success(), "{out:?}");
+                std::thread::sleep(Duration::from_millis(400));
+                shot(&nested.socket, "launcher-search");
+            }
+            ipc(target, "open");
+            assert_eq!(bar_layers(&nested.sig).len(), 2, "opening it again adds none");
+            ipc(target, "toggle");
+            wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
+                .unwrap_or_else(|| panic!("the {name} did not close"));
+        }
     }));
 
     let _ = qs.kill();

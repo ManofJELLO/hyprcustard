@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::Session;
 use crate::error::{Error, Result};
-use crate::{bar, colors, hyprctl, paths};
+use crate::{bar, bar_keys, colors, hyprctl, paths};
 
 /// What the page last found about the machine.
 #[derive(Debug, Clone, Default)]
@@ -107,6 +107,36 @@ impl Session {
                     if moved == 1 { "it" } else { "them" },
                 )))
             }
+            "bar.keys" => {
+                let kind = payload
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .and_then(bar_keys::Kind::from_id)
+                    .ok_or_else(|| Error::other("bar.keys takes kind: launcher or power"))?;
+                let on = payload.get("on").and_then(Value::as_bool).unwrap_or(true);
+                let program = self.bar_program()?;
+                self.bar_ready()?;
+                let path = self.settings.resolved_config_path();
+                let text = paths::read_to_string(&path)?;
+                let next = if on {
+                    bar_keys::hand_over(&text, kind, &program, &home)?
+                } else {
+                    bar_keys::give_back(&text, kind, &program, &home)?
+                };
+                self.write_config_text(&path, &text, &next)?;
+                let what = match kind {
+                    bar_keys::Kind::Launcher => "launcher",
+                    bar_keys::Kind::Power => "power menu",
+                };
+                Ok(Some(if on {
+                    format!(
+                        "The key now opens the bar's {what}, and still runs your old command                          while the bar is not running. Your line in {} is commented out",
+                        paths::contract(&path)
+                    )
+                } else {
+                    format!("Your {what} key is back as it was")
+                }))
+            }
             other => Err(Error::other(format!("unknown command `{other}`"))),
         }
     }
@@ -150,13 +180,13 @@ impl Session {
             let path = self.settings.resolved_config_path();
             if path.exists() {
                 let text = paths::read_to_string(&path)?;
-                let next = bar::give_back(&text)?;
+                let next = bar_keys::give_back_all(&bar::give_back(&text)?)?;
                 self.write_config_text(&path, &text, &next)?;
             }
             bar::uninstall(&home)?;
             Ok(format!(
-                "Removed the bar from {}, and its start from your config. Its settings \
-                 are kept, should you set it up again",
+                "Removed the bar from {}, and its start and keys from your config. Its \
+                 settings are kept, should you set it up again",
                 paths::contract(&bar::dir(&home))
             ))
         });
@@ -227,6 +257,32 @@ impl Session {
         let line =
             |l: &bar::Line| json!({ "number": l.number, "text": l.text, "movable": l.movable });
         let program = if cfg!(test) { None } else { bar::program() };
+        let keys: serde_json::Map<String, Value> =
+            [bar_keys::Kind::Launcher, bar_keys::Kind::Power]
+                .iter()
+                .map(|&kind| {
+                    let of = |binds: &[bar_keys::Bind]| {
+                        binds
+                    .iter()
+                    .filter(|b| b.kind == kind)
+                    .map(|b| json!({ "number": b.number, "text": b.text, "movable": b.movable }))
+                    .collect::<Vec<_>>()
+                    };
+                    let command = bar_keys::ipc_command(
+                        program.as_deref().unwrap_or(std::path::Path::new("qs")),
+                        &home,
+                        kind,
+                    );
+                    (
+                        kind.target().to_string(),
+                        json!({
+                            "lines": of(&self.desk.bar_keys),
+                            "moved": of(&self.desk.bar_keys_moved),
+                            "command": command,
+                        }),
+                    )
+                })
+                .collect();
         json!({
             "settings": self.settings.bar,
             "scanned": scan.is_some(),
@@ -248,6 +304,9 @@ impl Session {
             "nerdFont": machine.nerd_font,
             "mixerFound": machine.mixer,
             "bluetoothFound": machine.bluetooth,
+            "terminalFound": machine.terminal,
+            "power": bar::power_commands(&bar::BarSettings::default(), &machine),
+            "keys": keys,
             "startup": {
                 "config": paths::contract(&config),
                 "managed": self.desk.bar_login_block.is_some(),

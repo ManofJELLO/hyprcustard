@@ -122,6 +122,10 @@ struct Desk {
     bar_login_lines: Vec<crate::bar::Line>,
     bar_login_moved: Vec<crate::bar::Line>,
     bar_login_block: Option<(usize, String)>,
+    /// Key bindings that open a launcher or power menu, and those handed
+    /// over to the bar's.
+    bar_keys: Vec<crate::bar_keys::Bind>,
+    bar_keys_moved: Vec<crate::bar_keys::Bind>,
 }
 
 /// Which part of the app noticed a problem.
@@ -1135,6 +1139,8 @@ impl Session {
             bar_login_lines: crate::bar::user_lines(&text),
             bar_login_moved: crate::bar::moved_lines(&text),
             bar_login_block: crate::bar::block_text(&text),
+            bar_keys: crate::bar_keys::user_binds(&text),
+            bar_keys_moved: crate::bar_keys::moved_binds(&text),
             cursor_lines: crate::icons::user_lines(&text),
             cursor_moved: crate::icons::moved_lines(&text),
             cursor_managed: crate::icons::managed(&text),
@@ -3186,6 +3192,18 @@ mod tests {
         s.command("bar.set", &json!({ "height": 1 })).unwrap();
         assert_eq!(s.settings.bar.height, 20, "clamped");
         assert_eq!(s.state()["bar"]["settings"]["position"], "bottom");
+
+        s.command("bar.set", &json!({ "terminal": "foot -e", "power_reboot": "my-reboot" }))
+            .unwrap();
+        assert_eq!(s.settings.bar.terminal, "foot -e");
+        let bar = &s.state()["bar"];
+        assert!(bar["keys"]["launcher"]["command"]
+            .as_str()
+            .unwrap()
+            .ends_with("call launcher toggle"));
+        assert!(bar["keys"]["power"]["lines"].is_array());
+        assert_eq!(bar["power"]["shutdown"], "systemctl poweroff", "what an empty field runs");
+        assert!(s.command("bar.keys", &json!({ "kind": "neither" })).is_err());
     }
 
     #[test]

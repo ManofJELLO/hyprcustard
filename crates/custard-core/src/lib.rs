@@ -23,6 +23,7 @@
 
 pub mod autostart;
 pub mod bar;
+pub mod bar_keys;
 pub mod block;
 pub mod colors;
 pub mod emit;

@@ -25,7 +25,8 @@ What you can do with it:
 * **GTK and Qt themes**: preview the GTK 3 and Kvantum themes you have installed, drawn by the
   toolkit itself, and use one with a click. A Kvantum theme can take on your color scheme.
 * **Bar**: a ready-made bar for the top or bottom of the screen, running in Quickshell, that
-  follows your color scheme. Set it up, choose what it shows, and have it start at login.
+  follows your color scheme, with its own app launcher and power menu. Set it up, choose what
+  it shows, and have it start at login.
 * **Window shaders**: if you use the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade)
   plugin, set up its shaders on windows, bars and launchers, tune them with sliders, and preview
   them on a real window before you save.
@@ -433,7 +434,7 @@ themselves, offscreen, so nothing opens on your screen. Nothing changes until yo
 
 A bar for the top or bottom of the screen: a clock (with a month calendar on hover),
 workspaces, the window title, what is playing, the tray, volume, Bluetooth, network, CPU and
-memory. It runs in [Quickshell](https://quickshell.org), which you install yourself; the page
+memory, with an app launcher and a power menu of its own. It runs in [Quickshell](https://quickshell.org), which you install yourself; the page
 says when it is missing.
 
 * **Set up the bar** writes it to `~/.config/quickshell/hyprcustard/`, beside any Quickshell
@@ -451,9 +452,23 @@ says when it is missing.
   config already starts a bar (Waybar, your own Quickshell, and others), the page shows those
   lines. **Start it instead** comments them out so only this bar starts, and **Give them
   back** restores them.
+* **Launcher and power menu**, both in the bar's colors and font and opened on the focused
+  monitor, from the bar's **Launcher** and **Power menu** buttons or a key:
+  * The launcher searches the installed apps by name, kind and keywords; apps you start often
+    come first. Up and Down (also Tab, Ctrl+N/P) move, Enter starts, Esc closes. Apps that run
+    in a terminal open in the one the page names.
+  * The power menu has Lock, Log out, Suspend, Reboot and Shut down, each command changeable
+    on the page. Log out, Reboot and Shut down ask first.
+  * If a key in `hyprland.lua` opens rofi, wofi, fuzzel or another launcher, or a power menu,
+    **Open the launcher with this key instead** comments that line out and binds the same key
+    in a `HyprCustard keys` block. While the bar is not running, the key still runs your old
+    command. **Give it back** restores the line.
+  * Without such a key, bind one yourself to `qs ipc -p ~/.config/quickshell/hyprcustard call
+    launcher toggle` (or `call power toggle`); `call launcher search <text>` opens it with text
+    already typed.
 * The folder belongs to hyprcustard and is rewritten when the app updates. To make the bar
   your own, copy the folder under another name and start that one. **Remove the bar** deletes
-  only the files hyprcustard wrote, and takes its start out of your config.
+  only the files hyprcustard wrote, and takes its start and keys out of your config.
 
 ---
 
@@ -586,6 +601,7 @@ the window opens after a minute anyway.
 | Colors taking over your Waybar or Rofi colors | **Give them back** under that app on the Colors page |
 | The cursor taking over your config's lines | **Give them back** on the Icons page |
 | The bar taking over your config's bar lines | **Give them back** on the Bar page |
+| The bar's launcher or power menu taking over your key | **Give it back** on the Bar page |
 | A theme used on the GTK and Qt page | Use your old one again on the same page; Kvantum's and qt6ct's settings are backed up first |
 | The shader block | **Remove managed block** on the Preview page |
 | Anything else | Copy a file back from `~/.config/hyprcustard/backups/` |

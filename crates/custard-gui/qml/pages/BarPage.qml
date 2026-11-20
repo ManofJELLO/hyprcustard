@@ -542,6 +542,156 @@ Item {
                     }
                 }
             }
+
+            // -----------------------------------------------------------
+            Card {
+                Layout.fillWidth: true
+                title: "Launcher and power menu"
+                subtitle: "An app launcher and a power menu that live in the bar, in its colors and "
+                          + "font. The Launcher and Power menu buttons on the bar open them, and so can "
+                          + "a key: hand over the one that opens another launcher or power menu."
+
+                Repeater {
+                    model: [
+                        { id: "launcher", label: "Key for the launcher", what: "launcher",
+                          button: "Open the launcher with this key instead" },
+                        { id: "power", label: "Key for the power menu", what: "power menu",
+                          button: "Open the power menu with this key instead" }
+                    ]
+
+                    FieldRow {
+                        id: keyRow
+                        required property var modelData
+                        readonly property var keys: (page.bar.keys || {})[modelData.id] || ({})
+                        readonly property var lines: keyRow.keys.lines || []
+                        readonly property var moved: keyRow.keys.moved || []
+                        readonly property bool stuck: keyRow.lines.some(function (l) { return !l.movable })
+
+                        width: parent.width
+                        label: modelData.label
+                        hint: !page.installed
+                              ? "Set the bar up first."
+                              : keyRow.moved.length > 0
+                                ? "This key opens the bar's " + modelData.what + ". While the bar is not "
+                                  + "running it runs your old command, so the key always does something."
+                                : keyRow.stuck
+                                  ? "This binding is not a single hl.bind(...) on its own line at the top "
+                                    + "of the file, so hyprcustard will not move it. Bind a key to the "
+                                    + "command below yourself."
+                                  : keyRow.lines.length > 0
+                                    ? "Your line is commented out (marked, so Give it back restores it) "
+                                      + "and the same key opens the bar's " + modelData.what + ". A backup "
+                                      + "is made first."
+                                    : "Nothing in your config opens a " + modelData.what + ". Bind a key "
+                                      + "to the command below."
+
+                        Column {
+                            width: parent.width
+                            spacing: Theme.gapSmall
+
+                            Repeater {
+                                model: keyRow.moved.concat(keyRow.lines)
+                                Text {
+                                    required property var modelData
+                                    readonly property bool isMoved: keyRow.moved.indexOf(modelData) >= 0
+                                    width: parent ? parent.width : 0
+                                    text: (isMoved ? "handed over, line " : "line ") + modelData.number
+                                          + ":  " + modelData.text
+                                    color: isMoved ? Theme.muted : modelData.movable === false ? Theme.warn : Theme.fg
+                                    font.family: Theme.monoFamily
+                                    font.pixelSize: Theme.fontSizeSmall
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            TextEdit {
+                                visible: keyRow.lines.length === 0 && keyRow.moved.length === 0 || keyRow.stuck
+                                width: parent.width
+                                readOnly: true
+                                selectByMouse: true
+                                wrapMode: TextEdit.WrapAnywhere
+                                text: keyRow.keys.command || ""
+                                color: Theme.fg
+                                font.family: Theme.monoFamily
+                                font.pixelSize: Theme.fontSizeSmall
+                            }
+
+                            RowLayout {
+                                visible: page.installed && (keyRow.lines.length > 0 || keyRow.moved.length > 0)
+                                spacing: Theme.gapSmall
+                                PillButton {
+                                    visible: keyRow.moved.length === 0
+                                    enabled: !keyRow.stuck
+                                    text: keyRow.modelData.button
+                                    onClicked: App.run("bar.keys", { kind: keyRow.modelData.id, on: true })
+                                }
+                                PillButton {
+                                    visible: keyRow.moved.length > 0
+                                    text: "Give it back"
+                                    tooltip: "Put your own line back as it was"
+                                    onClicked: App.run("bar.keys", { kind: keyRow.modelData.id, on: false })
+                                }
+                            }
+                        }
+                    }
+                }
+
+                FieldRow {
+                    width: parent.width
+                    label: "Terminal for terminal apps"
+                    hint: page.bar.terminalFound
+                          ? "Apps that run in a terminal (btop, yazi…) open in this. Empty uses "
+                            + page.bar.terminalFound + "."
+                          : "No terminal was found; name one, with what goes before the app's command "
+                            + "(such as kitty -e)."
+                    LineEdit {
+                        width: parent.width
+                        mono: true
+                        text: page.choice.terminal || ""
+                        placeholderText: page.bar.terminalFound || "kitty -e"
+                        onCommit: function (v) { page.set({ terminal: v }) }
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Power menu commands. Log out, Reboot and Shut down ask first; a command "
+                          + "left empty runs the one shown."
+                    color: Theme.fgDim
+                    font.pixelSize: Theme.fontSize
+                }
+
+                Repeater {
+                    model: [
+                        { id: "lock", label: "Lock" },
+                        { id: "logout", label: "Log out" },
+                        { id: "suspend", label: "Suspend" },
+                        { id: "reboot", label: "Reboot" },
+                        { id: "shutdown", label: "Shut down" }
+                    ]
+
+                    FieldRow {
+                        id: powerRow
+                        required property var modelData
+                        readonly property string fallback: (page.bar.power || {})[modelData.id] || ""
+
+                        width: parent.width
+                        label: modelData.label
+                        LineEdit {
+                            width: parent.width
+                            mono: true
+                            text: page.choice["power_" + powerRow.modelData.id] || ""
+                            placeholderText: powerRow.fallback
+                            onCommit: function (v) {
+                                var change = {}
+                                change["power_" + powerRow.modelData.id] = v
+                                page.set(change)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

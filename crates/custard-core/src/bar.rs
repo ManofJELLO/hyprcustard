@@ -62,11 +62,17 @@ pub const FILES: &[(&str, &str)] = &[
     ("NetworkModule.qml", include_str!("../bar/NetworkModule.qml")),
     ("CpuModule.qml", include_str!("../bar/CpuModule.qml")),
     ("MemoryModule.qml", include_str!("../bar/MemoryModule.qml")),
+    ("LauncherModule.qml", include_str!("../bar/LauncherModule.qml")),
+    ("PowerModule.qml", include_str!("../bar/PowerModule.qml")),
+    ("Panel.qml", include_str!("../bar/Panel.qml")),
+    ("Launcher.qml", include_str!("../bar/Launcher.qml")),
+    ("PowerMenu.qml", include_str!("../bar/PowerMenu.qml")),
 ];
 
 /// The modules, in the order they sit on the bar, with what the page calls
 /// them.
 pub const MODULES: &[(&str, &str)] = &[
+    ("launcher", "Launcher"),
     ("clock", "Clock"),
     ("workspaces", "Workspaces"),
     ("window", "Window title"),
@@ -77,6 +83,7 @@ pub const MODULES: &[(&str, &str)] = &[
     ("network", "Network"),
     ("cpu", "CPU"),
     ("memory", "Memory"),
+    ("power", "Power menu"),
 ];
 
 /// Mixers the volume module can open, best first.
@@ -84,6 +91,20 @@ const MIXERS: &[&str] = &["pwvucontrol", "pavucontrol", "pavucontrol-qt", "hyprp
 
 /// Bluetooth apps with a window of their own, best first.
 const BLUETOOTH_APPS: &[&str] = &["blueman-manager", "overskride", "blueberry"];
+
+/// Screen lockers, best first, with the command that locks at once.
+const LOCKERS: &[(&str, &str)] =
+    &[("hyprlock", "hyprlock"), ("swaylock", "swaylock -f"), ("gtklock", "gtklock -d")];
+
+/// The power menu's commands when neither the page nor the machine names
+/// one. Log out tries a Lua config's dispatcher first, then a .conf one's.
+pub const POWER_DEFAULTS: &[(&str, &str)] = &[
+    ("lock", "loginctl lock-session"),
+    ("logout", "hyprctl dispatch 'hl.dsp.exit()' || hyprctl dispatch exit"),
+    ("suspend", "systemctl suspend"),
+    ("reboot", "systemctl reboot"),
+    ("shutdown", "systemctl poweroff"),
+];
 
 /// Bluetooth apps that run in a terminal.
 const BLUETOOTH_TUIS: &[&str] = &["bluetui", "bluetuith"];
@@ -129,6 +150,21 @@ pub struct BarSettings {
     pub mixer: String,
     /// What clicking Bluetooth runs. Empty: a Bluetooth app that is installed.
     pub bluetooth: String,
+    /// What the launcher puts before an app that runs in a terminal, such as
+    /// `kitty -e`. Empty: a terminal that is installed.
+    pub terminal: String,
+    /// The power menu's Lock. Empty: the locker [`Machine`] found, else
+    /// `loginctl lock-session`. Each of these is left out of the menu when
+    /// the bar is given an empty command.
+    pub power_lock: String,
+    /// Log out. Empty: Hyprland's exit dispatcher.
+    pub power_logout: String,
+    /// Suspend. Empty: `systemctl suspend`.
+    pub power_suspend: String,
+    /// Reboot. Empty: `systemctl reboot`.
+    pub power_reboot: String,
+    /// Shut down. Empty: `systemctl poweroff`.
+    pub power_shutdown: String,
 }
 
 impl Default for BarSettings {
@@ -151,6 +187,12 @@ impl Default for BarSettings {
             player: String::new(),
             mixer: String::new(),
             bluetooth: String::new(),
+            terminal: String::new(),
+            power_lock: String::new(),
+            power_logout: String::new(),
+            power_suspend: String::new(),
+            power_reboot: String::new(),
+            power_shutdown: String::new(),
         }
     }
 }
@@ -195,6 +237,10 @@ pub struct Machine {
     pub mixer: Option<String>,
     /// The Bluetooth app found, as a command.
     pub bluetooth: Option<String>,
+    /// The terminal found, as the command an app's own command follows.
+    pub terminal: Option<String>,
+    /// The screen locker found, as a command.
+    pub lock: Option<String>,
 }
 
 impl Machine {
@@ -213,7 +259,16 @@ impl Machine {
             argv.push(tui.to_string());
             Some(argv.iter().map(|a| crate::walls::startup::quote(a)).collect::<Vec<_>>().join(" "))
         });
-        Self { nerd_font: nerd_font(), mixer: first(MIXERS), bluetooth }
+        let terminal = crate::hyprpm::terminal().map(|(term, args)| {
+            std::iter::once(term.to_string_lossy().into_owned())
+                .chain(args)
+                .map(|a| crate::walls::startup::quote(&a))
+                .collect::<Vec<_>>()
+                .join(" ")
+        });
+        let lock =
+            LOCKERS.iter().find(|(p, _)| paths::which(p).is_some()).map(|(_, c)| c.to_string());
+        Self { nerd_font: nerd_font(), mixer: first(MIXERS), bluetooth, terminal, lock }
     }
 }
 
@@ -379,6 +434,37 @@ pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::V
         "player": settings.player,
         "mixer": pick(&settings.mixer, &machine.mixer),
         "bluetooth": pick(&settings.bluetooth, &machine.bluetooth),
+        "terminal": pick(&settings.terminal, &machine.terminal),
+        "power": power_commands(settings, machine),
+    })
+}
+
+/// The power menu's commands, each the page's, else the machine's, else
+/// the usual one.
+pub fn power_commands(settings: &BarSettings, machine: &Machine) -> serde_json::Value {
+    let fallback = |id: &str| {
+        POWER_DEFAULTS
+            .iter()
+            .find(|(k, _)| *k == id)
+            .map(|(_, c)| c.to_string())
+            .unwrap_or_default()
+    };
+    let pick = |mine: &str, id: &str| {
+        let mine = mine.trim();
+        if !mine.is_empty() {
+            return mine.to_string();
+        }
+        match id {
+            "lock" => machine.lock.clone().unwrap_or_else(|| fallback(id)),
+            _ => fallback(id),
+        }
+    };
+    json!({
+        "lock": pick(&settings.power_lock, "lock"),
+        "logout": pick(&settings.power_logout, "logout"),
+        "suspend": pick(&settings.power_suspend, "suspend"),
+        "reboot": pick(&settings.power_reboot, "reboot"),
+        "shutdown": pick(&settings.power_shutdown, "shutdown"),
     })
 }
 
@@ -766,6 +852,8 @@ mod tests {
             nerd_font: false,
             mixer: Some("pavucontrol".into()),
             bluetooth: Some("blueman-manager".into()),
+            terminal: Some("foot -e".into()),
+            lock: Some("hyprlock".into()),
         };
         let mut s = BarSettings::default();
         let j = settings_json(&s, &m);
@@ -781,6 +869,13 @@ mod tests {
             (Some(true), Some("my-mixer --tab 3"))
         );
         assert_eq!(j["bluetooth"], "blueman-manager");
+        assert_eq!(j["terminal"], "foot -e");
+        assert_eq!(j["power"]["lock"], "hyprlock");
+        assert_eq!(j["power"]["reboot"], "systemctl reboot");
+        s.power_reboot = " my-reboot ".into();
+        let j = settings_json(&s, &Machine::default());
+        assert_eq!(j["power"]["reboot"], "my-reboot");
+        assert_eq!(j["power"]["lock"], "loginctl lock-session");
     }
 
     #[test]

@@ -42,14 +42,25 @@ Singleton {
     readonly property string font: get("font", "")
     readonly property int fontSize: get("font_size", 11)
     readonly property bool glyphs: get("glyphs", true)
-    readonly property var modules: get("modules", ["clock", "workspaces", "window", "media", "tray",
-                                                   "volume", "bluetooth", "network", "cpu", "memory"])
+    readonly property var modules: get("modules", ["launcher", "clock", "workspaces", "window", "media",
+                                                   "tray", "volume", "bluetooth", "network", "cpu",
+                                                   "memory", "power"])
     readonly property string clockFormat: get("clock_format", "ddd MM/dd  h:mm AP")
     readonly property bool workspacesPerMonitor: get("workspaces_per_monitor", false)
     readonly property var workspaceLabels: get("workspace_labels", [])
     readonly property string player: get("player", "")
     readonly property string mixer: get("mixer", "")
     readonly property string bluetoothApp: get("bluetooth", "")
+    // Put before the command of an app that runs in a terminal, e.g. "kitty -e".
+    readonly property string terminal: get("terminal", "")
+    // The power menu's commands; an empty one leaves its button out.
+    readonly property var power: get("power", ({
+        lock: "loginctl lock-session",
+        logout: "hyprctl dispatch 'hl.dsp.exit()' || hyprctl dispatch exit",
+        suspend: "systemctl suspend",
+        reboot: "systemctl reboot",
+        shutdown: "systemctl poweroff"
+    }))
 
     function has(id) { return root.modules.indexOf(id) >= 0; }
     function run(command) { if (command !== "") Quickshell.execDetached(["sh", "-c", command]); }

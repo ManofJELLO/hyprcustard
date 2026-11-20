@@ -42,4 +42,7 @@ Singleton {
     readonly property color green: pick("base0B", "#b8bb26")
     readonly property color blue: pick("base0D", "#83a598")
     readonly property color shadow: pick("shadow", "#000000")
+    // The launcher's and power menu's selected row, and their quieter text.
+    readonly property color selection: pick("surface_container_high", "#3c3836")
+    readonly property color dim: pick("on_surface_variant", "#a89984")
 }

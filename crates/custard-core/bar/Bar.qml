@@ -7,6 +7,8 @@ PanelWindow {
     id: bar
 
     required property var modelData
+    required property var launcher
+    required property var powerMenu
     screen: modelData
 
     // Room around the box for its shadow.
@@ -61,6 +63,7 @@ PanelWindow {
         RowLayout {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
             spacing: 0
+            LauncherModule { shown: Config.has("launcher"); launcher: bar.launcher }
             ClockModule { shown: Config.has("clock") }
             WorkspacesModule { shown: Config.has("workspaces"); screen: bar.screen }
         }
@@ -85,6 +88,7 @@ PanelWindow {
             NetworkModule { shown: Config.has("network") }
             CpuModule { shown: Config.has("cpu") }
             MemoryModule { shown: Config.has("memory") }
+            PowerModule { shown: Config.has("power"); menu: bar.powerMenu }
         }
     }
 }
