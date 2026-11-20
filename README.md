@@ -19,7 +19,7 @@ What you can do with it:
 * **Wallpaper**: browse your wallpapers and put one up, through the wallpaper program you
   already use.
 * **Colors**: one color scheme, from a palette, your wallpaper or a color you pick, written for
-  Hyprland, Waybar, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt apps. It can keep
+  Hyprland, Waybar, Quickshell, Rofi, Dunst, kitty, Ghostty, Starship, and GTK and Qt apps. It can keep
   following your wallpaper as it changes.
 * **Icons and cursors**: choose an icon theme and a cursor theme for every app at once.
 * **Window shaders**: if you use the [HyprWindowShade](https://github.com/ManofJELLO/HyprWindowShade)
@@ -338,7 +338,7 @@ For the wallpaper and a picked color you also choose:
 | App | What changes |
 |---|---|
 | Hyprland | border and shadow colors |
-| Waybar, Rofi | named colors for your style to use |
+| Waybar, Rofi, Quickshell | named colors for your style to use |
 | Dunst | backgrounds, text and frames |
 | kitty, Ghostty | the terminal palette, cursor and selection |
 | Starship | the prompt's colors |
@@ -348,9 +348,11 @@ For the wallpaper and a picked color you also choose:
 Each app gets a colors file next to its config. That file only takes effect once the app's
 config loads it, and your configs are yours, so for each app the page shows whether it does,
 the one line it needs, and an **Add it for me** button. The button backs the config up first.
+Quickshell is the exception: its file is a QML singleton beside your `shell.qml`, so there is
+no line to add. Use `HyprcustardColors.primary` and the other names in your shell's QML.
 
-After **Apply**, running apps reload where they can: Hyprland, Waybar, kitty, Ghostty and Dunst
-change at once, and Rofi on its next open. GTK and Qt apps that are already open keep their
+After **Apply**, running apps reload where they can: Hyprland, Waybar, Quickshell, kitty, Ghostty
+and Dunst change at once, and Rofi on its next open. GTK and Qt apps that are already open keep their
 colors until you restart them.
 
 **Your own colors.** A Waybar style or Rofi theme usually sets its own colors, which hide the
@@ -535,8 +537,8 @@ hyprwindowshade-gui` for the shader block) and the folder `~/.config/hyprcustard
 
 ## Good to know
 
-* **Open apps keep their old colors and icons** until restarted. Hyprland, Waybar, kitty,
-  Ghostty and Dunst are the exceptions, and change at once.
+* **Open apps keep their old colors and icons** until restarted. Hyprland, Waybar,
+  Quickshell, kitty, Ghostty and Dunst are the exceptions, and change at once.
 * **A color set on the Look page and the Colors page compete** for Hyprland's borders. Whichever
   comes later in your config wins, and the page tells you when both are set.
 * **Fullscreen windows get no shaders** unless a rule sets **While fullscreen** or **Keep

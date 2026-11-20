@@ -805,6 +805,7 @@ Item {
                                     visible: row.t.on
                                     text: row.t.wired ? "Loads the colors"
                                           : row.t.id === "dunst" ? "Needs its own dunstrc"
+                                          : row.t.id === "quickshell" ? "Not used yet"
                                           : row.t.replaces ? "Its gtk.css is a theme"
                                           : row.t.id === "kvantum" ? "Not the Kvantum theme"
                                           : row.t.id === "starship" ? "Not on the palette"
@@ -1046,13 +1047,17 @@ Item {
                                 Text {
                                     visible: row.t.line === ""
                                     Layout.fillWidth: true
-                                    text: "Dunst reads extra settings only beside your own "
-                                          + row.t.config + ", and you are using the system one."
+                                    text: row.t.id === "quickshell"
+                                          ? "No QML file of your shell uses HyprcustardColors yet. "
+                                            + "Point a color at it, such as HyprcustardColors.primary."
+                                          : "Dunst reads extra settings only beside your own "
+                                            + row.t.config + ", and you are using the system one."
                                     wrapMode: Text.WordWrap
                                     color: Theme.fgDim
                                     font.pixelSize: Theme.fontSizeSmall
                                 }
                                 PillButton {
+                                    visible: row.t.id !== "quickshell"
                                     text: row.t.line === "" ? "Make my own dunstrc"
                                           : row.t.replaces ? "Set it aside for me" : "Add it for me"
                                     tooltip: row.t.line === ""

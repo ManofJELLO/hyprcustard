@@ -23,6 +23,9 @@ use crate::error::{Error, Result};
 use crate::look::{config_call, LookValue};
 use crate::model::lua_quote;
 
+/// Quickshell's colors file: a QML singleton, so its name is the type name.
+const QS_FILE: &str = "HyprcustardColors.qml";
+
 /// The GTK colors file's name, beside each `gtk.css`.
 const GTK_FILE: &str = "hyprcustard-colors.css";
 
@@ -87,6 +90,7 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
         .unwrap_or_else(|| ghostty_dir.join("config.ghostty"));
     let dunst_base = config_home.join("dunst").join("dunstrc");
     let starship_config = starship::config_path(config_home);
+    let shell_dir = quickshell_dir(config_home);
 
     let mut list = vec![
         Target {
@@ -141,6 +145,25 @@ pub fn all_in(config_home: &Path, hypr_config: &Path, desk: &Desktop) -> Vec<Tar
                     line, so where your theme defines the same name (background, for \
                     one), the scheme's color is used. Colors your config defines itself \
                     keep your value, until you hand them over."
+                .into(),
+            warning: String::new(),
+            fix: String::new(),
+            replaces: false,
+        },
+        Target {
+            id: "quickshell",
+            name: "Quickshell",
+            installed: installed("quickshell") || installed("qs"),
+            config: shell_dir.join("shell.qml"),
+            file: shell_dir.join(QS_FILE),
+            line: String::new(),
+            place: "",
+            wired: uses_singleton(&shell_dir),
+            usage: "A QML singleton beside your shell.qml, so no line is needed: use \
+                    HyprcustardColors.primary, .on_surface, .base0D in your shell's QML \
+                    (files in a subfolder reach it after `import qs`). .surface_alpha and \
+                    friends follow the bar opacity. Quickshell reloads itself when the file \
+                    changes."
                 .into(),
             warning: String::new(),
             fix: String::new(),
@@ -432,6 +455,85 @@ fn loads(config: &Path, file: &Path) -> bool {
     })
 }
 
+/// The folder of the Quickshell config in use.
+///
+/// The one a running Quickshell was started with (`-c name` or `-p path`),
+/// else the default `quickshell/shell.qml`, else the only named config,
+/// else the default folder.
+fn quickshell_dir(config_home: &Path) -> PathBuf {
+    let root = config_home.join("quickshell");
+    // A test must never find, and so write into, a real shell's folder.
+    if !cfg!(test) {
+        let mut pids = crate::procs::named("qs");
+        pids.extend(crate::procs::named("quickshell"));
+        for pid in pids {
+            let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else { continue };
+            let args: Vec<String> =
+                raw.split(|b| *b == 0).map(|a| String::from_utf8_lossy(a).into_owned()).collect();
+            if let Some(dir) = quickshell_arg(&args, &root) {
+                return dir;
+            }
+        }
+    }
+    if root.join("shell.qml").is_file() {
+        return root;
+    }
+    let named: Vec<PathBuf> = std::fs::read_dir(&root)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.join("shell.qml").is_file())
+        .collect();
+    match named.as_slice() {
+        [only] => only.clone(),
+        _ => root,
+    }
+}
+
+/// The config folder a Quickshell command line names, if it names one.
+fn quickshell_arg(args: &[String], root: &Path) -> Option<PathBuf> {
+    let mut it = args.iter().skip(1);
+    while let Some(a) = it.next() {
+        let (flag, value) = match a.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (a.as_str(), None),
+        };
+        let mut value = || value.clone().or_else(|| it.next().cloned());
+        match flag {
+            "-c" | "--config" => return value().map(|n| root.join(n)),
+            "-p" | "--path" => {
+                let p = PathBuf::from(value()?);
+                return Some(if p.is_file() { p.parent()?.to_path_buf() } else { p });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Whether any QML file of a shell names the colors singleton.
+fn uses_singleton(dir: &Path) -> bool {
+    let ty = QS_FILE.trim_end_matches(".qml");
+    let mut todo = vec![(dir.to_path_buf(), 0)];
+    while let Some((d, depth)) = todo.pop() {
+        for p in
+            std::fs::read_dir(&d).into_iter().flatten().filter_map(|e| e.ok().map(|e| e.path()))
+        {
+            if p.is_dir() && depth < 4 {
+                todo.push((p, depth + 1));
+            } else if p.extension().is_some_and(|e| e == "qml")
+                && p.file_name().is_some_and(|n| n != QS_FILE)
+                && std::fs::read_to_string(&p).is_ok_and(|t| {
+                    t.lines().any(|l| !l.trim_start().starts_with("//") && l.contains(ty))
+                })
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Whether every line of a rofi config naming `file` comes before its last
 /// `@theme`, which discards what was defined before it.
 fn imports_before_theme(text: &str, file: &Path) -> bool {
@@ -518,6 +620,22 @@ pub fn render(id: &str, scheme: &Scheme, opacity: f64) -> String {
                     k.replace('_', "-"),
                     alpha(scheme.role(k))
                 ));
+            }
+            out.push_str("}\n");
+            out
+        }
+        "quickshell" => {
+            let mut out = String::from("pragma Singleton\n\n");
+            out.push_str(&header("//"));
+            out.push_str("\nimport QtQuick\nimport Quickshell\n\nSingleton {\n");
+            for (k, v) in &named {
+                out.push_str(&format!("    readonly property color {k}: \"{v}\"\n"));
+            }
+            // QML reads eight hex digits as #AARRGGBB.
+            let a = format!("{:02x}", (opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
+            for k in ALPHA_ROLES {
+                let hex = scheme.role(k).trim_start_matches('#');
+                out.push_str(&format!("    readonly property color {k}_alpha: \"#{a}{hex}\"\n"));
             }
             out.push_str("}\n");
             out
@@ -696,6 +814,11 @@ pub fn wire(target: &Target, keep: usize) -> Result<Option<PathBuf>> {
         let backup = crate::paths::backup(&target.config, keep)?;
         crate::paths::write_atomic(&target.config, &next)?;
         return Ok(backup);
+    }
+    if target.id == "quickshell" {
+        return Err(Error::other(
+            "Quickshell needs no line: use HyprcustardColors in your shell's QML",
+        ));
     }
     if target.id == "dunst" {
         // Dunst reads drop-ins only beside the dunstrc it is using, so a user
@@ -877,6 +1000,64 @@ mod tests {
         assert!(kitty.contains("color1 #fb4934") && kitty.contains("color15 #fbf1c7"));
         let ghostty = render("ghostty", &s, 1.0);
         assert!(ghostty.contains("palette = 4=#83a598"));
+    }
+
+    #[test]
+    fn quickshell_gets_a_qml_singleton() {
+        let qml = render("quickshell", &gruvbox(), 0.8);
+        assert!(qml.starts_with("pragma Singleton\n"));
+        assert!(qml.contains("Singleton {\n"));
+        assert!(qml.contains("    readonly property color primary: \"#83a598\"\n"));
+        assert!(qml.contains("    readonly property color base0D: "));
+        // Alpha first, as QML reads it.
+        assert!(qml.contains("    readonly property color surface_alpha: \"#cc282828\"\n"));
+    }
+
+    #[test]
+    fn quickshell_config_folder_is_found() {
+        let root = Path::new("/c/quickshell");
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(quickshell_arg(&args(&["qs"]), root), None);
+        assert_eq!(quickshell_arg(&args(&["qs", "-c", "bar"]), root), Some(root.join("bar")));
+        assert_eq!(quickshell_arg(&args(&["qs", "--config=bar"]), root), Some(root.join("bar")));
+        assert_eq!(
+            quickshell_arg(&args(&["quickshell", "-d", "-p", "/x/y"]), root),
+            Some(PathBuf::from("/x/y"))
+        );
+
+        let (dir, _) = setup();
+        let home = dir.path().join("config");
+        let qs = home.join("quickshell");
+        // Nothing there: the default folder.
+        assert_eq!(quickshell_dir(&home), qs);
+        // One named config: that one.
+        std::fs::create_dir_all(qs.join("mine")).unwrap();
+        std::fs::write(qs.join("mine").join("shell.qml"), "ShellRoot {}\n").unwrap();
+        assert_eq!(quickshell_dir(&home), qs.join("mine"));
+        // A default config wins.
+        std::fs::write(qs.join("shell.qml"), "ShellRoot {}\n").unwrap();
+        assert_eq!(quickshell_dir(&home), qs);
+    }
+
+    #[test]
+    fn quickshell_is_wired_once_its_qml_uses_the_singleton() {
+        let (dir, _) = setup();
+        let home = dir.path().join("config");
+        let qs = home.join("quickshell");
+        std::fs::create_dir_all(qs.join("modules")).unwrap();
+        std::fs::write(qs.join("shell.qml"), "ShellRoot {}\n").unwrap();
+        std::fs::write(qs.join(QS_FILE), "Singleton {}\n").unwrap();
+        std::fs::write(qs.join("modules").join("Bar.qml"), "// HyprcustardColors later\n").unwrap();
+        let t =
+            || target(&all(&home, &home.join("hypr").join("hyprland.lua")), "quickshell").clone();
+        assert!(!t().wired);
+        std::fs::write(qs.join("modules").join("Bar.qml"), "color: HyprcustardColors.primary\n")
+            .unwrap();
+        assert!(t().wired);
+        assert!(wire(&t(), 0).is_ok());
+        let mut off = t();
+        off.wired = false;
+        assert!(wire(&off, 0).is_err());
     }
 
     #[test]
