@@ -19,14 +19,22 @@ PanelWindow {
         left: Config.sideMargin
         right: Config.sideMargin
     }
-    implicitHeight: Config.height + 2 * pad
+    // The box, the room for its shadow, and the space kept clear on the
+    // windows' side.
+    implicitHeight: Config.height + 2 * pad + Config.windowGap
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell"
 
     Item {
         id: box
-        anchors { fill: parent; margins: bar.pad }
+        anchors {
+            fill: parent
+            leftMargin: bar.pad
+            rightMargin: bar.pad
+            topMargin: bar.pad + (Config.bottom ? Config.windowGap : 0)
+            bottomMargin: bar.pad + (Config.bottom ? 0 : Config.windowGap)
+        }
 
         // A soft shadow drawn outside the box only, so the translucent
         // background is not darkened from underneath.

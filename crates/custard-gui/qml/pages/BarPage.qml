@@ -370,6 +370,17 @@ Item {
                 }
                 LabeledSlider {
                     width: parent.width
+                    label: "Space between the bar and windows (px)"
+                    from: 0
+                    to: 40
+                    stepSize: 1
+                    integer: true
+                    value: page.choice.window_gap || 0
+                    markValue: 0
+                    onSettled: function (v) { page.set({ window_gap: Math.round(v) }) }
+                }
+                LabeledSlider {
+                    width: parent.width
                     label: "Background opacity"
                     from: 0
                     to: 1

@@ -437,7 +437,8 @@ memory. It runs in [Quickshell](https://quickshell.org), which you install yours
 says when it is missing.
 
 * **Set up the bar** writes it to `~/.config/quickshell/hyprcustard/`, beside any Quickshell
-  config of your own, and it runs as `qs -c hyprcustard`. **Start it**, **Stop it** and
+  config of your own, and it runs as `qs -p ~/.config/quickshell/hyprcustard` (by path,
+  so a `shell.qml` of your own directly in `~/.config/quickshell` does not hide it). **Start it**, **Stop it** and
   **Restart it** work on the running bar.
 * **Everything on the page applies at once**, to a running bar too, without a restart:
   which monitors it is on, top or bottom, its size and spacing, opacity, font, which modules

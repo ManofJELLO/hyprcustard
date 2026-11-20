@@ -1,7 +1,7 @@
 //! hyprcustard's bar: a Quickshell config that ships with the app.
 //!
 //! Setting it up writes the bar's QML to `~/.config/quickshell/hyprcustard`,
-//! which Quickshell runs as `qs -c hyprcustard`, beside any config of the
+//! which Quickshell runs as `qs -p <that folder>`, beside any config of the
 //! user's own. The folder is the app's: it is rewritten when the app updates,
 //! and a list of what was written ([`STAMP`]) lets removing it delete exactly
 //! those files. The bar reads its settings from `bar.json` there and follows
@@ -30,8 +30,7 @@ use crate::model::lua_quote;
 use crate::paths;
 use crate::walls::startup::{has_word, lines_outside_blocks, movable, split_keep};
 
-/// The Quickshell config's name: its folder under `quickshell/`, and what
-/// `qs -c` is given.
+/// The Quickshell config's name: its folder under `quickshell/`.
 pub const CONFIG_NAME: &str = "hyprcustard";
 
 /// The bar's settings file, beside its QML.
@@ -104,6 +103,9 @@ pub struct BarSettings {
     pub edge_margin: u32,
     /// Space between the bar and the screen's sides.
     pub side_margin: u32,
+    /// Space the bar keeps clear on its window side, past its box: windows
+    /// start that much further away, and its shadow fades out there.
+    pub window_gap: u32,
     /// How opaque the background is, 0 to 1.
     pub opacity: f64,
     /// The font family. Empty follows Qt's (qt6ct's or the desktop's).
@@ -137,6 +139,7 @@ impl Default for BarSettings {
             height: 36,
             edge_margin: 4,
             side_margin: 0,
+            window_gap: 0,
             opacity: 0.8,
             font: String::new(),
             font_size: 11,
@@ -161,6 +164,7 @@ impl BarSettings {
         self.height = self.height.clamp(20, 80);
         self.edge_margin = self.edge_margin.min(200);
         self.side_margin = self.side_margin.min(2000);
+        self.window_gap = self.window_gap.min(40);
         self.opacity = if self.opacity.is_finite() { self.opacity.clamp(0.0, 1.0) } else { 0.8 };
         self.font_size = self.font_size.clamp(6, 40);
         if !["auto", "glyphs", "text"].contains(&self.icons.as_str()) {
@@ -234,10 +238,17 @@ pub fn program() -> Option<PathBuf> {
     paths::which("qs").or_else(|| paths::which("quickshell"))
 }
 
-/// The command that starts the bar.
-pub fn start_command(program: &Path) -> String {
+/// The command that starts the bar. It names the folder by path: with a
+/// `shell.qml` of the user's own directly in `~/.config/quickshell`,
+/// Quickshell takes that whole folder as one config and `-c hyprcustard`
+/// finds nothing.
+pub fn start_command(program: &Path, config_home: &Path) -> String {
     let name = program.file_name().map(|n| n.to_string_lossy().into_owned());
-    format!("{} -c {CONFIG_NAME}", name.as_deref().unwrap_or("qs"))
+    format!(
+        "{} -p {}",
+        name.as_deref().unwrap_or("qs"),
+        crate::walls::startup::quote(&dir(config_home).to_string_lossy())
+    )
 }
 
 /// Whether the bar is set up: the folder holds the app's stamp.
@@ -356,6 +367,7 @@ pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::V
         "height": settings.height,
         "edge_margin": settings.edge_margin,
         "side_margin": settings.side_margin,
+        "window_gap": settings.window_gap,
         "opacity": settings.opacity,
         "font": settings.font,
         "font_size": settings.font_size,
@@ -417,7 +429,7 @@ pub fn running_pids(config_home: &Path) -> Vec<u32> {
 /// Ask Hyprland to start the bar. Hyprland starts it, so it gets the
 /// session's environment rather than the app's, and outlives the app. It
 /// is not running yet when this returns: see [`Control`].
-pub fn start(program: &Path) -> Result<()> {
+pub fn start(program: &Path, config_home: &Path) -> Result<()> {
     if cfg!(test) {
         return Ok(());
     }
@@ -426,7 +438,7 @@ pub fn start(program: &Path) -> Result<()> {
             "Hyprland is not running, so there is nothing to start the bar in",
         ));
     }
-    crate::look::eval(&format!("hl.exec_cmd({})", lua_quote(&start_command(program))))
+    crate::look::eval(&format!("hl.exec_cmd({})", lua_quote(&start_command(program, config_home))))
 }
 
 /// Stop every copy of the bar: asked to first, then made to if one is
@@ -502,14 +514,14 @@ impl Control {
     }
 
     fn start_and_see(&self) -> Result<()> {
-        start(&self.program)?;
+        start(&self.program, &self.config_home)?;
         if cfg!(test) || wait_for(5000, || !running_pids(&self.config_home).is_empty()) {
             return Ok(());
         }
         Err(Error::other(format!(
             "Hyprland was asked to start the bar, but it has not appeared after five seconds. \
              Run {} in a terminal to see why",
-            start_command(&self.program)
+            start_command(&self.program, &self.config_home)
         )))
     }
 }
@@ -821,8 +833,15 @@ hl.bind(\"SUPER + B\", hl.dsp.exec_cmd(\"pkill waybar || waybar\"))
 
     #[test]
     fn the_start_command_names_the_config() {
-        assert_eq!(start_command(Path::new("/usr/bin/qs")), "qs -c hyprcustard");
-        assert_eq!(start_command(Path::new("/usr/bin/quickshell")), "quickshell -c hyprcustard");
+        let home = Path::new("/home/u/.config");
+        assert_eq!(
+            start_command(Path::new("/usr/bin/qs"), home),
+            "qs -p /home/u/.config/quickshell/hyprcustard"
+        );
+        assert_eq!(
+            start_command(Path::new("/usr/bin/quickshell"), Path::new("/home/a b/.config")),
+            "quickshell -p '/home/a b/.config/quickshell/hyprcustard'"
+        );
         assert!(body("qs -c hyprcustard").contains("hl.exec_cmd(\"qs -c hyprcustard\")"));
     }
 }

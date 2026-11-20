@@ -37,6 +37,7 @@ Singleton {
     readonly property int height: get("height", 36)
     readonly property int edgeMargin: get("edge_margin", 4)
     readonly property int sideMargin: get("side_margin", 0)
+    readonly property int windowGap: get("window_gap", 0)
     readonly property real opacity: get("opacity", 0.8)
     readonly property string font: get("font", "")
     readonly property int fontSize: get("font_size", 11)

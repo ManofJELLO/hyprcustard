@@ -50,7 +50,8 @@ Item {
 
         Item {
             width: parent.width
-            height: caption.implicitHeight
+            // Tall enough for the number box, so it is never clipped.
+            height: Math.max(caption.implicitHeight, number.height)
 
             Text {
                 id: caption
@@ -64,9 +65,14 @@ Item {
             LineEdit {
                 id: number
                 anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 width: 78
                 height: 26
                 implicitHeight: 26
+                // The style's 6px top and bottom would leave the text less
+                // room than its own height, cutting off the top of it.
+                topPadding: 0
+                bottomPadding: 0
                 mono: true
                 horizontalAlignment: Text.AlignRight
                 text: root.format(root.value)

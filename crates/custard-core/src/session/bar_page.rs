@@ -62,7 +62,7 @@ impl Session {
                 if on {
                     let program = self.bar_program()?;
                     self.bar_ready()?;
-                    let next = bar::add_block(&text, &bar::start_command(&program))?;
+                    let next = bar::add_block(&text, &bar::start_command(&program, &home))?;
                     self.write_config_text(&path, &text, &next)?;
                     let others = bar::user_lines(&next).len();
                     Ok(Some(if others > 0 {
@@ -92,7 +92,7 @@ impl Session {
                 self.bar_ready()?;
                 let path = self.settings.resolved_config_path();
                 let text = paths::read_to_string(&path)?;
-                let next = bar::hand_over(&text, &bar::start_command(&program))?;
+                let next = bar::hand_over(&text, &bar::start_command(&program, &home))?;
                 let moved = bar::moved_lines(&next).len() - bar::moved_lines(&text).len();
                 self.write_config_text(&path, &text, &next)?;
                 Ok(Some(format!(
@@ -237,7 +237,8 @@ impl Session {
             "busy": self.bar_busy,
             "dir": paths::contract(&bar::dir(&home)),
             "command": bar::start_command(
-                program.as_deref().unwrap_or(std::path::Path::new("qs"))
+                program.as_deref().unwrap_or(std::path::Path::new("qs")),
+                &home
             ),
             "modules": bar::MODULES.iter().map(|(id, label)| json!({
                 "id": id,

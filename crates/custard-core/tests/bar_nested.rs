@@ -182,6 +182,39 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
         assert_eq!(bottom.1 + bottom.3, 500 - i64::from(settings.edge_margin), "{bottom:?}");
         assert_eq!((bottom.0, bottom.2), (100, 1400), "{bottom:?}");
 
+        // Space kept clear on the windows' side: the surface grows by it, and
+        // at the bottom the box stays on the screen's edge with the space above.
+        settings.window_gap = 6;
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let tall = i64::from(settings.height) + 8 + 6;
+        let gapped =
+            wait_for(5, || bar_layers(&nested.sig).first().copied().filter(|l| l.3 == tall))
+                .unwrap_or_else(|| {
+                    panic!("the bar did not grow to {tall}: {:?}", bar_layers(&nested.sig))
+                });
+        assert_eq!(gapped.1 + gapped.3, 500 - i64::from(settings.edge_margin), "{gapped:?}");
+        // Hyprland animates the layer to its new place, so wait for it to land:
+        // the box's first and last rows are the background, the gap above it
+        // is not.
+        let bg = scheme.role("background").to_string();
+        let box_top = (gapped.1 + 6 + 4) as usize;
+        let box_last = box_top + settings.height as usize - 1;
+        let landed = || {
+            let (first, last) =
+                (pixel(&nested.socket, 800, box_top + 1), pixel(&nested.socket, 800, box_last - 1));
+            let gap = pixel(&nested.socket, 800, box_top - 6);
+            (first == bg && last == bg && gap != bg).then_some(())
+        };
+        wait_for(5, landed).unwrap_or_else(|| {
+            shot(&nested.socket, "bar-gap");
+            panic!("the box is not below a clear gap of 6px")
+        });
+        shot(&nested.socket, "bar-gap");
+        settings.window_gap = 0;
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        wait_for(5, || bar_layers(&nested.sig).first().copied().filter(|l| l.3 == tall - 6))
+            .expect("the bar shrinks back");
+
         // Words instead of icons, and fewer modules: still no errors.
         settings.icons = "text".into();
         settings.modules = vec!["clock".into(), "cpu".into(), "memory".into()];
