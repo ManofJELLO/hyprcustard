@@ -56,6 +56,8 @@ const FSC_ACK_KEYS: &[(&str, &str)] = &[
     ("keys.type", "macOS and Windows only; on Hyprland the Keybinds page binds fsc type"),
     ("keys.type_key", "the Rust name of keys.type, macOS and Windows only"),
     ("keys.talk", "macOS and Windows only; on Hyprland the Keybinds page binds fsc listen"),
+    // FSC 0.10.0-beta.5..7: the popup on macOS's system glass.
+    ("ui.glass", "macOS only: the system's glass behind the popup; nothing on Hyprland"),
 ];
 
 /// `fsc` subcommands no key or button of hyprcustard's runs.
