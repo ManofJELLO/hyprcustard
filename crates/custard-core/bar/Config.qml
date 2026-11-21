@@ -45,6 +45,10 @@ Singleton {
     readonly property bool glyphs: get("glyphs", true)
     // Neumorphic: raised and pressed-in shapes, like hyprcustard's window.
     readonly property bool neumorphic: get("style", "flat") === "neumorphic"
+    // Neubrutalism: thick outlines and hard, offset shadows.
+    readonly property bool brutal: get("style", "flat") === "neubrutalism"
+    // Either of the two that draw their shapes with Neu.qml.
+    readonly property bool shaped: root.neumorphic || root.brutal
     // "auto" keeps the color scheme's own light or dark; "light" and "dark"
     // ask for that one, which colors.json carries as well.
     readonly property string mode: get("mode", "auto")

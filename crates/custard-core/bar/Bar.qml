@@ -18,10 +18,9 @@ PanelWindow {
             console.error("Bar.qml: the bar was given no launcher or power menu");
     }
 
-    // Room around the box for its shadow.
-    // Room around the box for its shadow: a neumorphic shadow reaches
-    // further than the flat one.
-    readonly property int pad: Config.neumorphic ? Theme.reach(Theme.depth) + 1 : 4
+    // Room around the box for its shadow: a neumorphic or neubrutal shadow
+    // reaches further than the flat one.
+    readonly property int pad: Config.shaped ? Theme.reach(Theme.depth) + 1 : 4
 
     anchors { top: !Config.bottom; bottom: Config.bottom; left: true; right: true }
     margins {
@@ -50,7 +49,7 @@ PanelWindow {
         // A soft shadow drawn outside the box only, so the translucent
         // background is not darkened from underneath.
         Repeater {
-            model: Config.neumorphic ? [] : [0.55, 0.3, 0.14, 0.05]
+            model: Config.shaped ? [] : [0.55, 0.3, 0.14, 0.05]
             delegate: Rectangle {
                 required property real modelData
                 required property int index
@@ -64,20 +63,22 @@ PanelWindow {
         }
 
         Rectangle {
-            visible: !Config.neumorphic
+            visible: !Config.shaped
             anchors.fill: parent
             radius: 2
             color: Theme.background
         }
 
         Neu {
-            visible: Config.neumorphic
+            visible: Config.shaped
             anchors.fill: parent
             radius: 8
         }
 
         RowLayout {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+            // Inside neubrutalism's outline.
+            anchors.margins: Config.brutal ? Theme.inkWidth : 0
             spacing: 0
             LauncherModule { shown: Config.has("launcher"); launcher: bar.launcher }
             ClockModule { shown: Config.has("clock") }
@@ -96,6 +97,7 @@ PanelWindow {
         // place and reserve the width of their widest text.
         RowLayout {
             anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
+            anchors.margins: Config.brutal ? Theme.inkWidth : 0
             spacing: 0
             MediaModule { shown: Config.has("media") }
             TrayModule { bar: bar; shown: Config.has("tray") }

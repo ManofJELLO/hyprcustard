@@ -280,13 +280,13 @@ PanelWindow {
 
                 // See-through like the card, flat or pressed in.
                 Rectangle {
-                    visible: !Config.neumorphic
+                    visible: !Config.shaped
                     anchors.fill: parent
                     radius: 2
                     color: Theme.glass(Theme.hardBackground)
                 }
                 Neu {
-                    visible: Config.neumorphic
+                    visible: Config.shaped
                     anchors.fill: parent
                     sunk: true
                     radius: 6
@@ -380,19 +380,19 @@ PanelWindow {
                         Rectangle {
                             anchors.fill: parent
                             radius: 2
-                            color: row.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
+                            color: row.chosen && !Config.shaped ? Theme.glass(Theme.selection)
                                  : hover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g, Theme.selection.b,
                                                            Config.opacity * 0.5)
                                  : "transparent"
                         }
                         Rectangle {
-                            visible: row.chosen && !Config.neumorphic
+                            visible: row.chosen && !Config.shaped
                             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
                             width: 3
                             color: Theme.aqua
                         }
                         Neu {
-                            visible: row.chosen && Config.neumorphic
+                            visible: row.chosen && Config.shaped
                             anchors.fill: parent
                             sunk: true
                             radius: 6
@@ -476,19 +476,19 @@ PanelWindow {
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 2
-                                color: cell.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
+                                color: cell.chosen && !Config.shaped ? Theme.glass(Theme.selection)
                                      : cellHover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g,
                                                                    Theme.selection.b, Config.opacity * 0.5)
                                      : "transparent"
                             }
                             Rectangle {
-                                visible: cell.chosen && !Config.neumorphic
+                                visible: cell.chosen && !Config.shaped
                                 anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                                 height: 3
                                 color: Theme.aqua
                             }
                             Neu {
-                                visible: cell.chosen && Config.neumorphic
+                                visible: cell.chosen && Config.shaped
                                 anchors.fill: parent
                                 sunk: true
                                 radius: 6

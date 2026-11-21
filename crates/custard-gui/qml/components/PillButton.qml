@@ -20,6 +20,7 @@ Button {
 
     readonly property color _tint: danger ? Theme.error : Theme.accent
     readonly property bool _sunk: control.down || control.checked
+    readonly property bool _filled: Theme.brutal && (control.primary || control.danger) && control.enabled
     readonly property real _radius: control.compact ? height / 2 : Theme.radiusSmall
 
     // Raised, and pressed in while held. A primary or danger button says so
@@ -34,6 +35,9 @@ Button {
                                                                        : Theme.depthSmall))
         ring: control.visualFocus
         ringColor: control._tint
+        // Neubrutalism fills a primary or danger button with its color.
+        fill: control._filled ? control._tint
+              : (control._sunk ? Theme.well : (Theme.brutal ? Theme.surface : Theme.bg))
     }
 
     contentItem: Text {
@@ -41,6 +45,8 @@ Button {
         color: {
             if (!control.enabled)
                 return Theme.muted
+            if (control._filled)
+                return Theme.onColor(control._tint)
             if (control.primary)
                 return Theme.accent
             if (control.danger)

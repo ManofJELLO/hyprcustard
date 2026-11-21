@@ -82,5 +82,10 @@ Singleton {
     readonly property int depthSmall: 2
     // How far a shadow reaches past its shape before it is under half a
     // level: room to leave around a shape, and half the space between two.
-    function reach(d) { return d + Math.ceil(d * 0.9 * 2); }
+    function reach(d) { return Config.brutal ? d + 2 : d + Math.ceil(d * 0.9 * 2); }
+    // Neubrutalism's outline, and its hard shadow: near black on a light
+    // background, close to the text color on a dark one, where a dark
+    // shadow would not show.
+    readonly property color ink: dark ? mix(foreground, base, 0.85) : shade(foreground, -0.7)
+    readonly property int inkWidth: 2
 }

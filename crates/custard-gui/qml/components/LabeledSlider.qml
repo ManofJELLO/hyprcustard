@@ -120,7 +120,7 @@ Item {
                     height: parent.height
                     radius: 4
                     visible: slider.visualPosition > 0
-                    color: Theme.wash(root.enabled ? Theme.accent : Theme.muted, 0.7)
+                    color: Theme.wash(root.enabled ? Theme.accent : Theme.muted, Theme.brutal ? 1 : 0.7)
                 }
 
                 // Where the value sits in the file. Positioned on the handle's

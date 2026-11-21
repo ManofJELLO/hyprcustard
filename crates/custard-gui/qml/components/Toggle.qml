@@ -19,7 +19,7 @@ Switch {
         x: control.leftPadding
         y: parent.height / 2 - height / 2
         radius: height / 2
-        fill: control.checked ? Theme.wash(Theme.accent, 0.45) : Theme.well
+        fill: control.checked ? (Theme.brutal ? Theme.accent : Theme.wash(Theme.accent, 0.45)) : Theme.well
         opacity: control.enabled ? 1.0 : 0.45
 
         Raised {
@@ -29,7 +29,8 @@ Switch {
             height: 16
             radius: 8
             depth: 2
-            fill: control.checked ? Theme.accent : Theme.bg
+            // Neubrutalism fills the track instead, so the knob stays plain.
+            fill: control.checked && !Theme.brutal ? Theme.accent : (Theme.brutal ? Theme.surface : Theme.bg)
 
             Behavior on x {
                 NumberAnimation { duration: 110; easing.type: Easing.OutCubic }

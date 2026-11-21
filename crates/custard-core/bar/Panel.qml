@@ -7,7 +7,7 @@ Item {
     id: panel
 
     // Room around the card for its shadow.
-    readonly property int pad: Config.neumorphic ? Theme.reach(Theme.depth) + 1 : 4
+    readonly property int pad: Config.shaped ? Theme.reach(Theme.depth) + 1 : 4
     default property alias content: inner.data
 
     Item {
@@ -15,7 +15,7 @@ Item {
         anchors { fill: parent; margins: panel.pad }
 
         Repeater {
-            model: Config.neumorphic ? [] : [0.55, 0.3, 0.14, 0.05]
+            model: Config.shaped ? [] : [0.55, 0.3, 0.14, 0.05]
             delegate: Rectangle {
                 required property real modelData
                 required property int index
@@ -29,14 +29,14 @@ Item {
         }
 
         Rectangle {
-            visible: !Config.neumorphic
+            visible: !Config.shaped
             anchors.fill: parent
             radius: 2
             color: Theme.background
         }
 
         Neu {
-            visible: Config.neumorphic
+            visible: Config.shaped
             anchors.fill: parent
             radius: 10
         }

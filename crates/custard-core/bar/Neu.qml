@@ -4,6 +4,11 @@ import QtQuick
 // left and shadowed at the bottom right, like hyprcustard's own window. The
 // shading is one shader (neu.frag.qsb, beside this file), so the shadows
 // are smooth rather than banded; without a GPU it is a flat shape.
+//
+// In neubrutalism (Config.brutal) it is a face with a thick outline over a
+// hard shadow offset to the bottom right; sunk, it has no shadow. The
+// shadow is drawn outside the face only, so a see-through face stays
+// see-through. Nothing moves when it sinks: only the shadow goes.
 Item {
     id: neu
 
@@ -18,9 +23,12 @@ Item {
     readonly property real _blur: Math.max(1, neu._depth * (neu.sunk ? 1.1 : 0.9))
     readonly property real _room: neu.sunk ? 0 : Math.ceil(neu._depth + neu._blur * 3)
     readonly property bool _software: GraphicsInfo.api === GraphicsInfo.Software
+    readonly property bool _brutal: Config.brutal
+    // The hard shadow's offset.
+    readonly property int _offset: Math.round(neu.depth) + 1
 
     ShaderEffect {
-        visible: !neu._software
+        visible: !neu._software && !neu._brutal
         x: -neu._room
         y: -neu._room
         width: neu.width + neu._room * 2
@@ -41,9 +49,35 @@ Item {
     }
 
     Rectangle {
-        visible: neu._software
+        visible: neu._software && !neu._brutal
         anchors.fill: parent
         radius: neu.radius
         color: neu.fill
+    }
+
+    // Neubrutalism's shadow, as an L past the right and bottom edges.
+    Rectangle {
+        visible: neu._brutal && !neu.sunk
+        x: neu.width
+        y: neu._offset
+        width: neu._offset
+        height: neu.height
+        color: Theme.ink
+    }
+    Rectangle {
+        visible: neu._brutal && !neu.sunk
+        x: neu._offset
+        y: neu.height
+        width: neu.width - neu._offset
+        height: neu._offset
+        color: Theme.ink
+    }
+    Rectangle {
+        visible: neu._brutal
+        anchors.fill: parent
+        radius: Math.min(neu.radius, 4)
+        color: neu.fill
+        border.width: Theme.inkWidth
+        border.color: Theme.ink
     }
 }

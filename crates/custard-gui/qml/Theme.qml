@@ -122,6 +122,32 @@ QtObject {
         return Qt.rgba(c.r, c.g, c.b, 1)
     }
 
+    // --- style ---------------------------------------------------------------
+    //
+    // Neumorphic (the default) or neubrutalism, from the app's settings.
+    // Neubrutalism draws every raised shape as a flat face with a thick
+    // outline over a hard shadow, offset to the bottom right and not
+    // blurred; a pressed-in shape keeps its outline and loses its shadow.
+    // Nothing shifts when pressed: the shape stays where the pointer left
+    // it, only its shadow goes.
+
+    readonly property bool brutal: (_state.settings || {}).style === "neubrutalism"
+    // The outline, and the hard shadow under it, in one ink: near black on
+    // a light background, and close to the text color on a dark one. A dark
+    // shadow on a dark background does not show, and a shadow that does not
+    // show is not this style.
+    readonly property color ink: dark ? _mix(fg, bg, 0.85) : _shade(fg, -0.7)
+    readonly property color drop: ink
+    readonly property int inkWidth: 2
+
+    // Black or white, whichever reads on `c`.
+    function onColor(c) {
+        return _luma(c) > 0.55 ? "#101010" : "#ffffff"
+    }
+    function opaque(c) {
+        return _opaque(c)
+    }
+
     // --- depth ---------------------------------------------------------------
     //
     // Shapes are raised out of the background or pressed into it: lit at the
@@ -146,7 +172,7 @@ QtObject {
     // How far a raised shape's shadow reaches past its edge before it is
     // under half a level: the offset plus two blur widths.
     function shadowReach(d) {
-        return d + Math.ceil(d * raisedBlur * 2)
+        return brutal ? d : d + Math.ceil(d * raisedBlur * 2)
     }
     // Room around a page for its cards' shadows to fade out in before the
     // sidebar, the header or the window's edge cuts them off.
@@ -161,8 +187,8 @@ QtObject {
     readonly property int pad: 16
     readonly property int gap: 10
     readonly property int gapSmall: 6
-    readonly property int radius: 12
-    readonly property int radiusSmall: 8
+    readonly property int radius: brutal ? 6 : 12
+    readonly property int radiusSmall: brutal ? 4 : 8
     readonly property int rowHeight: 34
     readonly property int sidebarWidth: 188
     readonly property int listWidth: 300

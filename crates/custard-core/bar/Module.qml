@@ -17,7 +17,8 @@ Item {
     property real padTop: 0
     property int edgeLeft: 0
     property int edgeRight: 0
-    // The colored edges are the flat style's; a neumorphic bar has none.
+    // The colored edges are the flat style's and neubrutalism's; a
+    // neumorphic bar has none.
     readonly property int _edgeLeft: Config.neumorphic ? 0 : edgeLeft
     readonly property int _edgeRight: Config.neumorphic ? 0 : edgeRight
     property color edgeColor: "transparent"

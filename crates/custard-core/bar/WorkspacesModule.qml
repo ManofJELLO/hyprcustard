@@ -27,18 +27,18 @@ RowLayout {
             id: ws
             required property var modelData
             Layout.fillHeight: true
-            implicitWidth: label.implicitWidth + (Config.neumorphic ? 20 : 12)
+            implicitWidth: label.implicitWidth + (Config.shaped ? 20 : 12)
 
             Rectangle {
                 anchors.fill: parent
                 color: Theme.aqua
-                visible: area.containsMouse && !Config.neumorphic
+                visible: area.containsMouse && !Config.shaped
             }
 
             // Neumorphic: the focused workspace, and the one under the
             // pointer, are pressed in.
             Neu {
-                visible: Config.neumorphic && (ws.modelData.focused || area.containsMouse)
+                visible: Config.shaped && (ws.modelData.focused || area.containsMouse)
                 anchors { fill: parent; topMargin: 5; bottomMargin: 5; leftMargin: 2; rightMargin: 2 }
                 sunk: true
                 radius: 4
@@ -53,7 +53,7 @@ RowLayout {
                 }
                 font.family: Theme.font
                 font.pixelSize: Theme.fontSize + 3
-                color: area.containsMouse && !Config.neumorphic ? Theme.hardBackground
+                color: area.containsMouse && !Config.shaped ? Theme.hardBackground
                      : ws.modelData.focused ? Theme.red
                      : ws.modelData.active ? Theme.aqua
                      : Theme.foreground

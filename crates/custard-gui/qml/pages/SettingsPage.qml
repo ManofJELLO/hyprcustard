@@ -224,11 +224,27 @@ Item {
             // ---------------------------------------------------------------
             Card {
                 Layout.fillWidth: true
-                title: "This app's colors"
+                title: "This app's look"
                 subtitle: "How hyprcustard itself looks — for your Hyprland look, see the "
                           + "Look and Themes pages. Slate, Gruvbox dark and Gruvbox light are built in. Anything "
                           + "else is a TOML file in " +
                           App.state.themeDir + ", which can override as few colors as you like."
+
+                FieldRow {
+                    width: parent.width
+                    label: "Style"
+                    hint: "Neumorphic shapes are raised and pressed in, with soft shadows. "
+                          + "Neubrutalism draws thick outlines and hard, offset shadows."
+
+                    Dropdown {
+                        width: parent.width
+                        model: ["Neumorphic", "Neubrutalism"]
+                        currentIndex: App.settings.style === "neubrutalism" ? 1 : 0
+                        onActivated: function (index) {
+                            page.updateSettings({ style: index === 1 ? "neubrutalism" : "neumorphic" })
+                        }
+                    }
+                }
 
                 FieldRow {
                     width: parent.width

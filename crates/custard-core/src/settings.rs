@@ -41,11 +41,18 @@ pub struct Settings {
     /// The font family the app is drawn in. Empty follows the system font:
     /// the one Qt is given by qt6ct or the desktop.
     pub font: String,
+    /// How the app's shapes are drawn: `neumorphic` (raised and pressed in,
+    /// with soft shadows) or `neubrutalism` (thick outlines and hard,
+    /// offset shadows).
+    pub style: String,
     /// The Fishsticks & Custard page's start and key choices.
     pub fsc: crate::fsc::FscSettings,
     /// The Bar page's choices.
     pub bar: crate::bar::BarSettings,
 }
+
+/// The app's styles, the default first.
+pub const STYLES: &[&str] = &["neumorphic", "neubrutalism"];
 
 /// Where the plugin is installed from unless someone says otherwise.
 pub const DEFAULT_PLUGIN_REPO: &str = "https://github.com/ManofJELLO/HyprWindowShade";
@@ -68,6 +75,7 @@ impl Default for Settings {
             wallpaper: crate::walls::WallSettings::default(),
             tray: false,
             font: String::new(),
+            style: STYLES[0].to_string(),
             fsc: crate::fsc::FscSettings::default(),
             bar: crate::bar::BarSettings::default(),
         }
@@ -120,6 +128,9 @@ impl Settings {
         if self.plugin_name.trim().is_empty() {
             self.plugin_name = DEFAULT_PLUGIN_NAME.to_string();
         }
+        if !STYLES.contains(&self.style.as_str()) {
+            self.style = STYLES[0].to_string();
+        }
         self.colors = self.colors.sanitized();
         self.wallpaper = self.wallpaper.sanitized();
         self.fsc = self.fsc.sanitized();
@@ -155,6 +166,14 @@ mod tests {
     fn absurd_values_are_clamped() {
         let s: Settings = toml::from_str("backups_to_keep = 99999\n").unwrap();
         assert_eq!(s.sanitized().backups_to_keep, 200);
+    }
+
+    #[test]
+    fn an_unknown_style_falls_back_to_neumorphic() {
+        let s: Settings = toml::from_str("style = \"bauhaus\"\n").unwrap();
+        assert_eq!(s.sanitized().style, "neumorphic");
+        let s: Settings = toml::from_str("style = \"neubrutalism\"\n").unwrap();
+        assert_eq!(s.sanitized().style, "neubrutalism");
     }
 
     #[test]

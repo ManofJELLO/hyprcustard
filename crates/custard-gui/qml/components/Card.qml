@@ -39,7 +39,7 @@ Rectangle {
             visible: text !== ""
             color: Theme.fg
             font.pixelSize: Theme.fontSizeLarge
-            font.weight: Font.DemiBold
+            font.weight: Theme.brutal ? Font.Black : Font.DemiBold
         }
         Text {
             text: card.subtitle

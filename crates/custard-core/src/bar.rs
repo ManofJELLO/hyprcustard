@@ -171,8 +171,8 @@ pub struct BarSettings {
     pub power_reboot: String,
     /// Shut down. Empty: `systemctl poweroff`.
     pub power_shutdown: String,
-    /// `flat`, or `neumorphic`: raised and pressed-in shapes with soft
-    /// shadows, like hyprcustard's own window.
+    /// `flat`; `neumorphic`: raised and pressed-in shapes with soft
+    /// shadows; or `neubrutalism`: thick outlines and hard, offset shadows.
     pub style: String,
     /// `auto` (the color scheme's own), `light` or `dark`. A scheme of the
     /// other kind is built for the bar from the same seed color.
@@ -213,6 +213,9 @@ pub const POWER_ITEMS: &[(&str, &str)] = &[
     ("reboot", "Reboot"),
     ("shutdown", "Shut down"),
 ];
+
+/// The bar's styles.
+pub const BAR_STYLES: &[&str] = &["flat", "neumorphic", "neubrutalism"];
 
 /// Where the menus can open.
 pub const MENU_POSITIONS: &[&str] = &[
@@ -297,7 +300,7 @@ impl BarSettings {
             self.clock_format = BarSettings::default().clock_format;
         }
         self.workspace_labels.truncate(20);
-        if self.style != "neumorphic" {
+        if !BAR_STYLES.contains(&self.style.as_str()) {
             self.style = "flat".into();
         }
         if !["auto", "light", "dark"].contains(&self.mode.as_str()) {
@@ -928,6 +931,10 @@ mod control_tests {
         assert_eq!((s.launcher_grid_rows, s.launcher_icon_size), (2, 128));
         assert_eq!(s.power_items, ["lock", "shutdown"]);
         assert_eq!(s.power_layout, "row");
+        for style in BAR_STYLES {
+            let s = BarSettings { style: style.to_string(), ..Default::default() }.sanitized();
+            assert_eq!(s.style, *style);
+        }
     }
 
     #[test]

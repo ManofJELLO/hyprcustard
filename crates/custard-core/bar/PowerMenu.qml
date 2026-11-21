@@ -41,7 +41,7 @@ PanelWindow {
     readonly property int buttonHeight: root.column ? Math.round(Theme.fontSize * 3.6)
                                                    : root.icons ? root.unit : Math.round(root.unit * 0.6)
     // Raised buttons stand far enough apart that their shadows never meet.
-    readonly property int gap: Config.neumorphic ? 2 * Theme.reach(Theme.depthSmall) : 8
+    readonly property int gap: Config.shaped ? 2 * Theme.reach(Theme.depthSmall) : 8
     readonly property int count: Math.max(1, root.actions.length)
     readonly property int buttonsWidth: root.column ? root.buttonWidth
                                                     : root.count * root.buttonWidth + (root.count - 1) * root.gap
@@ -212,7 +212,7 @@ PanelWindow {
 
                     // Flat: see-through like the card, lit when chosen.
                     Rectangle {
-                        visible: !Config.neumorphic
+                        visible: !Config.shaped
                         anchors.fill: parent
                         radius: 2
                         color: action.chosen ? Theme.glass(Theme.selection)
@@ -221,14 +221,14 @@ PanelWindow {
                              : Theme.glass(Theme.hardBackground)
                     }
                     Rectangle {
-                        visible: action.chosen && !Config.neumorphic
+                        visible: action.chosen && !Config.shaped
                         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                         height: 3
                         color: action.tint
                     }
                     // Neumorphic: raised, and pressed in when chosen.
                     Neu {
-                        visible: Config.neumorphic
+                        visible: Config.shaped
                         anchors.fill: parent
                         sunk: action.chosen || hover.hovered
                         depth: Theme.depthSmall
@@ -252,7 +252,7 @@ PanelWindow {
                         }
                         Text {
                             text: action.modelData.label
-                            color: action.chosen && Config.neumorphic ? action.tint : Theme.foreground
+                            color: action.chosen && Config.shaped ? action.tint : Theme.foreground
                             font.family: Theme.font
                             font.pixelSize: Theme.fontSize + 1
                         }
@@ -321,12 +321,12 @@ PanelWindow {
                         required property string modelData
                         required property int index
                         Layout.fillHeight: true
-                        Layout.topMargin: Config.neumorphic ? 4 : 0
-                        Layout.bottomMargin: Config.neumorphic ? 4 : 0
+                        Layout.topMargin: Config.shaped ? 4 : 0
+                        Layout.bottomMargin: Config.shaped ? 4 : 0
                         implicitWidth: replyText.implicitWidth + 28
 
                         Rectangle {
-                            visible: !Config.neumorphic
+                            visible: !Config.shaped
                             anchors.fill: parent
                             radius: 2
                             color: reply.index === root.answer ? Theme.glass(Theme.selection)
@@ -335,7 +335,7 @@ PanelWindow {
                                  : Theme.glass(Theme.hardBackground)
                         }
                         Neu {
-                            visible: Config.neumorphic
+                            visible: Config.shaped
                             anchors.fill: parent
                             sunk: reply.index === root.answer || replyHover.hovered
                             depth: Theme.depthSmall

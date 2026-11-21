@@ -400,16 +400,19 @@ Item {
                 FieldRow {
                     width: parent.width
                     label: "Style"
+                    readonly property var styles: ["flat", "neumorphic", "neubrutalism"]
                     hint: page.choice.style === "neumorphic"
-                          ? "Raised and pressed-in shapes with soft shadows, like this window. It looks "
-                            + "best with the background opacity near 1; the bar grows a little to make "
-                            + "room for its shadow."
+                          ? "Raised and pressed-in shapes with soft shadows. It looks best with the "
+                            + "background opacity near 1; the bar grows a little to make room for its shadow."
+                          : page.choice.style === "neubrutalism"
+                          ? "Thick outlines and hard shadows offset to the bottom right, with colored "
+                            + "edges between modules. The bar grows a little to make room for its shadow."
                           : "Flat, with a thin shadow and colored edges between modules."
                     Dropdown {
                         width: 260
-                        model: ["Flat", "Neumorphic"]
-                        currentIndex: page.choice.style === "neumorphic" ? 1 : 0
-                        onActivated: function (index) { page.set({ style: index === 1 ? "neumorphic" : "flat" }) }
+                        model: ["Flat", "Neumorphic", "Neubrutalism"]
+                        currentIndex: Math.max(0, parent.styles.indexOf(page.choice.style))
+                        onActivated: function (index) { page.set({ style: parent.styles[index] }) }
                     }
                 }
 

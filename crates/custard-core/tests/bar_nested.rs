@@ -397,6 +397,38 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
                 .unwrap_or_else(|| panic!("the {name} did not close"));
         }
+
+        // Neubrutalism: the bar grows less than for neumorphic shadows (a
+        // hard shadow's offset, not a blur), and the menus (one as a grid)
+        // still sit in the corner.
+        settings.style = "neubrutalism".into();
+        settings.launcher_layout = "grid".into();
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let grown = i64::from(settings.height) + 2 * 6;
+        wait_for(5, || bar_layers(&nested.sig).first().copied().filter(|l| l.3 == grown))
+            .unwrap_or_else(|| {
+                panic!("the bar did not become {grown} tall: {:?}", bar_layers(&nested.sig))
+            });
+        std::thread::sleep(Duration::from_millis(500));
+        shot(&nested.socket, "bar-brutal");
+        for (target, name) in [("launcher", "launcher-brutal"), ("power", "power-menu-brutal")] {
+            ipc(target, "toggle");
+            let menu = wait_for(5, || {
+                let layers = bar_layers(&nested.sig);
+                (layers.len() == 2).then(|| layers.into_iter().find(|l| l.2 < 1400).unwrap())
+            })
+            .unwrap_or_else(|| panic!("the {name} did not open"));
+            assert_eq!(
+                (menu.0 + menu.2, menu.1),
+                (1600 - 20, 20),
+                "{name} in the corner: {menu:?}"
+            );
+            std::thread::sleep(Duration::from_millis(600));
+            shot(&nested.socket, name);
+            ipc(target, "toggle");
+            wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
+                .unwrap_or_else(|| panic!("the {name} did not close"));
+        }
     }));
 
     let _ = qs.kill();
