@@ -4417,12 +4417,18 @@ hl.config({
         let entry =
             s.presets.iter().find(|e| e.preset.name == "Update theme test").unwrap().clone();
         let file = entry.path.clone().unwrap();
-        let count = s.presets.len();
 
         s.command("look.set", &json!({ "key": "decoration.rounding", "value": 9 })).unwrap();
         s.command("preset.save", &json!({ "name": "ignored", "file": file.to_string_lossy() }))
             .unwrap();
-        assert_eq!(s.presets.len(), count, "no second theme");
+        // Other tests save themes to the same folder at the same time, so
+        // count only this test's own.
+        let ours = s
+            .presets
+            .iter()
+            .filter(|e| ["Update theme test", "ignored"].contains(&e.preset.name.as_str()))
+            .count();
+        assert_eq!(ours, 1, "no second theme");
         let again = s.presets.iter().find(|e| e.path.as_ref() == Some(&file)).unwrap();
         assert_eq!(again.preset.name, "Update theme test", "the name stays");
         assert_eq!(again.preset.description, "first", "so does the description");
