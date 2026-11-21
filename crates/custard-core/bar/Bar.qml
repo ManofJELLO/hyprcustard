@@ -102,10 +102,30 @@ PanelWindow {
             VolumeModule { shown: Config.has("volume") }
             BluetoothModule { shown: Config.has("bluetooth") }
             NetworkModule { shown: Config.has("network") }
-            CpuModule { shown: Config.has("cpu") }
-            MemoryModule { shown: Config.has("memory") }
-            TempModule { kind: "cpu"; glyph: 0xf050f; shown: Config.has("cpu_temp") }
-            TempModule { kind: "gpu"; glyph: 0xf08ae; shown: Config.has("gpu_temp") }
+            // The green edge opens the system group, so it goes on whichever
+            // of these four shows first, not on CPU alone.
+            CpuModule {
+                id: cpuMod
+                shown: Config.has("cpu")
+                edgeLeft: 3; padLeft: 16.5; edgeColor: Theme.green
+            }
+            MemoryModule {
+                id: memMod
+                readonly property bool leads: !cpuMod.visible
+                shown: Config.has("memory")
+                edgeLeft: leads ? 3 : 0; padLeft: leads ? 16.5 : 11; edgeColor: Theme.green
+            }
+            TempModule {
+                id: cpuTempMod
+                readonly property bool leads: !cpuMod.visible && !memMod.visible
+                kind: "cpu"; glyph: 0xf050f; shown: Config.has("cpu_temp")
+                edgeLeft: leads ? 3 : 0; padLeft: leads ? 16.5 : 11; edgeColor: Theme.green
+            }
+            TempModule {
+                readonly property bool leads: !cpuMod.visible && !memMod.visible && !cpuTempMod.visible
+                kind: "gpu"; glyph: 0xf08ae; shown: Config.has("gpu_temp")
+                edgeLeft: leads ? 3 : 0; padLeft: leads ? 16.5 : 11; edgeColor: Theme.green
+            }
             PowerModule { shown: Config.has("power"); menu: bar.powerMenu }
         }
     }

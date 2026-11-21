@@ -11,7 +11,6 @@ Module {
     text: Config.glyphs ? percent + "% " + String.fromCodePoint(0xf035b) : "RAM " + percent + "%"
     minText: Config.glyphs ? "100% " + String.fromCodePoint(0xf035b) : "RAM 100%"
     tooltip: usedGiB.toFixed(1) + " GiB used"
-    padLeft: 11
     padRight: 11
 
     FileView {

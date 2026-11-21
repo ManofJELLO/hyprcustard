@@ -10,10 +10,7 @@ Module {
 
     text: Config.glyphs ? Math.round(usage) + "% " : "CPU " + Math.round(usage) + "%"
     minText: Config.glyphs ? "100% " : "CPU 100%"
-    padLeft: 16.5
     padRight: 11
-    edgeLeft: 3
-    edgeColor: Theme.green
 
     FileView {
         id: stat

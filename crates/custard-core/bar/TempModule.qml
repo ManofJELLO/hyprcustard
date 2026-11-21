@@ -32,7 +32,6 @@ Module {
     minText: Config.glyphs ? "100°C " + String.fromCodePoint(glyph) : name + " 100°C"
     tooltip: name + " temperature" + (sensor !== "" ? " (" + sensor + ")" : "")
              + (asleep ? "\nThe GPU is asleep, and is left so." : "")
-    padLeft: 11
     padRight: 11
 
     function search() {

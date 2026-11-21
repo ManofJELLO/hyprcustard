@@ -99,8 +99,8 @@ fn wait_for<T>(secs: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
     None
 }
 
-/// One pixel of the nested screen, as `#rrggbb`.
-fn pixel(socket: &str, x: usize, y: usize) -> String {
+/// One row of the nested screen, each pixel as `#rrggbb`.
+fn row(socket: &str, y: usize) -> Vec<String> {
     let out = Command::new("grim")
         .args(["-t", "ppm", "-"])
         .env("WAYLAND_DISPLAY", socket)
@@ -120,9 +120,16 @@ fn pixel(socket: &str, x: usize, y: usize) -> String {
         fields.push(String::from_utf8_lossy(&out.stdout[start..i]).into_owned());
     }
     let width: usize = fields[1].parse().unwrap();
-    let at = i + 1 + 3 * (y * width + x);
-    let p = &out.stdout[at..at + 3];
-    format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2])
+    let at = i + 1 + 3 * y * width;
+    out.stdout[at..at + 3 * width]
+        .chunks(3)
+        .map(|p| format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2]))
+        .collect()
+}
+
+/// One pixel of the nested screen, as `#rrggbb`.
+fn pixel(socket: &str, x: usize, y: usize) -> String {
+    row(socket, y).swap_remove(x)
 }
 
 fn shot(socket: &str, name: &str) {
@@ -227,6 +234,34 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             .unwrap();
         std::thread::sleep(Duration::from_millis(1500));
         shot(&nested.socket, "bar-text");
+
+        // The green edge opens the CPU, memory and temperature group, so it
+        // stays when CPU, the module that usually carries it, is turned off.
+        let edge_row = (bottom.1 + bottom.3 / 2) as usize;
+        let green = scheme.base(0xB).to_string();
+        let greens = |socket: &str| -> Vec<usize> {
+            row(socket, edge_row)
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| **p == green)
+                .map(|(x, _)| x)
+                .collect()
+        };
+        let with_cpu = greens(&nested.socket);
+        assert_eq!(with_cpu.len(), 3, "one 3px green edge, before CPU's: {with_cpu:?}");
+        settings.modules = vec!["clock".into(), "memory".into()];
+        bar::write_settings(&home, &settings, &Machine { nerd_font: false, ..machine.clone() })
+            .unwrap();
+        // Memory now starts where CPU did, so the edge moves right.
+        wait_for(5, || {
+            let now = greens(&nested.socket);
+            (now.len() == 3 && now[0] > with_cpu[0]).then_some(())
+        })
+        .unwrap_or_else(|| {
+            shot(&nested.socket, "bar-no-cpu");
+            panic!("no green edge before memory with CPU off: {:?}", greens(&nested.socket))
+        });
+        shot(&nested.socket, "bar-no-cpu");
 
         // A new scheme shows at once, the bar's own surface kept: the middle
         // of the bar, empty with no window open, is the scheme's background.
