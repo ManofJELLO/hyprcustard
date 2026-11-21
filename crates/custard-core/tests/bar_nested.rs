@@ -19,6 +19,10 @@ use custard_core::bar::{self, BarSettings, Machine};
 use custard_core::colors::named;
 use custard_core::hyprctl;
 
+/// One nested Hyprland at a time: each finds its own by what instance is new,
+/// so two starting together could take the same one.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct Nested {
     hyprland: Child,
     sig: String,
@@ -132,6 +136,7 @@ fn shot(socket: &str, name: &str) {
 #[test]
 #[ignore = "starts a nested Hyprland and Quickshell"]
 fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let qs = bar::program().expect("Quickshell is installed");
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("config");
@@ -341,4 +346,95 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
         .filter(|l| l.contains("ERROR") || (l.contains("WARN") && l.contains(".qml")))
         .collect();
     assert!(bad.is_empty(), "QML problems:\n{}", bad.join("\n"));
+}
+
+/// An update rewrites the files of a bar that is running. Quickshell reloads
+/// as each loaded file changes, so it sees the update half written; it must
+/// still end up on the new files, not stuck on a failed load ("Neu is not a
+/// type") with the old bar left running, as happened going to 0.12.1.
+#[test]
+#[ignore = "starts a nested Hyprland and Quickshell, and reads v0.12.0's bar from git"]
+fn a_running_bar_updated_in_place_ends_up_on_the_new_files() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let program = bar::program().expect("Quickshell is installed");
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("config");
+    let config = dir.path().join("nested.lua");
+    std::fs::write(
+        &config,
+        "hl.monitor({ output = \"WAYLAND-1\", disabled = true })\n\
+         hl.monitor({ output = \"\", mode = \"1600x500\", position = \"0x0\", scale = 1 })\n",
+    )
+    .unwrap();
+    let scheme = named::builtins().iter().find(|n| n.id == "nord").unwrap().scheme();
+    bar::install(&home, &BarSettings::default(), &Machine::default(), &scheme).unwrap();
+
+    // Put v0.12.0's bar in its place, as that version left it.
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let git = |args: &[&str]| {
+        let out = Command::new("git").current_dir(&repo).args(args).output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+        out.stdout
+    };
+    let listed =
+        String::from_utf8(git(&["ls-tree", "--name-only", "v0.12.0", "crates/custard-core/bar/"]))
+            .unwrap();
+    let old: Vec<String> = listed
+        .lines()
+        .filter(|p| p.ends_with(".qml"))
+        .map(|p| p.rsplit('/').next().unwrap().to_string())
+        .collect();
+    let d = bar::dir(&home);
+    for (name, _) in bar::FILES {
+        if !old.iter().any(|o| o == name) {
+            std::fs::remove_file(d.join(name)).unwrap();
+        }
+    }
+    for name in &old {
+        let text = git(&["show", &format!("v0.12.0:crates/custard-core/bar/{name}")]);
+        std::fs::write(d.join(name), text).unwrap();
+    }
+    std::fs::write(d.join(bar::STAMP), format!("0.12.0\n{}\n", old.join("\n"))).unwrap();
+
+    let nested = start_hyprland(&config);
+    let log_path = dir.path().join("qs.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let mut qs = Command::new(&program)
+        .arg("-p")
+        .arg(&d)
+        .env("WAYLAND_DISPLAY", &nested.socket)
+        .env("HYPRLAND_INSTANCE_SIGNATURE", &nested.sig)
+        .env("QT_QPA_PLATFORM", "wayland")
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .expect("start Quickshell");
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wait_for(10, || bar_layers(&nested.sig).first().copied()).expect("the old bar runs");
+        assert!(bar::update_if_stale(&home).unwrap(), "0.12.0 is older, so it is rewritten");
+        // Settled: the last load finished, and nothing has changed since.
+        std::thread::sleep(Duration::from_secs(4));
+        let text = std::fs::read_to_string(&log_path).unwrap_or_default();
+        let last = text
+            .lines()
+            .rfind(|l| {
+                l.contains("Configuration Loaded") || l.contains("Failed to load configuration")
+            })
+            .unwrap_or("");
+        assert!(last.contains("Configuration Loaded"), "the last load failed:\n{text}");
+        assert!(
+            text.matches("Configuration Loaded").count() >= 2,
+            "it reloaded onto the update:\n{text}"
+        );
+        assert_eq!(bar_layers(&nested.sig).len(), 1, "one bar");
+    }));
+
+    let _ = qs.kill();
+    let _ = qs.wait();
+    drop(nested);
+    if let Err(e) = result {
+        std::panic::resume_unwind(e);
+    }
 }

@@ -406,7 +406,7 @@ fn write_files(config_home: &Path) -> Result<()> {
     let dir = dir(config_home);
     std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
     let old: Vec<String> = read_stamp(config_home).map(|(_, f)| f).unwrap_or_default();
-    for (name, bytes) in FILES {
+    for (name, bytes) in write_order(|name| dir.join(name).exists()) {
         paths::write_atomic_bytes(&dir.join(name), bytes)?;
     }
     for gone in old.iter().filter(|o| !FILES.iter().any(|(n, _)| n == o)) {
@@ -421,6 +421,18 @@ fn write_files(config_home: &Path) -> Result<()> {
         stamp.push('\n');
     }
     paths::write_atomic(&dir.join(STAMP), &stamp)
+}
+
+/// The order to write [`FILES`] in, so a running bar never loads a mix it
+/// cannot use. Quickshell reloads as soon as a file it has loaded changes,
+/// even in the middle of an update. So the files it has not seen yet go
+/// first (writing them sets off nothing, and they are there when a changed
+/// file names them), then the ones it has, and `shell.qml` last, so the
+/// final reload sees every file as it now is.
+fn write_order(exists: impl Fn(&str) -> bool) -> Vec<(&'static str, &'static [u8])> {
+    let mut files: Vec<(&str, &[u8])> = FILES.to_vec();
+    files.sort_by_key(|(name, _)| (*name == "shell.qml", exists(name)));
+    files
 }
 
 /// Set the bar up: its QML, its settings and its colors.
@@ -851,6 +863,18 @@ mod control_tests {
         assert!(!newer("0.10.1", "0.10.1"));
         assert!(newer("0.10.1", "unknown"));
         assert!(!newer("dev", "0.10.1"));
+    }
+
+    #[test]
+    fn an_update_writes_new_files_first_and_the_shell_last() {
+        let had = ["shell.qml", "Bar.qml", "Theme.qml"];
+        let order: Vec<&str> =
+            write_order(|n| had.contains(&n)).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(order.len(), FILES.len());
+        assert_eq!(order.last(), Some(&"shell.qml"));
+        let bar = order.iter().position(|n| *n == "Bar.qml").unwrap();
+        let neu = order.iter().position(|n| *n == "Neu.qml").unwrap();
+        assert!(neu < bar, "a file Bar.qml names is there before Bar.qml changes: {order:?}");
     }
 
     #[test]
