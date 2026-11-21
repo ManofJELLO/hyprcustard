@@ -56,6 +56,10 @@ Singleton {
     readonly property int launcherWidth: get("launcher_width", 600)
     readonly property int launcherRows: get("launcher_rows", 8)
     readonly property bool launcherIcons: get("launcher_icons", true)
+    // A grid of icons with their names under them, instead of a list.
+    readonly property bool launcherGrid: get("launcher_layout", "list") === "grid"
+    readonly property int launcherGridRows: get("launcher_grid_rows", 4)
+    readonly property int launcherIconSize: get("launcher_icon_size", 48)
     readonly property var powerItems: get("power_items", ["lock", "logout", "suspend", "reboot", "shutdown"])
     readonly property bool powerColumn: get("power_layout", "row") === "column"
     readonly property bool powerIcons: get("power_icons", true)

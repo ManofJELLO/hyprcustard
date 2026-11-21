@@ -341,6 +341,24 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
                 .unwrap_or_else(|| panic!("the {name} did not close"));
         }
 
+        // The launcher as a grid of icons: still centered, still one window.
+        settings.launcher_layout = "grid".into();
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        ipc("launcher", "toggle");
+        let menu = wait_for(5, || {
+            let layers = bar_layers(&nested.sig);
+            (layers.len() == 2).then(|| layers.into_iter().find(|l| l.2 < 1400).unwrap())
+        })
+        .unwrap_or_else(|| panic!("the grid launcher did not open: {:?}", bar_layers(&nested.sig)));
+        assert!((menu.0 + menu.2 / 2 - 800).abs() <= 1, "grid launcher centered across: {menu:?}");
+        std::thread::sleep(Duration::from_millis(600));
+        shot(&nested.socket, "launcher-grid");
+        ipc("launcher", "toggle");
+        wait_for(5, || (bar_layers(&nested.sig).len() == 1).then_some(()))
+            .unwrap_or_else(|| panic!("the grid launcher did not close"));
+        settings.launcher_layout = "list".into();
+
         // Neumorphic, with the menus in the top right corner: the bar grows
         // to make room for its shadow, and each menu sits a margin from the
         // corner (the bar is at the bottom, so nothing is above them).

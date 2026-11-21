@@ -188,8 +188,15 @@ pub struct BarSettings {
     pub launcher_width: u32,
     /// How many apps the launcher lists at once.
     pub launcher_rows: u32,
-    /// Whether the launcher shows the apps' icons.
+    /// Whether the launcher shows the apps' icons. A grid always does.
     pub launcher_icons: bool,
+    /// `list`, or `grid`: icons with their names under them.
+    pub launcher_layout: String,
+    /// How many rows of apps the grid shows at once.
+    pub launcher_grid_rows: u32,
+    /// The grid's icon size, in pixels; the columns follow from it and the
+    /// launcher's width.
+    pub launcher_icon_size: u32,
     /// The power menu's buttons, by id from [`POWER_ITEMS`], in that order.
     pub power_items: Vec<String>,
     /// `row` or `column`.
@@ -254,6 +261,9 @@ impl Default for BarSettings {
             launcher_width: 600,
             launcher_rows: 8,
             launcher_icons: true,
+            launcher_layout: "list".into(),
+            launcher_grid_rows: 4,
+            launcher_icon_size: 48,
             power_items: POWER_ITEMS.iter().map(|(id, _)| id.to_string()).collect(),
             power_layout: "row".into(),
             power_icons: true,
@@ -300,6 +310,11 @@ impl BarSettings {
         self.menu_monitor = self.menu_monitor.trim().to_string();
         self.launcher_width = self.launcher_width.clamp(320, 1600);
         self.launcher_rows = self.launcher_rows.clamp(3, 20);
+        if self.launcher_layout != "grid" {
+            self.launcher_layout = "list".into();
+        }
+        self.launcher_grid_rows = self.launcher_grid_rows.clamp(2, 10);
+        self.launcher_icon_size = self.launcher_icon_size.clamp(24, 128);
         // Kept in the menu's own order, once each.
         let chosen = std::mem::take(&mut self.power_items);
         self.power_items = POWER_ITEMS
@@ -543,6 +558,9 @@ pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::V
         "launcher_width": settings.launcher_width,
         "launcher_rows": settings.launcher_rows,
         "launcher_icons": settings.launcher_icons,
+        "launcher_layout": settings.launcher_layout,
+        "launcher_grid_rows": settings.launcher_grid_rows,
+        "launcher_icon_size": settings.launcher_icon_size,
         "power_items": settings.power_items,
         "power_layout": settings.power_layout,
         "power_icons": settings.power_icons,
@@ -896,6 +914,9 @@ mod control_tests {
             menu_position: "middle".into(),
             launcher_rows: 99,
             launcher_width: 10,
+            launcher_layout: "tiles".into(),
+            launcher_grid_rows: 0,
+            launcher_icon_size: 1000,
             power_items: ["shutdown", "lock", "nope", "lock"].map(String::from).to_vec(),
             power_layout: "grid".into(),
             ..Default::default()
@@ -903,6 +924,8 @@ mod control_tests {
         .sanitized();
         assert_eq!((s.style.as_str(), s.menu_position.as_str()), ("flat", "center"));
         assert_eq!((s.launcher_rows, s.launcher_width), (20, 320));
+        assert_eq!(s.launcher_layout, "list");
+        assert_eq!((s.launcher_grid_rows, s.launcher_icon_size), (2, 128));
         assert_eq!(s.power_items, ["lock", "shutdown"]);
         assert_eq!(s.power_layout, "row");
     }

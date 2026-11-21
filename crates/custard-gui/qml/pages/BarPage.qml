@@ -733,8 +733,8 @@ Item {
             Card {
                 Layout.fillWidth: true
                 title: "Launcher"
-                subtitle: "Type to search your apps; the ones you start often come first. Up and Down "
-                          + "move, Enter starts, Esc closes."
+                subtitle: "Type to search your apps; the ones you start often come first. The arrow "
+                          + "keys move, Enter starts, Esc closes."
 
                 LabeledSlider {
                     width: parent.width
@@ -747,8 +747,20 @@ Item {
                     markValue: 600
                     onSettled: function (v) { page.set({ launcher_width: Math.round(v) }) }
                 }
+                FieldRow {
+                    width: parent.width
+                    label: "Layout"
+                    hint: "A grid shows each app's icon with its name under it."
+                    Dropdown {
+                        width: 260
+                        model: ["A list", "A grid of icons"]
+                        currentIndex: page.choice.launcher_layout === "grid" ? 1 : 0
+                        onActivated: function (index) { page.set({ launcher_layout: index === 1 ? "grid" : "list" }) }
+                    }
+                }
                 LabeledSlider {
                     width: parent.width
+                    visible: page.choice.launcher_layout !== "grid"
                     label: "Apps listed at once"
                     from: 3
                     to: 20
@@ -758,8 +770,33 @@ Item {
                     markValue: 8
                     onSettled: function (v) { page.set({ launcher_rows: Math.round(v) }) }
                 }
+                LabeledSlider {
+                    width: parent.width
+                    visible: page.choice.launcher_layout === "grid"
+                    label: "Rows of apps shown at once"
+                    from: 2
+                    to: 10
+                    stepSize: 1
+                    integer: true
+                    value: page.choice.launcher_grid_rows || 4
+                    markValue: 4
+                    onSettled: function (v) { page.set({ launcher_grid_rows: Math.round(v) }) }
+                }
+                LabeledSlider {
+                    width: parent.width
+                    visible: page.choice.launcher_layout === "grid"
+                    label: "Icon size (px)"
+                    from: 24
+                    to: 128
+                    stepSize: 4
+                    integer: true
+                    value: page.choice.launcher_icon_size || 48
+                    markValue: 48
+                    onSettled: function (v) { page.set({ launcher_icon_size: Math.round(v) }) }
+                }
                 FieldRow {
                     width: parent.width
+                    visible: page.choice.launcher_layout !== "grid"
                     label: "App icons"
                     Toggle {
                         checked: page.choice.launcher_icons !== false

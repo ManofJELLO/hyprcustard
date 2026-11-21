@@ -15,6 +15,8 @@ import Quickshell.Widgets
 // time it opens, the window keeps one size, and the pointer never scrolls
 // the list or moves the selection. Up and Down (also Tab, Ctrl+N/P,
 // Ctrl+J/K) move the selection; the list scrolls only to keep it in view.
+// As a grid, Left and Right (and Tab, Ctrl+N/P) move along a row, Up and
+// Down (and Ctrl+J/K) a column.
 PanelWindow {
     id: root
 
@@ -32,6 +34,15 @@ PanelWindow {
     readonly property int rows: Config.launcherRows
     readonly property int rowHeight: Math.round(Theme.fontSize * 2.8)
     readonly property int gap: 8
+
+    // The grid: icons with their names under them, in up to two lines.
+    readonly property bool grid: Config.launcherGrid
+    readonly property int iconSize: Config.launcherIconSize
+    readonly property int cellPad: 8
+    readonly property int cellMinWidth: Math.max(root.iconSize + 32, Theme.fontSize * 9)
+    readonly property int cellHeight: root.cellPad * 2 + root.iconSize + 6 + Math.ceil(nameMetrics.height * 2)
+    // What a page of apps is, for Page Up and Page Down.
+    readonly property int pageStep: root.grid ? gridView.columns * Config.launcherGridRows : root.rows
 
     function toggle() {
         if (open)
@@ -149,14 +160,25 @@ PanelWindow {
         }
         root.results = list;
         root.selected = 0;
-        view.positionViewAtBeginning();
+        if (root.grid)
+            gridView.positionViewAtBeginning();
+        else
+            view.positionViewAtBeginning();
     }
 
     function move(by) {
         if (root.results.length === 0)
             return;
         root.selected = Math.max(0, Math.min(root.results.length - 1, root.selected + by));
-        view.positionViewAtIndex(root.selected, ListView.Contain);
+        if (root.grid)
+            gridView.positionViewAtIndex(root.selected, GridView.Contain);
+        else
+            view.positionViewAtIndex(root.selected, ListView.Contain);
+    }
+
+    // Up and Down: a row in the list, a column in the grid.
+    function moveDown(by) {
+        root.move(root.grid ? by * gridView.columns : by);
     }
 
     function shellQuote(s) {
@@ -190,6 +212,12 @@ PanelWindow {
         return Quickshell.iconPath(icon, "application-x-executable");
     }
 
+    FontMetrics {
+        id: nameMetrics
+        font.family: Theme.font
+        font.pixelSize: Theme.fontSize
+    }
+
     FileView {
         id: usageFile
         path: Quickshell.statePath("launcher-usage.json")
@@ -206,7 +234,8 @@ PanelWindow {
     visible: open
     color: "transparent"
     implicitWidth: Config.launcherWidth + 2 * panel.pad
-    implicitHeight: panel.pad * 2 + 2 * root.gap + root.rowHeight + root.gap + root.rows * root.rowHeight
+    implicitHeight: panel.pad * 2 + 2 * root.gap + root.rowHeight + root.gap
+                    + (root.grid ? Config.launcherGridRows * root.cellHeight : root.rows * root.rowHeight)
     // Kept out of the bar's space, so a menu at the top opens under it.
     exclusionMode: ExclusionMode.Normal
     anchors {
@@ -295,14 +324,18 @@ PanelWindow {
                             root.hide();
                         else if (k === Qt.Key_Return || k === Qt.Key_Enter)
                             root.launch(root.results[root.selected]);
-                        else if (k === Qt.Key_Down || k === Qt.Key_Tab || (ctrl && (k === Qt.Key_N || k === Qt.Key_J)))
+                        else if (k === Qt.Key_Down || (ctrl && k === Qt.Key_J))
+                            root.moveDown(1);
+                        else if (k === Qt.Key_Up || (ctrl && k === Qt.Key_K))
+                            root.moveDown(-1);
+                        else if (k === Qt.Key_Tab || (ctrl && k === Qt.Key_N) || (root.grid && k === Qt.Key_Right))
                             root.move(1);
-                        else if (k === Qt.Key_Up || k === Qt.Key_Backtab || (ctrl && (k === Qt.Key_P || k === Qt.Key_K)))
+                        else if (k === Qt.Key_Backtab || (ctrl && k === Qt.Key_P) || (root.grid && k === Qt.Key_Left))
                             root.move(-1);
                         else if (k === Qt.Key_PageDown)
-                            root.move(root.rows);
+                            root.move(root.pageStep);
                         else if (k === Qt.Key_PageUp)
-                            root.move(-root.rows);
+                            root.move(-root.pageStep);
                         else
                             return;
                         event.accepted = true;
@@ -318,91 +351,183 @@ PanelWindow {
                 }
             }
 
-            ListView {
-                id: view
+            Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.rows * root.rowHeight
-                clip: true
-                model: root.results
-                boundsBehavior: Flickable.StopAtBounds
-                // The selection is drawn by each row, so the view never
-                // scrolls on its own to follow it.
-                highlightFollowsCurrentItem: false
+                Layout.preferredHeight: root.grid ? Config.launcherGridRows * root.cellHeight
+                                                  : root.rows * root.rowHeight
 
-                delegate: Item {
-                    id: row
-                    required property var modelData
-                    required property int index
-                    readonly property bool chosen: index === root.selected
+                ListView {
+                    id: view
+                    visible: !root.grid
+                    anchors.fill: parent
+                    clip: true
+                    model: root.grid ? [] : root.results
+                    boundsBehavior: Flickable.StopAtBounds
+                    // The selection is drawn by each row, so the view never
+                    // scrolls on its own to follow it.
+                    highlightFollowsCurrentItem: false
 
-                    width: view.width
-                    height: root.rowHeight
+                    delegate: Item {
+                        id: row
+                        required property var modelData
+                        required property int index
+                        readonly property bool chosen: index === root.selected
 
-                    // The chosen row is lit (flat) or pressed in (neumorphic).
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 2
-                        color: row.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
-                             : hover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g, Theme.selection.b,
-                                                       Config.opacity * 0.5)
-                             : "transparent"
-                    }
-                    Rectangle {
-                        visible: row.chosen && !Config.neumorphic
-                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                        width: 3
-                        color: Theme.aqua
-                    }
-                    Neu {
-                        visible: row.chosen && Config.neumorphic
-                        anchors.fill: parent
-                        sunk: true
-                        radius: 6
-                    }
-                    IconImage {
-                        id: icon
-                        visible: Config.launcherIcons
-                        x: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        implicitSize: Math.round(root.rowHeight * 0.62)
-                        source: root.iconFor(row.modelData.icon)
-                        asynchronous: true
-                    }
-                    Text {
-                        id: name
-                        anchors {
-                            left: Config.launcherIcons ? icon.right : parent.left
-                            leftMargin: Config.launcherIcons ? 10 : 14
-                            verticalCenter: parent.verticalCenter
+                        width: view.width
+                        height: root.rowHeight
+
+                        // The chosen row is lit (flat) or pressed in (neumorphic).
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 2
+                            color: row.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
+                                 : hover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g, Theme.selection.b,
+                                                           Config.opacity * 0.5)
+                                 : "transparent"
                         }
-                        width: Math.min(implicitWidth, row.width * 0.5)
-                        elide: Text.ElideRight
-                        text: row.modelData.name
-                        color: Theme.foreground
-                        font.family: Theme.font
-                        font.pixelSize: Theme.fontSize + 1
-                    }
-                    Text {
-                        anchors {
-                            left: name.right
-                            leftMargin: 12
-                            right: parent.right
-                            rightMargin: 12
-                            verticalCenter: parent.verticalCenter
+                        Rectangle {
+                            visible: row.chosen && !Config.neumorphic
+                            anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                            width: 3
+                            color: Theme.aqua
                         }
-                        elide: Text.ElideRight
-                        text: row.modelData.detail
-                        color: Theme.dim
-                        font.family: Theme.font
-                        font.pixelSize: Theme.fontSize
+                        Neu {
+                            visible: row.chosen && Config.neumorphic
+                            anchors.fill: parent
+                            sunk: true
+                            radius: 6
+                        }
+                        IconImage {
+                            id: icon
+                            visible: Config.launcherIcons
+                            x: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            implicitSize: Math.round(root.rowHeight * 0.62)
+                            source: root.iconFor(row.modelData.icon)
+                            asynchronous: true
+                        }
+                        Text {
+                            id: name
+                            anchors {
+                                left: Config.launcherIcons ? icon.right : parent.left
+                                leftMargin: Config.launcherIcons ? 10 : 14
+                                verticalCenter: parent.verticalCenter
+                            }
+                            width: Math.min(implicitWidth, row.width * 0.5)
+                            elide: Text.ElideRight
+                            text: row.modelData.name
+                            color: Theme.foreground
+                            font.family: Theme.font
+                            font.pixelSize: Theme.fontSize + 1
+                        }
+                        Text {
+                            anchors {
+                                left: name.right
+                                leftMargin: 12
+                                right: parent.right
+                                rightMargin: 12
+                                verticalCenter: parent.verticalCenter
+                            }
+                            elide: Text.ElideRight
+                            text: row.modelData.detail
+                            color: Theme.dim
+                            font.family: Theme.font
+                            font.pixelSize: Theme.fontSize
+                        }
+
+                        HoverHandler {
+                            id: hover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            onTapped: root.launch(row.modelData)
+                        }
                     }
 
-                    HoverHandler {
-                        id: hover
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                    TapHandler {
-                        onTapped: root.launch(row.modelData)
+                }
+
+                GridView {
+                    id: gridView
+                    visible: root.grid
+                    anchors.fill: parent
+                    clip: true
+                    model: root.grid ? root.results : []
+                    boundsBehavior: Flickable.StopAtBounds
+                    highlightFollowsCurrentItem: false
+                    // As many columns as fit the width, sharing it evenly.
+                    readonly property int columns: Math.max(1, Math.floor(width / root.cellMinWidth))
+                    cellWidth: Math.floor(width / columns)
+                    cellHeight: root.cellHeight
+
+                    delegate: Item {
+                        id: cell
+                        required property var modelData
+                        required property int index
+                        readonly property bool chosen: index === root.selected
+
+                        width: gridView.cellWidth
+                        height: gridView.cellHeight
+
+                        Item {
+                            id: face
+                            anchors { fill: parent; margins: 2 }
+
+                            // The chosen app is lit (flat) or pressed in (neumorphic).
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 2
+                                color: cell.chosen && !Config.neumorphic ? Theme.glass(Theme.selection)
+                                     : cellHover.hovered ? Qt.rgba(Theme.selection.r, Theme.selection.g,
+                                                                   Theme.selection.b, Config.opacity * 0.5)
+                                     : "transparent"
+                            }
+                            Rectangle {
+                                visible: cell.chosen && !Config.neumorphic
+                                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                                height: 3
+                                color: Theme.aqua
+                            }
+                            Neu {
+                                visible: cell.chosen && Config.neumorphic
+                                anchors.fill: parent
+                                sunk: true
+                                radius: 6
+                            }
+                        }
+                        IconImage {
+                            id: cellIcon
+                            y: root.cellPad
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            implicitSize: root.iconSize
+                            source: root.iconFor(cell.modelData.icon)
+                            asynchronous: true
+                        }
+                        Text {
+                            anchors {
+                                top: cellIcon.bottom
+                                topMargin: 6
+                                left: parent.left
+                                right: parent.right
+                                leftMargin: 6
+                                rightMargin: 6
+                            }
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            text: cell.modelData.name
+                            color: Theme.foreground
+                            font.family: Theme.font
+                            font.pixelSize: Theme.fontSize
+                        }
+
+                        HoverHandler {
+                            id: cellHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            onTapped: root.launch(cell.modelData)
+                        }
                     }
                 }
 
