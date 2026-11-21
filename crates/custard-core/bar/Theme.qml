@@ -26,8 +26,18 @@ Singleton {
         }
     }
 
+    // The scheme's own colors, or the other mode's when the Bar page asks
+    // for light or dark and the scheme is the other one. A colors.json from
+    // before the choice has no other set, and keeps its own.
+    readonly property var colors: {
+        const own = root.c;
+        const want = Config.mode;
+        const flip = (want === "light" && own.dark === true) || (want === "dark" && own.dark === false);
+        return flip && own.other ? own.other : own;
+    }
+
     // Gruvbox Dark until a scheme is applied.
-    function pick(name, fallback) { return root.c[name] ?? fallback; }
+    function pick(name, fallback) { return root.colors[name] ?? fallback; }
 
     readonly property string font: Config.font !== "" ? Config.font : Qt.application.font.family
     readonly property int fontSize: Config.fontSize

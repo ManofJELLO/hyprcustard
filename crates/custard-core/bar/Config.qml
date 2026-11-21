@@ -45,6 +45,9 @@ Singleton {
     readonly property bool glyphs: get("glyphs", true)
     // Neumorphic: raised and pressed-in shapes, like hyprcustard's window.
     readonly property bool neumorphic: get("style", "flat") === "neumorphic"
+    // "auto" keeps the color scheme's own light or dark; "light" and "dark"
+    // ask for that one, which colors.json carries as well.
+    readonly property string mode: get("mode", "auto")
     // Where the launcher and power menu open, and on which monitor ("" is
     // the focused one).
     readonly property string menuPosition: get("menu_position", "center")
@@ -74,7 +77,7 @@ Singleton {
     }
     readonly property var modules: get("modules", ["launcher", "clock", "workspaces", "window", "media",
                                                    "tray", "volume", "bluetooth", "network", "cpu",
-                                                   "memory", "power"])
+                                                   "memory", "cpu_temp", "gpu_temp", "power"])
     readonly property string clockFormat: get("clock_format", "ddd MM/dd  h:mm AP")
     readonly property bool workspacesPerMonitor: get("workspaces_per_monitor", false)
     readonly property var workspaceLabels: get("workspace_labels", [])

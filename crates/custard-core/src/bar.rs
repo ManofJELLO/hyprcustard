@@ -62,6 +62,8 @@ pub const FILES: &[(&str, &[u8])] = &[
     ("NetworkModule.qml", include_str!("../bar/NetworkModule.qml").as_bytes()),
     ("CpuModule.qml", include_str!("../bar/CpuModule.qml").as_bytes()),
     ("MemoryModule.qml", include_str!("../bar/MemoryModule.qml").as_bytes()),
+    ("TempModule.qml", include_str!("../bar/TempModule.qml").as_bytes()),
+    ("temps.sh", include_str!("../bar/temps.sh").as_bytes()),
     ("LauncherModule.qml", include_str!("../bar/LauncherModule.qml").as_bytes()),
     ("PowerModule.qml", include_str!("../bar/PowerModule.qml").as_bytes()),
     ("Neu.qml", include_str!("../bar/Neu.qml").as_bytes()),
@@ -85,6 +87,8 @@ pub const MODULES: &[(&str, &str)] = &[
     ("network", "Network"),
     ("cpu", "CPU"),
     ("memory", "Memory"),
+    ("cpu_temp", "CPU temperature"),
+    ("gpu_temp", "GPU temperature"),
     ("power", "Power menu"),
 ];
 
@@ -170,6 +174,9 @@ pub struct BarSettings {
     /// `flat`, or `neumorphic`: raised and pressed-in shapes with soft
     /// shadows, like hyprcustard's own window.
     pub style: String,
+    /// `auto` (the color scheme's own), `light` or `dark`. A scheme of the
+    /// other kind is built for the bar from the same seed color.
+    pub mode: String,
     /// Where the launcher and power menu open: `center`, or a side or
     /// corner (`top`, `top-left`, ... `bottom-right`).
     pub menu_position: String,
@@ -240,6 +247,7 @@ impl Default for BarSettings {
             power_reboot: String::new(),
             power_shutdown: String::new(),
             style: "flat".into(),
+            mode: "auto".into(),
             menu_position: "center".into(),
             menu_margin: 12,
             menu_monitor: String::new(),
@@ -281,6 +289,9 @@ impl BarSettings {
         self.workspace_labels.truncate(20);
         if self.style != "neumorphic" {
             self.style = "flat".into();
+        }
+        if !["auto", "light", "dark"].contains(&self.mode.as_str()) {
+            self.mode = "auto".into();
         }
         if !MENU_POSITIONS.contains(&self.menu_position.as_str()) {
             self.menu_position = "center".into();
@@ -525,6 +536,7 @@ pub fn settings_json(settings: &BarSettings, machine: &Machine) -> serde_json::V
         "terminal": pick(&settings.terminal, &machine.terminal),
         "power": power_commands(settings, machine),
         "style": settings.style,
+        "mode": settings.mode,
         "menu_position": settings.menu_position,
         "menu_margin": settings.menu_margin,
         "menu_monitor": settings.menu_monitor,
@@ -903,6 +915,94 @@ mod control_tests {
         }
         .sanitized();
         assert_eq!(s.modules, ["clock", "cpu", "tray"]);
+    }
+
+    #[test]
+    fn light_or_dark_is_one_of_the_three() {
+        let s = BarSettings { mode: "dim".into(), ..Default::default() }.sanitized();
+        assert_eq!(s.mode, "auto");
+        let s = BarSettings { mode: "light".into(), ..Default::default() }.sanitized();
+        assert_eq!(s.mode, "light");
+    }
+
+    /// A fake /sys: hwmon folders given as (driver, [(label, millidegrees)]),
+    /// a label of "" having no label file.
+    fn sysfs(hwmons: &[(&str, &[(&str, i32)])]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for (i, (name, temps)) in hwmons.iter().enumerate() {
+            let h = root.path().join(format!("class/hwmon/hwmon{i}"));
+            std::fs::create_dir_all(&h).unwrap();
+            std::fs::write(h.join("name"), format!("{name}\n")).unwrap();
+            for (n, (label, milli)) in temps.iter().enumerate() {
+                let n = n + 1;
+                std::fs::write(h.join(format!("temp{n}_input")), format!("{milli}\n")).unwrap();
+                if !label.is_empty() {
+                    std::fs::write(h.join(format!("temp{n}_label")), format!("{label}\n")).unwrap();
+                }
+            }
+        }
+        root
+    }
+
+    /// What temps.sh finds there: (how, the path under the root, the sensor).
+    fn find(root: &Path, kind: &str) -> Option<(String, String, String)> {
+        let script = root.join("temps.sh");
+        std::fs::write(&script, include_str!("../bar/temps.sh")).unwrap();
+        let out =
+            std::process::Command::new("sh").arg(&script).arg(kind).arg(root).output().unwrap();
+        assert!(out.status.success());
+        let text = String::from_utf8(out.stdout).unwrap();
+        let f: Vec<&str> = text.trim_end_matches('\n').split('\t').collect();
+        (f.len() == 4).then(|| {
+            let under = f[1].strip_prefix(root.to_str().unwrap()).unwrap_or(f[1]);
+            (f[0].to_string(), under.to_string(), f[3].to_string())
+        })
+    }
+
+    #[test]
+    fn the_cpu_sensor_is_the_package_or_die_one() {
+        let amd = sysfs(&[
+            ("amdgpu", &[("edge", 40000)]),
+            ("k10temp", &[("Tctl", 72000), ("Tdie", 62000)]),
+        ]);
+        let (how, path, sensor) = find(amd.path(), "cpu").unwrap();
+        assert_eq!((how.as_str(), sensor.as_str()), ("file", "k10temp Tdie"));
+        assert_eq!(path, "/class/hwmon/hwmon1/temp2_input");
+
+        let intel = sysfs(&[(
+            "coretemp",
+            &[("Core 0", 50000), ("Package id 0", 55000), ("Core 1", 51000)],
+        )]);
+        let (_, path, sensor) = find(intel.path(), "cpu").unwrap();
+        assert_eq!(
+            (path.as_str(), sensor.as_str()),
+            ("/class/hwmon/hwmon0/temp2_input", "coretemp Package id 0")
+        );
+
+        let arm = sysfs(&[("cpu_thermal", &[("", 48000)])]);
+        assert_eq!(find(arm.path(), "cpu").unwrap().2, "cpu_thermal");
+    }
+
+    #[test]
+    fn the_gpu_sensor_prefers_the_discrete_card() {
+        let two = sysfs(&[
+            ("amdgpu", &[("edge", 45000)]),
+            ("nvme", &[("Composite", 40000)]),
+            ("amdgpu", &[("edge", 33000), ("junction", 50000), ("mem", 68000)]),
+        ]);
+        let (how, path, sensor) = find(two.path(), "gpu").unwrap();
+        assert_eq!((how.as_str(), sensor.as_str()), ("file", "amdgpu edge"));
+        assert_eq!(path, "/class/hwmon/hwmon2/temp1_input");
+
+        let apu = sysfs(&[("amdgpu", &[("edge", 45000)])]);
+        assert_eq!(find(apu.path(), "gpu").unwrap().1, "/class/hwmon/hwmon0/temp1_input");
+    }
+
+    #[test]
+    fn no_sensor_finds_nothing() {
+        let none = sysfs(&[("nvme", &[("Composite", 40000)]), ("acpitz", &[("", 30000)])]);
+        assert_eq!(find(none.path(), "cpu"), None);
+        assert_eq!(find(none.path(), "gpu"), None);
     }
 }
 

@@ -239,7 +239,23 @@ impl Session {
     /// one reloads itself. For the window to call once it starts: reading
     /// the state (`--print-state`) must not write files.
     pub fn update_bar_files(&mut self) {
-        if let Err(e) = crate::bar::update_if_stale(&paths::apps_config_home()) {
+        let home = paths::apps_config_home();
+        // The colors too, which an older version wrote without the other
+        // kind the light/dark choice needs.
+        let updated = crate::bar::update_if_stale(&home).and_then(|updated| {
+            if !updated {
+                return Ok(());
+            }
+            let scheme = match colors::current() {
+                Some(s) => s,
+                None => {
+                    colors::build(&colors::ColorSettings::default(), &colors::named::builtins())?
+                        .scheme
+                }
+            };
+            crate::bar::write_colors(&home, &scheme)
+        });
+        if let Err(e) = updated {
             self.problems.push(Problem {
                 source: Source::Settings,
                 text: format!("hyprcustard's bar could not be updated: {e}"),

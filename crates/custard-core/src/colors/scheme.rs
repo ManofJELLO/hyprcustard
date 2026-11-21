@@ -193,6 +193,15 @@ pub fn from_seed(name: &str, seed: Rgb, style: &str, dark: bool, contrast: f64) 
     from_seed_with(name, seed, style, dark, contrast, &Shaping::default())
 }
 
+/// The other kind of the same scheme, light for dark or dark for light,
+/// for something that asks for the other (the bar's light/dark choice). It
+/// is built from the scheme's seed, a named palette's main accent, in the
+/// calm tonal-spot style.
+pub fn flipped(s: &Scheme) -> Scheme {
+    let seed = parse(&s.source).unwrap_or(Rgb::new(0x83, 0xa5, 0x98));
+    from_seed(&s.name, seed, "tonal-spot", !s.dark, 0.0)
+}
+
 /// [`from_seed`], shaped further by `with`.
 ///
 /// Material gives every surface the seed's hue at low chroma, so an orange

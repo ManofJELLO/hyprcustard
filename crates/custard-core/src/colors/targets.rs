@@ -635,9 +635,18 @@ pub fn render(id: &str, scheme: &Scheme, opacity: f64) -> String {
         "bar" => {
             let mut map = serde_json::Map::new();
             map.insert("scheme".into(), scheme.name.clone().into());
+            map.insert("dark".into(), scheme.dark.into());
             for (k, v) in &named {
                 map.insert(k.to_string(), v.to_string().into());
             }
+            // The other kind too, for the Bar page's light or dark choice.
+            let flipped = super::scheme::flipped(scheme);
+            let mut other = serde_json::Map::new();
+            other.insert("dark".into(), flipped.dark.into());
+            for (k, v) in flipped.named() {
+                other.insert(k, v.into());
+            }
+            map.insert("other".into(), other.into());
             format!("{}\n", serde_json::to_string_pretty(&map).unwrap_or_default())
         }
         "quickshell" => {
@@ -1265,5 +1274,22 @@ mod tests {
             std::fs::read_to_string(&g3.config).unwrap(),
             "label { font-weight: bold; }\n\n@import \"hyprcustard-colors.css\";\n"
         );
+    }
+
+    #[test]
+    fn the_bar_gets_the_other_kind_of_scheme_too() {
+        let gruvbox = crate::colors::named::builtins()
+            .into_iter()
+            .find(|n| n.id == "gruvbox-dark")
+            .unwrap()
+            .scheme();
+        let json: serde_json::Value = serde_json::from_str(&render("bar", &gruvbox, 1.0)).unwrap();
+        assert_eq!(json["dark"], true);
+        assert_eq!(json["background"], "#282828");
+        assert_eq!(json["other"]["dark"], false);
+        let bg =
+            crate::colors::scheme::parse(json["other"]["background"].as_str().unwrap()).unwrap();
+        assert!(crate::colors::scheme::luminance(bg) > 0.5, "the other one is light");
+        assert!(json["other"]["base0B"].as_str().unwrap().starts_with('#'));
     }
 }

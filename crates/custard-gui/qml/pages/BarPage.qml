@@ -77,7 +77,8 @@ Item {
                 Layout.fillWidth: true
                 title: "hyprcustard's bar"
                 subtitle: "A bar for the top or bottom of the screen with a clock, workspaces, the "
-                          + "window title, media, the tray, volume, Bluetooth, network, CPU and memory. "
+                          + "window title, media, the tray, volume, Bluetooth, network, CPU, memory, and CPU "
+                          + "and GPU temperatures. "
                           + "It runs in Quickshell, beside any Quickshell config of your own."
 
                 Flow {
@@ -414,6 +415,21 @@ Item {
 
                 FieldRow {
                     width: parent.width
+                    label: "Light or dark"
+                    hint: page.choice.mode === "light" || page.choice.mode === "dark"
+                          ? "When the color scheme is the other kind, the bar gets a " + page.choice.mode
+                            + " one built from the scheme's main color."
+                          : "The same as the color scheme from the Colors page."
+                    Dropdown {
+                        width: 260
+                        model: ["Follow the colors", "Light", "Dark"]
+                        currentIndex: page.choice.mode === "light" ? 1 : page.choice.mode === "dark" ? 2 : 0
+                        onActivated: function (index) { page.set({ mode: ["auto", "light", "dark"][index] }) }
+                    }
+                }
+
+                FieldRow {
+                    width: parent.width
                     label: "Font"
                     hint: "Following the system uses the font Qt is given by qt6ct or your desktop."
                     Dropdown {
@@ -476,6 +492,18 @@ Item {
                             onToggled: page.setModule(modelData.id, checked)
                         }
                     }
+                }
+
+                Text {
+                    visible: page.hasModule("cpu_temp") || page.hasModule("gpu_temp")
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Temperatures are in °C, from the kernel's sensors (k10temp, coretemp, "
+                          + "amdgpu, nouveau…), or from nvidia-smi for NVIDIA's own driver. A laptop "
+                          + "GPU that is asleep shows \"off\" and is not woken to be read. Hover "
+                          + "over one to see which sensor it reads."
+                    color: Theme.fgDim
+                    font.pixelSize: Theme.fontSizeSmall
                 }
 
                 FieldRow {

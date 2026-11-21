@@ -104,6 +104,8 @@ PanelWindow {
             NetworkModule { shown: Config.has("network") }
             CpuModule { shown: Config.has("cpu") }
             MemoryModule { shown: Config.has("memory") }
+            TempModule { kind: "cpu"; glyph: 0xf050f; shown: Config.has("cpu_temp") }
+            TempModule { kind: "gpu"; glyph: 0xf08ae; shown: Config.has("gpu_temp") }
             PowerModule { shown: Config.has("power"); menu: bar.powerMenu }
         }
     }

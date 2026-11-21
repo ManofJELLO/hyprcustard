@@ -16,7 +16,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use custard_core::bar::{self, BarSettings, Machine};
-use custard_core::colors::named;
+use custard_core::colors::{self, named};
 use custard_core::hyprctl;
 
 /// One nested Hyprland at a time: each finds its own by what instance is new,
@@ -239,6 +239,19 @@ fn the_bar_loads_sits_where_it_is_told_and_follows_its_settings() {
             .unwrap_or_else(|| panic!("the bar did not turn {want}"));
         shot(&nested.socket, "bar-recolored");
         assert_eq!(bar_layers(&nested.sig).len(), 1, "still one bar");
+
+        // Asking for light turns a dark scheme's bar light at once, from the
+        // other kind colors.json carries; following the colors turns it back.
+        settings.mode = "light".into();
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        let light = colors::scheme::flipped(&gruvbox).role("background").to_string();
+        wait_for(5, || (pixel(&nested.socket, mx, my) == light).then_some(()))
+            .unwrap_or_else(|| panic!("the bar did not turn light ({light})"));
+        shot(&nested.socket, "bar-light");
+        settings.mode = "auto".into();
+        bar::write_settings(&home, &settings, &machine).unwrap();
+        wait_for(5, || (pixel(&nested.socket, mx, my) == want).then_some(()))
+            .unwrap_or_else(|| panic!("the bar did not go back to {want}"));
 
         // The launcher and the power menu open and close over IPC, centered
         // on the screen, and only one at a time of each.
