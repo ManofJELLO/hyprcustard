@@ -1035,7 +1035,7 @@ pub const FIELDS: &[Field] = &[
     f("ui", "font", "Font", "A font family", Kind::Text, "\"0xProto Nerd Font\""),
     f("ui", "accent", "Accent", "system follows the desktop, or a hex color such as #D71921", Kind::Text, "\"system\""),
     f("ui", "theme", "Tray icon light or dark", "auto follows the desktop", Kind::Choice(&["auto", "dark", "light"]), "\"auto\""),
-    f("ui", "tray_icon", "Tray icon", "A red dot in its corner means it is recording", Kind::Choice(&["police-box", "fishbone"]), "\"police-box\""),
+    f("ui", "tray_icon", "Tray icon", "A red dot in its corner means it is recording", Kind::Choice(&["police-box", "fishbone", "fez"]), "\"police-box\""),
     f("ui", "visualiser", "Visualizer", "spectrum: frequency bars. loudness: level over time", Kind::Choice(&["spectrum", "loudness"]), "\"spectrum\""),
     f("ui", "bands", "Spectrum bars", "", Kind::Int(1, 64), "16"),
     f("ui", "block_percent", "Bar block size", "Each bar lights in blocks of this many percent", Kind::Int(1, 50), "10"),
