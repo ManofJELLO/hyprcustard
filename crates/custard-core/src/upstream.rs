@@ -446,10 +446,15 @@ fn fsc_desktop(root: &Path, r: &mut Report) {
     let models = read(root, "crates/fsc-core/src/models.rs");
     let theirs = caps1(r#"models_dir\(\)\.join\((?:format!\()?"([^"]+)""#, &models);
     let whisper = fsc::FIELDS.iter().find(|f| f.key == "whisper_model").unwrap().default;
+    let wake = fsc::FIELDS.iter().find(|f| f.key == "wake_model").unwrap().default;
     let voice = fsc::voice_for("", "", "en_US.UTF-8");
     let mine: BTreeSet<String> = fsc::needed_models_in(&Map::new(), "en_US.UTF-8")
         .into_iter()
-        .map(|m| m.replace(whisper.trim_matches('"'), "{}").replace(&voice, "{voice}"))
+        .map(|m| {
+            m.replace(whisper.trim_matches('"'), "{}")
+                .replace(wake.trim_matches('"'), "{name}")
+                .replace(&voice, "{voice}")
+        })
         .collect();
     for m in mine.difference(&theirs) {
         r.gone(format!("model file {m}: the page counts it, FSC no longer downloads it"));

@@ -571,7 +571,8 @@ Item {
                             label: row.modelData.label + (row.changed ? "  •" : "")
                             hint: {
                                 var h = row.modelData.hint
-                                if (row.modelData.name === "voice.whisper_model" && page.facts
+                                if ((row.modelData.name === "voice.whisper_model"
+                                        || row.modelData.name === "voice.wake_model") && page.facts
                                         && page.facts.whisper_models.length > 0)
                                     h += ". Downloaded: " + page.facts.whisper_models.join(", ")
                                 return h

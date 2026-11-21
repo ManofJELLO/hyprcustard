@@ -729,12 +729,21 @@ pub fn needed_models_in(config: &Map<String, Value>, locale: &str) -> Vec<String
             .unwrap_or_else(|| default_of(section, key).as_str().unwrap_or("").to_string())
     };
     let voice = voice_for(&get("voice", "language"), &get("voice", "piper_voice"), locale);
-    vec![
-        format!("ggml-{}.bin", get("voice", "whisper_model")),
+    let whisper = get("voice", "whisper_model");
+    let mut out = vec![
+        format!("ggml-{whisper}.bin"),
         "silero_vad.onnx".into(),
         format!("{voice}.onnx"),
         format!("{voice}.onnx.json"),
-    ]
+    ];
+    // The wake phrase's own model, as FSC's `wake_path`: none when it is
+    // empty or the same as the main one.
+    let wake = get("voice", "wake_model");
+    let wake = wake.trim();
+    if !wake.is_empty() && wake != whisper {
+        out.push(format!("ggml-{wake}.bin"));
+    }
+    out
 }
 
 /// Read what is installed. `values` is FSC's config as [`config_values`]
@@ -1055,6 +1064,7 @@ pub const FIELDS: &[Field] = &[
     f("voice", "hang_up_after_secs", "Hang up after", "Seconds of silence in a conversation; 0 waits for the popup to close", Kind::Int(0, 3600), "60"),
     f("voice", "wake_word", "Wake phrase", "Listen for it whenever the mic is free", Kind::Bool, "true"),
     f("voice", "wake_phrase", "The phrase", "", Kind::Text, "\"fishsticks and custard\""),
+    f("voice", "wake_model", "Wake phrase model", "A small whisper.cpp model that listens for the phrase, so it is noticed sooner; what you ask is heard by the speech recognition model. Empty uses that one for both. Download models fetches it", Kind::Text, "\"small-q8_0\""),
     // Each ACP agent's own settings; the page shows the chosen agent's.
     f("codex", "command", "Program", "By name or path; empty runs codex-acp", Kind::Text, "\"\""),
     f("codex", "args", "Arguments", "Split at commas. Added after the usual ones; with a program set, the whole list", Kind::List(&[]), "[]"),
@@ -1564,9 +1574,16 @@ input_device = \"C920\"
                 "ggml-large-v3-turbo-q5_0.bin",
                 "silero_vad.onnx",
                 "en_GB-alan-medium.onnx",
-                "en_GB-alan-medium.onnx.json"
+                "en_GB-alan-medium.onnx.json",
+                "ggml-small-q8_0.bin"
             ]
         );
+        // No wake model of its own when it is empty or the main one.
+        for wake in ["", " large-v3-turbo-q5_0 "] {
+            let mut config = Map::new();
+            config.insert("voice.wake_model".into(), json!(wake));
+            assert_eq!(needed_models_in(&config, "en_US.UTF-8").len(), 4, "{wake:?}");
+        }
     }
 
     /// FSC's own cases, from `lang.rs` and `config.rs`.
