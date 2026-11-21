@@ -50,6 +50,12 @@ const FSC_ACK_KEYS: &[(&str, &str)] = &[
     ("antigravity.env", "extra environment variables for the agent; kept as they are"),
     ("opencode.env", "extra environment variables for the agent; kept as they are"),
     ("acp.env", "extra environment variables for the agent; kept as they are"),
+    // FSC 0.10's global keys, which fscd binds itself on macOS and Windows
+    // only. On Linux the compositor binds them: the Keybinds page's binds
+    // run `fsc type` and `fsc listen`.
+    ("keys.type", "macOS and Windows only; on Hyprland the Keybinds page binds fsc type"),
+    ("keys.type_key", "the Rust name of keys.type, macOS and Windows only"),
+    ("keys.talk", "macOS and Windows only; on Hyprland the Keybinds page binds fsc listen"),
 ];
 
 /// `fsc` subcommands no key or button of hyprcustard's runs.
