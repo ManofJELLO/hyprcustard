@@ -620,7 +620,8 @@ hyprwindowshade-gui` for the shader block) and the folder `~/.config/hyprcustard
 ## Good to know
 
 * **Open apps keep their old colors and icons** until restarted. Hyprland, Waybar,
-  Quickshell, kitty, Ghostty and Dunst are the exceptions, and change at once.
+  Quickshell, kitty, Ghostty and Dunst are the exceptions, and change at once. Qt apps
+  that take their palette from qt6ct or qt5ct change a few seconds later.
 * **A color set on the Look page and the Colors page compete** for Hyprland's borders. Whichever
   comes later in your config wins, and the page tells you when both are set.
 * **Fullscreen windows get no shaders** unless a rule sets **While fullscreen** or **Keep

@@ -398,7 +398,7 @@ fn toolkit_targets(config_home: &Path, desk: &Desktop, pins: &[Pin]) -> Vec<Targ
             wired,
             usage: format!(
                 "A color scheme in {id}'s own format, so it is also listed in {id} as \
-                 hyprcustard. Qt apps opened from now on use it."
+                 hyprcustard. Open Qt apps change to it a few seconds later."
             ),
             warning,
             fix: String::new(),
@@ -918,6 +918,11 @@ pub fn reload(target: &Target, scheme: &Scheme) -> Option<String> {
             .parent()
             .and_then(Path::parent)
             .and_then(|home| toolkits::gtk_follow(home, scheme.dark)),
+        // qt5ct and qt6ct watch their own folder, not colors/ inside it.
+        // Anything changing in that folder makes every running Qt app that
+        // uses them re-read its settings, palette included, three seconds
+        // later.
+        "qt6ct" | "qt5ct" => target.config.parent().and_then(toolkits::nudge_ct),
         "dunst" => running("dunst").then(|| {
             let ok = Command::new("dunstctl")
                 .arg("reload")

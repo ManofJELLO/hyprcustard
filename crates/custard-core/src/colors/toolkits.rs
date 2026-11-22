@@ -19,8 +19,9 @@
 //!   own theme's colors and images, so it gets a recolored copy of the
 //!   user's Kvantum theme instead.
 //!
-//! Open apps keep the colors they started with: neither toolkit re-reads
-//! these files while running.
+//! Open GTK apps keep the colors they started with: GTK never re-reads its
+//! files. qt5ct and qt6ct watch their own folder and reload when anything
+//! in it changes, so [`nudge_ct`] makes open Qt apps follow.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -703,6 +704,26 @@ pub(crate) fn gsettings_set(key: &str, value: &str) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+}
+
+/// Make the Qt apps running with qt5ct or qt6ct re-read their settings.
+///
+/// Each watches only its own folder (`dir`), not the `colors/` folder the
+/// scheme is written to, so a file is made and removed there. They reload
+/// about three seconds later. `None` when Qt isn't using qt5ct/qt6ct, so
+/// there is nothing to reload.
+pub fn nudge_ct(dir: &Path) -> Option<String> {
+    let uses_ct =
+        matches!(std::env::var("QT_QPA_PLATFORMTHEME").ok().as_deref(), Some("qt5ct" | "qt6ct"));
+    if !uses_ct || !dir.is_dir() {
+        return None;
+    }
+    let poke = dir.join(format!(".hyprcustard-reload-{}", std::process::id()));
+    let made = std::fs::write(&poke, b"").and_then(|()| std::fs::remove_file(&poke));
+    Some(match made {
+        Ok(()) => "reloaded".into(),
+        Err(e) => format!("could not reload ({}: {e})", dir.display()),
+    })
 }
 
 #[cfg(test)]
