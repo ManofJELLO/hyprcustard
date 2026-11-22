@@ -400,7 +400,6 @@ Item {
                 FieldRow {
                     width: parent.width
                     label: "Style"
-                    readonly property var styles: ["flat", "neumorphic", "neubrutalism"]
                     hint: page.choice.style === "neumorphic"
                           ? "Raised and pressed-in shapes with soft shadows. It looks best with the "
                             + "background opacity near 1; the bar grows a little to make room for its shadow."
@@ -409,10 +408,13 @@ Item {
                             + "edges between modules. The bar grows a little to make room for its shadow."
                           : "Flat, with a thin shadow and colored edges between modules."
                     Dropdown {
+                        // Kept on the dropdown: FieldRow puts its control in an
+                        // inner holder, so `parent` here is not the row.
+                        readonly property var styles: ["flat", "neumorphic", "neubrutalism"]
                         width: 260
                         model: ["Flat", "Neumorphic", "Neubrutalism"]
-                        currentIndex: Math.max(0, parent.styles.indexOf(page.choice.style))
-                        onActivated: function (index) { page.set({ style: parent.styles[index] }) }
+                        currentIndex: Math.max(0, styles.indexOf(page.choice.style))
+                        onActivated: function (index) { page.set({ style: styles[index] }) }
                     }
                 }
 
